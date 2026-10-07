@@ -144,11 +144,11 @@ describe("the file Phase 1.5 saved (version 2)", () => {
     expect(project.screens[0].layers.some((l: { transform: { rotation: number } }) => l.transform.rotation !== 0)).toBe(true);
   });
 
-  test("it opens as it is, version 3, every layer field untouched and no vector content invented", async () => {
+  test("it opens as it is, at the current version, every layer field untouched and no vector content invented", async () => {
     const before = JSON.parse(v2Text).project;
     const result = await loadProjectText(v2Text, { blobs: await openBlobStore("v2", new IDBFactory()), codec: pngCodec });
     if (!result.ok) throw new Error(result.error);
-    expect(result.project.version).toBe(3);
+    expect(result.project.version).toBe(CURRENT_VERSION);
     expect(result.project.screens[0].layers).toEqual(before.screens[0].layers);
     expect(result.project.screens[0].backgroundPatches).toEqual(before.screens[0].backgroundPatches);
     expect(result.project.canvas).toEqual(before.canvas);

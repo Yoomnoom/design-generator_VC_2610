@@ -1,8 +1,9 @@
 /* Project data model (PRD v0.2 §11). Coordinates in here are always original-image pixels. */
 
 /** 1: layers fixed at scale 1 and rotation 0 (Phase 1). 2: scale and rotation are free (Phase 1.5).
- *  3: vector layers (`content`: line, rectangle, ellipse) (Phase 2). */
-export const CURRENT_VERSION = 3 as const;
+ *  3: vector layers (`content`: line, rectangle, ellipse) (Phase 2).
+ *  4: `drawn` marks a bitmap layer made with the brush (Phase 2). */
+export const CURRENT_VERSION = 4 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -28,6 +29,8 @@ export type BitmapLayer = {
   imageId?: string; // extracted bitmap Blob reference (absent on a vector layer)
   /** set on a vector layer; then there is no imageId and `crop` is an empty rectangle */
   content?: LayerContent;
+  /** true on a bitmap layer made with the brush; only such a layer takes more brush strokes and the eraser */
+  drawn?: boolean;
   /** Where the bitmap is placed. A bitmap pixel p lands at  T(x, y) · R(rotation) · S(scaleX, scaleY) · p,
    *  in frame pixels (original-image pixels, y down). So (x, y) is where the bitmap's top-left corner goes and is the
    *  centre of rotation; rotation is in degrees, clockwise on screen. */

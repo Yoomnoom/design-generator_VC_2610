@@ -212,12 +212,12 @@ test.describe("with the rest of the app", () => {
     expect(pasted.transform).toMatchObject({ x: 616, y: 516 });
   });
 
-  test("the project file holds the shape as a description, version 3, and opens again exactly", async ({ page }) => {
+  test("the project file holds the shape as a description at the current version, and opens again exactly", async ({ page }) => {
     await withRect(page);
     const before = await exportPngBytes(page);
     const text = await saveProjectFile(page);
     const file = JSON.parse(text);
-    expect(file.project.version).toBe(3);
+    expect(file.project.version).toBe(4);
     expect(file.project.screens[0].layers[0].content).toMatchObject({ kind: "rect", fill: "#00aa00" });
     expect(Object.keys(file.images)).toHaveLength(1); // only the capture: the shape has no pixels of its own
     expect(text).not.toMatch(/blob:/);
@@ -263,7 +263,7 @@ test.describe("with the rest of the app", () => {
     await zoomTo(page, 1, 700, 500);
     await drawShape(page, "사각형", { x: 600, y: 450 }, { x: 750, y: 530 });
     expect((await editor(page)).layers).toHaveLength(3);
-    expect(JSON.parse(await saveProjectFile(page)).project.version).toBe(3);
+    expect(JSON.parse(await saveProjectFile(page)).project.version).toBe(4);
   });
 });
 

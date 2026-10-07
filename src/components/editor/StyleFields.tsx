@@ -27,7 +27,7 @@ export function ColorField({ label, value, disabled, testId, onCommit }: { label
 }
 
 /** Stroke width. Typing changes nothing; Enter or leaving the field commits (so typing "12" is not an edit to "1" and then "12"). */
-export function WidthField({ value, disabled, testId, onCommit }: { value: number; disabled?: boolean; testId: string; onCommit: (width: number) => void }) {
+export function WidthField({ label = "굵기", value, disabled, testId, onCommit }: { label?: string; value: number; disabled?: boolean; testId: string; onCommit: (width: number) => void }) {
   const [draft, setDraft] = useState(String(value));
   const cancelled = useRef(false);
   useEffect(() => setDraft(String(value)), [value]);
@@ -42,7 +42,7 @@ export function WidthField({ value, disabled, testId, onCommit }: { value: numbe
   };
   return (
     <label className="flex items-center gap-2 text-xs">
-      <span className="w-12 shrink-0 font-bold">굵기</span>
+      <span className="w-12 shrink-0 font-bold">{label}</span>
       <input
         data-testid={testId}
         type="number"

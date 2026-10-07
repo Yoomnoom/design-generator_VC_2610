@@ -8,6 +8,8 @@ import { renderProjectRaw } from "@/features/export-image/export-png";
 import { rgbToHex } from "@/lib/image/color";
 import { DrawCtx, drawContent, shapeFromDrag } from "@/lib/image/vector";
 import { SHAPE_TOOLS } from "@/store/editor-store";
+import { applyStroke } from "@/features/brush/brush";
+import { MAX_STROKE_POINTS } from "@/lib/image/brush-raster";
 import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
 import { Point, clientToImage, imageToClient } from "@/lib/geometry/coords";
@@ -28,6 +30,7 @@ const MARQUEE = "#ee6f43";
 type Gesture =
   | { kind: "rect"; a: Point }
   | { kind: "shape"; a: Point }
+  | { kind: "brush"; points: Point[] }
   | { kind: "pan"; startX: number; startY: number; panX: number; panY: number };
 
 /** The working canvas. Konva only draws. Every pointer position goes through lib/geometry/coords,
@@ -37,6 +40,8 @@ export default function CanvasViewport() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [marquee, setMarquee] = useState<{ a: Point; b: Point } | null>(null);
   const [shapeDrag, setShapeDrag] = useState<{ a: Point; b: Point } | null>(null);
+  const brushPoints = useRef<Point[] | null>(null); // the stroke being drawn: points in image pixels (the live preview reads it)
+  const [, setBrushTick] = useState(0);
   const drawStyle = useEditorStore((s) => s.drawStyle);
   const gesture = useRef<Gesture | null>(null);
 
@@ -146,6 +151,11 @@ export default function CanvasViewport() {
       const a = roundPoint(toImage(e, v));
       gesture.current = { kind: "shape", a };
       setShapeDrag({ a, b: a });
+    } else if (e.button === 0 && (activeTool === "brush" || activeTool === "eraser")) {
+      const q = toImage(e, v);
+      brushPoints.current = [{ x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100 }];
+      gesture.current = { kind: "brush", points: brushPoints.current };
+      setBrushTick((t) => t + 1);
     } else if (e.button === 0 && activeTool === "eyedropper") {
       pickColorAt(toImage(e, v));
       return;
@@ -160,6 +170,13 @@ export default function CanvasViewport() {
     if (g.kind === "pan") {
       const v = editorStore.getState().view;
       editorStore.getState().setView({ ...v, panX: g.panX + e.clientX - g.startX, panY: g.panY + e.clientY - g.startY });
+    } else if (g.kind === "brush") {
+      const q = toImage(e);
+      const last = g.points[g.points.length - 1];
+      if (Math.hypot(q.x - last.x, q.y - last.y) >= 0.75 && g.points.length < MAX_STROKE_POINTS) {
+        g.points.push({ x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100 });
+        setBrushTick((t) => t + 1);
+      }
     } else if (g.kind === "shape") setShapeDrag({ a: g.a, b: roundPoint(toImage(e)) });
     else setMarquee({ a: g.a, b: toImage(e) });
   };
@@ -168,6 +185,14 @@ export default function CanvasViewport() {
     const g = gesture.current;
     gesture.current = null;
     if (!g || !screen) return;
+    if (g.kind === "brush") {
+      const tool = editorStore.getState().activeTool;
+      brushPoints.current = null;
+      setBrushTick((t) => t + 1);
+      // one stroke is one undo step; the bitmap is painted once, here, not while dragging
+      if (commit && (tool === "brush" || tool === "eraser")) applyStroke({ store: editorStore, tool, points: g.points });
+      return;
+    }
     if (g.kind === "shape") {
       const st = editorStore.getState();
       const kind = SHAPE_TOOLS[st.activeTool];
@@ -217,7 +242,7 @@ export default function CanvasViewport() {
   const tagAt = marqueeRect ? imageToClient({ x: marqueeRect.x, y: marqueeRect.y }, { x: 0, y: 0 }, view, frameOrigin) : null;
 
   const zoomBy = (factor: number) => editorStore.getState().setView(zoomAt(view, view.zoom * factor, { x: size.width / 2, y: size.height / 2 }));
-  const cursor = tool === "hand" ? "grab" : tool === "rect" || tool === "eyedropper" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
+  const cursor = tool === "hand" ? "grab" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
 
   return (
     <div
@@ -331,6 +356,32 @@ export default function CanvasViewport() {
                     opacity={0.85}
                     listening={false}
                     sceneFunc={(ctx) => drawContent((ctx as unknown as { _context: DrawCtx })._context, shapePreview.content)}
+                  />
+                )}
+                {brushPoints.current && (
+                  <Shape
+                    listening={false}
+                    opacity={tool === "eraser" ? 0.45 : 1}
+                    sceneFunc={(ctx) => {
+                      const c = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
+                      const pts = brushPoints.current;
+                      if (!pts) return;
+                      c.save();
+                      c.translate(screen.x, screen.y);
+                      c.lineCap = "round";
+                      c.lineJoin = "round";
+                      c.lineWidth = Math.max(1, Math.round(drawStyle.strokeWidth));
+                      c.strokeStyle = tool === "eraser" ? "#ffffff" : drawStyle.stroke;
+                      c.fillStyle = c.strokeStyle;
+                      c.beginPath();
+                      if (pts.length === 1) c.arc(pts[0].x, pts[0].y, c.lineWidth / 2, 0, Math.PI * 2), c.fill();
+                      else {
+                        c.moveTo(pts[0].x, pts[0].y);
+                        for (const q of pts.slice(1)) c.lineTo(q.x, q.y);
+                        c.stroke();
+                      }
+                      c.restore();
+                    }}
                   />
                 )}
                 {marqueeRect && (

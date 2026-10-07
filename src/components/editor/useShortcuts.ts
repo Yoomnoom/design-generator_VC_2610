@@ -62,6 +62,12 @@ export function useShortcuts() {
         case "tool-eyedropper":
           st.setTool("eyedropper");
           break;
+        case "tool-brush":
+          st.setTool("brush");
+          break;
+        case "tool-eraser":
+          st.setTool("eraser");
+          break;
       }
       e.preventDefault();
     };

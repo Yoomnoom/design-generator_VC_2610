@@ -27,7 +27,7 @@ export type LayerClipboard = { layer: BitmapLayer; pastes: number; /** hash of t
  *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
 export type CompareMode = "off" | "original" | "split";
 
-export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper";
+export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser";
 
 /** the tools that drag out a new vector layer, and what each makes */
 export const SHAPE_TOOLS: Partial<Record<Tool, LayerContent["kind"]>> = { line: "line", box: "rect", ellipse: "ellipse" };
@@ -93,6 +93,10 @@ type EditorActions = {
   renameLayer(layerId: string, name: string): boolean;
   setPatchColor(patchId: string, hex: string): boolean;
 
+  /** Puts a freshly painted bitmap on a brush layer (`layerId`), or makes a new brush layer when it is null. The bitmap gets a NEW
+   *  imageId and the old one stays in the cache for undo, so the history holds only the layer's changed fields, never pixels.
+   *  One undo step. Returns the layer id, or null when refused (comparing, locked, not a brush layer). */
+  commitBitmapEdit(edit: { layerId: string | null; raw: RawImage; x: number; y: number; label: string }): string | null;
   /** a new vector layer at (x, y) (its top-left, in frame pixels); one undo step */
   addVectorLayer(content: LayerContent, x: number, y: number): string | null;
   /** change a vector layer's look (colours, stroke width); one undo step, refused on a locked layer */
@@ -445,6 +449,47 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         const clean = name.trim().slice(0, MAX_LAYER_NAME);
         if (!clean) return false; // a layer always has a name
         return editLayer(layerId, "레이어 이름 변경", (l) => void (l.name = clean));
+      },
+
+      commitBitmapEdit({ layerId, raw, x, y, label }) {
+        const { history, images } = get();
+        const screen = screenOf();
+        if (frozen() || !history || !screen || raw.width < 1 || raw.height < 1 || ![x, y].every(Number.isFinite)) return null;
+        const imageId = genId();
+        const nextImages = new Map(images).set(imageId, { raw });
+        const crop = { x: 0, y: 0, width: raw.width, height: raw.height };
+        const at = { x: Math.round(x), y: Math.round(y) };
+        if (layerId) {
+          const target = screen.layers.find((l) => l.id === layerId);
+          if (!target || !target.drawn || target.locked) return null;
+          const next = commit(history, label, (draft) => {
+            const l = draft.screens[0].layers.find((d) => d.id === layerId);
+            if (!l) return;
+            l.imageId = imageId;
+            l.crop = crop;
+            l.transform.x = at.x;
+            l.transform.y = at.y;
+          });
+          set({ history: next, images: nextImages, selectedLayerIds: [layerId], selectedPatchId: null });
+          return layerId;
+        }
+        const id = genId();
+        const layer: BitmapLayer = {
+          id,
+          name: `브러시 ${nextNumberFor(screen.layers, "브러시")}`,
+          crop,
+          imageId,
+          drawn: true,
+          transform: { x: at.x, y: at.y, scaleX: 1, scaleY: 1, rotation: 0 },
+          zIndex: 0,
+          opacity: 1,
+          visible: true,
+          locked: false,
+        };
+        set({ images: nextImages });
+        commitLayers(label, addOnTop(screen.layers, layer));
+        set({ selectedLayerIds: [id], selectedPatchId: null });
+        return id;
       },
 
       addVectorLayer(content, x, y) {

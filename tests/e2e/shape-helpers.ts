@@ -25,6 +25,8 @@ export async function useFill(page: Page, hex: string) {
 
 /** click empty canvas (selects nothing), so no handles or outlines cover the edges of what is being looked at */
 export async function deselect(page: Page) {
+  // with the select tool: a click on empty canvas deselects, whereas with the brush it would paint a dot
+  await page.getByRole("button", { name: "선택", exact: true }).click();
   const box = (await page.getByTestId("viewport").boundingBox())!;
   await page.mouse.click(box.x + 12, box.y + 12); // the empty top-left corner of the canvas, left of any control
 }

@@ -11,6 +11,8 @@ const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
   { id: "line", icon: "╱", label: "선", title: "드래그해서 직선을 그립니다 (L)" },
   { id: "box", icon: "□", label: "사각형", title: "드래그해서 사각형을 그립니다 (M)" },
   { id: "ellipse", icon: "○", label: "원", title: "드래그해서 원·타원을 그립니다 (O)" },
+  { id: "brush", icon: "🖌", label: "브러시", title: "드래그해서 자유롭게 그립니다. 새 비트맵 레이어에 그려집니다 (B)" },
+  { id: "eraser", icon: "⌫", label: "지우개", title: "브러시로 그린 레이어의 그림을 지웁니다. 원본과 다른 레이어는 지울 수 없습니다 (E)" },
   { id: "eyedropper", icon: "💧", label: "스포이트", title: "화면의 색을 읽어 그리기 색으로 씁니다 (I)" },
 ];
 

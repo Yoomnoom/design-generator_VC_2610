@@ -136,7 +136,7 @@ export async function dragImageRect(page: Page, from: { x: number; y: number }, 
   if (opts.release !== false) await page.mouse.up();
 }
 
-export const pickTool = (page: Page, name: "선택" | "이동" | "영역 추출" | "배경 채움" | "선" | "사각형" | "원" | "스포이트") => page.getByRole("button", { name, exact: true }).click();
+export const pickTool = (page: Page, name: "선택" | "이동" | "영역 추출" | "배경 채움" | "선" | "사각형" | "원" | "스포이트" | "브러시" | "지우개") => page.getByRole("button", { name, exact: true }).click();
 
 /** the colour of one CSS pixel of what Konva actually painted */
 export const konvaPixel = (page: Page, clientX: number, clientY: number) =>
@@ -458,3 +458,34 @@ export async function screenPixel(page: Page, x: number, y: number) {
   // the canvas pixel that CONTAINS the point (floor): konvaPixel rounds, which at a pixel centre picks the next one along
   return (await konvaPixels(page, [c], true))[0];
 }
+
+/* ---- brush ---- */
+
+/** drags the pointer along a path of image points with the brush or the eraser (the tool is picked first) */
+export async function drawStroke(page: Page, tool: "브러시" | "지우개", points: { x: number; y: number }[], opts: { pick?: boolean } = {}) {
+  if (opts.pick !== false) await pickTool(page, tool);
+  const cs = await Promise.all(points.map((p) => clientOf(page, p.x, p.y)));
+  await page.mouse.move(cs[0].x, cs[0].y);
+  await page.mouse.down();
+  for (const c of cs.slice(1)) await page.mouse.move(c.x, c.y, { steps: 6 });
+  await page.mouse.up();
+}
+
+/** what the store knows about the first brush layer: where it is, how big its bitmap is, its image id */
+export const brushLayer = (page: Page) =>
+  page.evaluate(() => {
+    const s = (window as any).__slc.getState();
+    const l = s.history.present.screens[0].layers.find((x: any) => x.drawn);
+    if (!l) return null;
+    const raw = s.images.get(l.imageId).raw;
+    return { id: l.id as string, name: l.name as string, imageId: l.imageId as string, x: l.transform.x as number, y: l.transform.y as number, width: raw.width as number, height: raw.height as number, locked: l.locked as boolean };
+  });
+
+/** a fingerprint of the capture's pixels in memory, to prove painting never changes it */
+export const sourceHash = (page: Page) =>
+  page.evaluate(async () => {
+    const s = (window as any).__slc.getState();
+    const raw = s.images.get(s.history.present.screens[0].source.imageId).raw;
+    const digest = await crypto.subtle.digest("SHA-256", raw.data);
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  });

@@ -39,6 +39,7 @@ function layerError(l: unknown, i: number): string | null {
   if (!isRec(l)) return `${at}가 객체가 아닙니다`;
   if (!isId(l.id) || !isStr(l.name)) return `${at}.id/name이 올바르지 않습니다`;
   if (!isRect(l.crop)) return `${at}.crop이 올바르지 않습니다`;
+  if (l.drawn !== undefined && (typeof l.drawn !== "boolean" || l.content !== undefined)) return `${at}.drawn이 올바르지 않습니다`;
   if (l.content !== undefined) {
     const e = contentError(l.content);
     if (e) return `${at}.${e}`;
