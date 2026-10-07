@@ -33,9 +33,7 @@ export function useShortcuts() {
           break;
         case "copy":
           if (!layerId || window.getSelection()?.toString()) return; // with text selected, Ctrl+C is the normal copy
-          st.copyLayer(layerId);
-          // A picture copied earlier would otherwise win the next Ctrl+V over the layer just copied. Best effort: needs permission.
-          void navigator.clipboard?.writeText("").catch(() => {});
+          st.copyLayer(layerId); // kept inside the app; the system clipboard is not touched
           break;
         case "tool-select":
           st.setTool("select");

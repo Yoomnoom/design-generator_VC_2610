@@ -62,6 +62,17 @@ describe("copy and paste of a layer (inside the app only)", () => {
     expect(get().layerClipboard).not.toBeNull();
   });
 
+  test("clearLayerClipboard forgets the copy, so a later paste does nothing; it changes no project data", () => {
+    const { get, id } = withLayer();
+    get().copyLayer(id);
+    const history = get().history;
+    get().clearLayerClipboard();
+    expect(get().layerClipboard).toBeNull();
+    expect(get().pasteLayer()).toBeNull();
+    expect(get().history).toBe(history);
+    get().clearLayerClipboard(); // clearing nothing is fine
+  });
+
   test("a new project or an opened one empties the clipboard: its bitmaps are gone", () => {
     const { get, id } = withLayer();
     get().copyLayer(id);

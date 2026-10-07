@@ -91,13 +91,56 @@ test.describe("copy and paste a layer (Ctrl+C / Ctrl+V)", () => {
     expect(await panelNames(page)).toHaveLength(3);
   });
 
+  test("copying a layer leaves the system clipboard exactly as it was: text stays text", async ({ page }) => {
+    await withLayer(page);
+    await page.evaluate(() => navigator.clipboard.writeText("keep me"));
+    await page.keyboard.press("Control+c");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("keep me");
+  });
+
+  test("copying a layer leaves a picture on the system clipboard where it was", async ({ page }) => {
+    await withLayer(page);
+    await page.evaluate(async (b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) })]);
+    }, encodePng(blank(100, 100, [1, 2, 3, 255])).toString("base64"));
+    await page.keyboard.press("Control+c");
+    const still = await page.evaluate(async () => {
+      const items = await navigator.clipboard.read();
+      return items.flatMap((i) => i.types);
+    });
+    expect(still).toContain("image/png");
+  });
+
+  test("pasting a layer does not touch the system clipboard either", async ({ page }) => {
+    await withLayer(page);
+    await page.evaluate(() => navigator.clipboard.writeText("keep me"));
+    await page.keyboard.press("Control+c");
+    await page.keyboard.press("Control+v");
+    expect((await editor(page)).layers).toHaveLength(2); // pasted as a layer, though the system clipboard holds only text
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("keep me");
+  });
+
+  test("after leaving the window the layer copy is forgotten, and Ctrl+V reads the system clipboard again", async ({ page }) => {
+    await withLayer(page);
+    await page.keyboard.press("Control+c");
+    await page.evaluate(async (b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) })]); // something else was copied meanwhile
+      window.dispatchEvent(new Event("blur")); // the window was left
+    }, encodePng(blank(100, 100, [1, 2, 3, 255])).toString("base64"));
+    await page.keyboard.press("Control+v");
+    await expect(page.getByRole("alertdialog")).toBeVisible(); // the picture is what got pasted (it asks before replacing)
+    expect((await editor(page)).layers).toHaveLength(1);
+  });
+
   test("a picture copied earlier does not win over the layer copied after it", async ({ page }) => {
     await withLayer(page);
     await page.evaluate(async (b64) => {
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) })]);
     }, encodePng(blank(100, 100, [1, 2, 3, 255])).toString("base64"));
-    await page.keyboard.press("Control+c"); // copies the selected layer, replacing what is on the system clipboard
+    await page.keyboard.press("Control+c"); // copies the selected layer inside the app; the picture stays on the system clipboard
     await page.keyboard.press("Control+v");
     expect((await editor(page)).layers).toHaveLength(2); // a layer was pasted...
     await expect(page.getByTestId("screen-label")).toContainText(`${PAGE.width} × ${PAGE.height}`); // ...and the picture did not replace the project

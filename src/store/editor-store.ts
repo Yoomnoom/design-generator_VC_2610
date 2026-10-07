@@ -68,6 +68,8 @@ type EditorActions = {
 
   duplicateLayer(layerId: string): string | null;
   copyLayer(layerId: string): boolean;
+  /** forget the layer copied inside the app (the window was left, so the system clipboard may have changed) */
+  clearLayerClipboard(): void;
   pasteLayer(): string | null;
   deleteLayer(layerId: string): boolean;
   reorderLayer(layerId: string, direction: 1 | -1): boolean;
@@ -333,6 +335,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         set({ layerClipboard: { layer: { ...layer, crop: { ...layer.crop }, transform: { ...layer.transform } }, pastes: 0 } });
         return true;
       },
+
+      clearLayerClipboard: () => set({ layerClipboard: null }),
 
       pasteLayer() {
         const { layerClipboard, history, images } = get();

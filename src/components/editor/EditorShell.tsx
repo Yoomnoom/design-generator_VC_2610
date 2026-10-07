@@ -104,22 +104,32 @@ export default function EditorShell() {
     else void run(next);
   };
 
-  // Ctrl/⌘+V with an image on the clipboard loads it exactly like an upload, including the "discard current work?" question
+  // Ctrl/⌘+V. A layer copied inside the app is pasted as a layer. Otherwise a picture on the system clipboard is loaded exactly like
+  // an upload, including the "discard current work?" question; with neither, nothing happens.
+  // The app never writes to the system clipboard, so it cannot know whether something else was copied after its own copy.
+  // Leaving the window is what could have changed that, so the in-app copy is forgotten then and Ctrl+V reads the system clipboard.
   const requestRef = useRef(request);
   requestRef.current = request;
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       if (isTypingTarget(e.target)) return;
+      if (editorStore.getState().pasteLayer()) {
+        e.preventDefault();
+        return;
+      }
       const file = imageFromClipboard(e.clipboardData);
       if (file) {
         e.preventDefault();
         void requestRef.current({ kind: "image", file });
-      } else if (editorStore.getState().pasteLayer()) {
-        e.preventDefault(); // no picture on the clipboard: paste the layer copied inside the app, if any
       }
     };
+    const onBlur = () => editorStore.getState().clearLayerClipboard();
     document.addEventListener("paste", onPaste);
-    return () => document.removeEventListener("paste", onPaste);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("paste", onPaste);
+      window.removeEventListener("blur", onBlur);
+    };
   }, []);
 
   const pickFrom = (kind: Incoming["kind"]) => (e: React.ChangeEvent<HTMLInputElement>) => {
