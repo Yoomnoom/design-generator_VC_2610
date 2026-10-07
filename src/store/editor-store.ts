@@ -224,8 +224,9 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         const sample = sampleBackground(source, rect);
         if (sample.status === "ok" && sample.hex) return commitExtraction(rect, sample.hex);
         // too much variation to guess: stop and ask. Nothing is created until the user answers.
-        set({ pendingExtraction: { rect: { ...rect }, suggestedHex: sample.hex } });
-        return { status: "needs-color", suggestedHex: sample.hex };
+        const suggestedHex = sample.suggestedHex ?? sample.hex; // taken from outside any shadow when the image has room
+        set({ pendingExtraction: { rect: { ...rect }, suggestedHex } });
+        return { status: "needs-color", suggestedHex };
       },
 
       confirmExtraction(hex) {
