@@ -67,6 +67,7 @@ export default function LayerPanel() {
   const screen = useEditorStore(selectScreen);
   const images = useEditorStore((s) => s.images);
   const selectedId = useEditorStore((s) => s.selectedLayerIds[0]);
+  const comparing = useEditorStore((s) => s.compareMode !== "off");
   if (!screen) return null;
 
   const front = sortByZ(screen.layers).reverse(); // the layer on top of the canvas is first in the list
@@ -81,10 +82,10 @@ export default function LayerPanel() {
         레이어 <span className="font-normal text-[#999]" data-testid="layer-count">{front.length}</span>
       </h3>
       <div className="mb-2.5 grid grid-cols-4 gap-1.5">
-        <button className="btn mini px-0" disabled={!has || index === 0} onClick={() => act.reorderLayer(selectedId, 1)}>앞으로</button>
-        <button className="btn mini px-0" disabled={!has || index === front.length - 1} onClick={() => act.reorderLayer(selectedId, -1)}>뒤로</button>
-        <button className="btn mini px-0" disabled={!has} title="복제 (Ctrl+D)" onClick={() => act.duplicateLayer(selectedId)}>복제</button>
-        <button className="btn mini px-0" disabled={!has || selected?.locked} title={selected?.locked ? "잠긴 레이어는 삭제할 수 없습니다" : "삭제 (Delete)"} onClick={() => act.deleteLayer(selectedId)}>삭제</button>
+        <button className="btn mini px-0" disabled={!has || index === 0 || comparing} onClick={() => act.reorderLayer(selectedId, 1)}>앞으로</button>
+        <button className="btn mini px-0" disabled={!has || index === front.length - 1 || comparing} onClick={() => act.reorderLayer(selectedId, -1)}>뒤로</button>
+        <button className="btn mini px-0" disabled={!has || comparing} title="복제 (Ctrl+D)" onClick={() => act.duplicateLayer(selectedId)}>복제</button>
+        <button className="btn mini px-0" disabled={!has || selected?.locked || comparing} title={selected?.locked ? "잠긴 레이어는 삭제할 수 없습니다" : "삭제 (Delete)"} onClick={() => act.deleteLayer(selectedId)}>삭제</button>
       </div>
       {front.length === 0 ? (
         <p className="text-xs text-[var(--muted)]">영역 추출 도구로 사각형을 드래그하면 레이어가 생깁니다.</p>
@@ -106,10 +107,10 @@ export default function LayerPanel() {
                   {raw && <Thumb raw={raw} />}
                   <span className={`flex-1 truncate ${layer.visible ? "" : "line-through"}`}>{layer.name}</span>
                 </button>
-                <button type="button" className={iconButton} aria-pressed={!layer.visible} aria-label={layer.visible ? `${layer.name} 숨기기` : `${layer.name} 보이기`} title={layer.visible ? "숨기기" : "보이기"} onClick={() => act.setLayerVisible(layer.id, !layer.visible)}>
+                <button type="button" disabled={comparing} className={iconButton} aria-pressed={!layer.visible} aria-label={layer.visible ? `${layer.name} 숨기기` : `${layer.name} 보이기`} title={layer.visible ? "숨기기" : "보이기"} onClick={() => act.setLayerVisible(layer.id, !layer.visible)}>
                   {layer.visible ? <EyeIcon /> : <EyeOffIcon />}
                 </button>
-                <button type="button" className={iconButton} aria-pressed={layer.locked} aria-label={layer.locked ? `${layer.name} 잠금 해제` : `${layer.name} 잠그기`} title={layer.locked ? "잠금 해제" : "잠그기 (이동·삭제 불가)"} onClick={() => act.setLayerLocked(layer.id, !layer.locked)}>
+                <button type="button" disabled={comparing} className={iconButton} aria-pressed={layer.locked} aria-label={layer.locked ? `${layer.name} 잠금 해제` : `${layer.name} 잠그기`} title={layer.locked ? "잠금 해제" : "잠그기 (이동·삭제 불가)"} onClick={() => act.setLayerLocked(layer.id, !layer.locked)}>
                   {layer.locked ? <LockIcon /> : <UnlockIcon />}
                 </button>
               </li>

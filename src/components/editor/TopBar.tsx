@@ -1,6 +1,6 @@
 "use client";
 
-import { selectCanRedo, selectCanUndo } from "@/store/editor-store";
+import { CompareMode, selectCanRedo, selectCanUndo } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 
 type Props = {
@@ -13,10 +13,17 @@ type Props = {
   onExport: () => void;
 };
 
+const COMPARE: { mode: CompareMode; label: string; title: string }[] = [
+  { mode: "off", label: "수정본", title: "수정한 결과를 봅니다" },
+  { mode: "original", label: "원본", title: "업로드한 원본 그대로를 봅니다 (편집 불가)" },
+  { mode: "split", label: "나란히", title: "원본과 수정본을 나란히 봅니다 (편집 불가)" },
+];
+
 export default function TopBar({ projectName, canExport, busy, onPickImage, onOpenProject, onSaveProject, onExport }: Props) {
   const canUndo = useEditorStore(selectCanUndo);
   const canRedo = useEditorStore(selectCanRedo);
   const undoLabel = useEditorStore((s) => s.history?.past.at(-1)?.label);
+  const compare = useEditorStore((s) => s.compareMode);
   const redoLabel = useEditorStore((s) => s.history?.future[0]?.label);
   return (
     <header className="flex items-center gap-3 border-b border-black bg-[#171a1f] px-4 text-white">
@@ -28,6 +35,14 @@ export default function TopBar({ projectName, canExport, busy, onPickImage, onOp
         {projectName ?? "새 프로젝트"}
       </div>
       <div className="flex-1" />
+      <div role="group" aria-label="원본 비교" className="flex overflow-hidden rounded-lg border border-[#494e57]">
+        {COMPARE.map((c) => (
+          <button key={c.mode} aria-pressed={compare === c.mode} title={c.title} disabled={!canExport} onClick={() => editorStore.getState().setCompareMode(c.mode)} className={`h-8 cursor-pointer border-0 px-3 text-[13px] disabled:cursor-not-allowed disabled:opacity-45 ${compare === c.mode ? "bg-[var(--accent)] font-bold text-white" : "bg-transparent text-[#dfe2e7] hover:bg-[#272b32]"}`}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <span className="h-5 border-l border-[#3c4048]" />
       <button className="btn ghost" disabled={!canUndo} title={`${undoLabel ? `실행 취소: ${undoLabel}` : "실행 취소"} (Ctrl+Z)`} onClick={() => editorStore.getState().undo()}>
         ↶ 실행 취소
       </button>

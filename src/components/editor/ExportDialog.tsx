@@ -9,6 +9,7 @@ import { editorStore, useEditorStore } from "@/store/use-editor-store";
 
 export default function ExportDialog({ onClose }: { onClose: () => void }) {
   const project = useEditorStore(selectProject);
+  const comparing = useEditorStore((s) => s.compareMode !== "off");
   const [state, setState] = useState<{ kind: "idle" } | { kind: "busy" } | { kind: "done"; width: number; height: number } | { kind: "error"; message: string }>({ kind: "idle" });
   if (!project) return null;
   const screen = project.screens[0];
@@ -43,6 +44,7 @@ export default function ExportDialog({ onClose }: { onClose: () => void }) {
           </div>
           <div className="mt-0.5 text-xs text-[var(--muted)]">{fileName} · 투명한 부분은 투명 그대로 저장됩니다</div>
         </div>
+        {comparing && <p className="mb-3 text-xs text-[var(--muted)]">비교 보기와 관계없이, 수정한 결과를 저장합니다.</p>}
         {state.kind === "done" && (
           <p data-testid="export-done" role="status" className="mb-3 text-xs text-[#2f7952]">
             저장했습니다 · {state.width} × {state.height} px

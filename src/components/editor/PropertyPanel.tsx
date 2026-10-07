@@ -20,7 +20,7 @@ function Field({ label, value, id }: { label: string; value: string | number; id
 }
 
 /** The layer name, the one editable thing here. Enter or leaving the field keeps it, Escape puts the old name back. */
-function NameField({ id, name }: { id: string; name: string }) {
+function NameField({ id, name, disabled }: { id: string; name: string; disabled: boolean }) {
   const [draft, setDraft] = useState(name);
   const cancelled = useRef(false);
   useEffect(() => setDraft(name), [name]); // follows undo/redo and renames from elsewhere
@@ -37,6 +37,7 @@ function NameField({ id, name }: { id: string; name: string }) {
       <input
         data-testid="prop-name"
         type="text"
+        disabled={disabled}
         value={draft}
         maxLength={MAX_LAYER_NAME}
         onChange={(e) => setDraft(e.target.value)}
@@ -62,6 +63,7 @@ export default function PropertyPanel() {
   const layerId = useEditorStore((s) => s.selectedLayerIds[0]);
   const patchId = useEditorStore((s) => s.selectedPatchId);
   const preview = useEditorStore((s) => s.dragPreview);
+  const comparing = useEditorStore((s) => s.compareMode !== "off");
   if (!screen) return null;
 
   const layer = screen.layers.find((l) => l.id === layerId);
@@ -76,7 +78,7 @@ export default function PropertyPanel() {
         <h3 className="mb-2.5 text-[13px] font-bold">선택 레이어</h3>
         <dl className="m-0 grid grid-cols-2 gap-[7px]">
           <div className="col-span-2">
-            <NameField id={layer.id} name={layer.name} />
+            <NameField id={layer.id} name={layer.name} disabled={comparing} />
           </div>
           <Field label="X" value={at.x} id="prop-x" />
           <Field label="Y" value={at.y} id="prop-y" />
@@ -86,14 +88,14 @@ export default function PropertyPanel() {
           <Field label="크기 배율" value={`${fmt(layer.transform.scaleX * 100)}% × ${fmt(layer.transform.scaleY * 100)}%`} id="prop-scale" />
         </dl>
         <p className="mt-2 text-[11px] text-[var(--muted)]">{layer.locked ? "잠긴 레이어는 크기와 회전을 바꿀 수 없습니다." : "선택한 레이어의 모서리 점으로 크기를, 위쪽 둥근 점으로 회전을 바꿉니다."}</p>
-        <button className="btn mini mt-2 w-full" disabled={isOnlyMoved(layer.transform) || layer.locked} onClick={() => editorStore.getState().resetLayerTransform(layer.id)}>
+        <button className="btn mini mt-2 w-full" disabled={isOnlyMoved(layer.transform) || layer.locked || comparing} onClick={() => editorStore.getState().resetLayerTransform(layer.id)}>
           크기·회전 초기화
         </button>
       </section>
     );
   }
 
-  if (patch) return <PatchSection key={patch.id} id={patch.id} rect={patch.rect} fill={patch.fill} />;
+  if (patch) return <PatchSection key={patch.id} id={patch.id} rect={patch.rect} fill={patch.fill} disabled={comparing} />;
 
   return (
     <section aria-label="속성" className="px-3.5 py-3 text-xs text-[var(--muted)]">
@@ -102,7 +104,7 @@ export default function PropertyPanel() {
   );
 }
 
-function PatchSection({ id, rect, fill }: { id: string; rect: { x: number; y: number; width: number; height: number }; fill: string }) {
+function PatchSection({ id, rect, fill, disabled }: { id: string; rect: { x: number; y: number; width: number; height: number }; fill: string; disabled: boolean }) {
   const [draft, setDraft] = useState(fill);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => setDraft(fill), [fill]); // follows undo/redo
@@ -127,7 +129,7 @@ function PatchSection({ id, rect, fill }: { id: string; rect: { x: number; y: nu
       </dl>
       <label className="mt-3 flex items-center gap-2.5 text-xs">
         <span className="font-bold">배경색</span>
-        <input ref={input} data-testid="patch-color" type="color" value={draft} onChange={(e) => setDraft(e.target.value)} className="h-8 w-12 cursor-pointer rounded border border-[var(--line)] bg-white p-0.5" />
+        <input ref={input} data-testid="patch-color" type="color" disabled={disabled} value={draft} onChange={(e) => setDraft(e.target.value)} className="h-8 w-12 cursor-pointer rounded border border-[var(--line)] bg-white p-0.5" />
         <span data-testid="patch-hex" className="font-mono text-[var(--muted)]">{draft}</span>
       </label>
     </section>

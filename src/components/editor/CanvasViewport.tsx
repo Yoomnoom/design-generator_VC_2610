@@ -8,12 +8,15 @@ import { sortByZ } from "@/features/layer-transform/order";
 import { Point, clientToImage, imageToClient } from "@/lib/geometry/coords";
 import { selectionFromImagePoints } from "@/lib/geometry/rect";
 import { renderComposite } from "@/lib/image/render-export";
+import { View } from "@/lib/geometry/coords";
 import { ZOOM_STEP, fitView, panBy, zoomAt } from "@/lib/geometry/view-transform";
 import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { rawToCanvas } from "./raw-canvas";
 
 const ACCENT = "#5b5ce2";
+/** the space between the original and the edited frame in the side-by-side view, in image pixels */
+const SPLIT_GAP = 48;
 const MARQUEE = "#ee6f43";
 
 type Gesture =
@@ -35,6 +38,8 @@ export default function CanvasViewport() {
   const selectedId = useEditorStore((s) => s.selectedLayerIds[0]);
   const selectedPatchId = useEditorStore((s) => s.selectedPatchId);
   const needsFit = useEditorStore((s) => s.needsFit);
+  const compare = useEditorStore((s) => s.compareMode);
+  const comparing = compare !== "off";
   const preview = useEditorStore((s) => s.dragPreview);
 
   useEffect(() => {
@@ -53,6 +58,27 @@ export default function CanvasViewport() {
     editorStore.getState().markFitted();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- size is read only at the moment a fit is requested
   }, [screen?.id, hasSize, needsFit]);
+
+  // Side by side needs room for two frames. Entering it fits both; leaving it puts the view back where it was.
+  const viewBeforeSplit = useRef<View | null>(null);
+  const lastScreenId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!screen || !hasSize) return;
+    if (screen.id !== lastScreenId.current) {
+      lastScreenId.current = screen.id; // a different project: whatever view was kept belongs to the old one
+      viewBeforeSplit.current = null;
+      return;
+    }
+    const st = editorStore.getState();
+    if (compare === "split") {
+      viewBeforeSplit.current ??= st.view;
+      st.setView(fitView(size, { x: screen.x - screen.width - SPLIT_GAP, y: screen.y, width: screen.width * 2 + SPLIT_GAP, height: screen.height }));
+    } else if (viewBeforeSplit.current) {
+      st.setView(viewBeforeSplit.current);
+      viewBeforeSplit.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of mode moves the view; size is read at that moment
+  }, [compare, screen?.id, hasSize]);
 
   // wheel: Ctrl/⌘ + wheel (and trackpad pinch) zooms at the cursor, plain wheel pans
   useEffect(() => {
@@ -78,6 +104,7 @@ export default function CanvasViewport() {
   const onPointerDown = (e: React.PointerEvent) => {
     if (!screen) return;
     const { view: v, activeTool } = editorStore.getState();
+    if (editorStore.getState().compareMode !== "off" && e.button !== 1 && activeTool !== "hand") return; // comparing: only moving the view
     if (e.button === 1 || (e.button === 0 && activeTool === "hand")) {
       gesture.current = { kind: "pan", startX: e.clientX, startY: e.clientY, panX: v.panX, panY: v.panY };
     } else if (e.button === 0 && activeTool === "fill") {
@@ -123,13 +150,14 @@ export default function CanvasViewport() {
     [sourceRaw, patches],
   );
 
+  const originalCanvas = useMemo(() => (sourceRaw ? rawToCanvas(sourceRaw) : null), [sourceRaw]);
   const layers = useMemo(() => (screen ? sortByZ(screen.layers) : []), [screen]);
 
   // The resize/rotate handles belong to the selected layer, and only while it can actually be changed.
   const layerRef = useRef<Konva.Layer>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const selected = layers.find((l) => l.id === selectedId);
-  const showHandles = tool === "select" && !!selected && selected.visible && !selected.locked;
+  const showHandles = tool === "select" && !comparing && !!selected && selected.visible && !selected.locked;
   useEffect(() => {
     const tr = transformerRef.current;
     if (!tr) return;
@@ -137,6 +165,7 @@ export default function CanvasViewport() {
     tr.nodes(node ? [node] : []);
     tr.getLayer()?.batchDraw();
   });
+  const originalX = screen ? (compare === "split" ? screen.x - screen.width - SPLIT_GAP : screen.x) : 0;
   const marqueeRect = marquee && screen ? selectionFromImagePoints(marquee.a, marquee.b, screen) : null;
   const frameOrigin = { x: screen?.x ?? 0, y: screen?.y ?? 0 };
   const labelAt = screen ? imageToClient({ x: 0, y: 0 }, { x: 0, y: 0 }, view, frameOrigin) : null;
@@ -170,7 +199,13 @@ export default function CanvasViewport() {
             {screen && (
               <>
                 <Rect x={screen.x} y={screen.y} width={screen.width} height={screen.height} fill="#ffffff" shadowColor="#191e23" shadowOpacity={0.18} shadowBlur={24} shadowOffsetY={8} listening={false} />
-                {baseCanvas && <KImage image={baseCanvas} x={screen.x} y={screen.y} width={screen.width} height={screen.height} listening={false} />}
+                {compare !== "original" && baseCanvas && <KImage image={baseCanvas} x={screen.x} y={screen.y} width={screen.width} height={screen.height} listening={false} />}
+                {compare !== "off" && originalCanvas && (
+                  <>
+                    {compare === "split" && <Rect x={originalX} y={screen.y} width={screen.width} height={screen.height} fill="#ffffff" shadowColor="#191e23" shadowOpacity={0.18} shadowBlur={24} shadowOffsetY={8} listening={false} />}
+                    <KImage image={originalCanvas} x={originalX} y={screen.y} width={screen.width} height={screen.height} listening={false} />
+                  </>
+                )}
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
                   if (!image) return null;
@@ -189,9 +224,9 @@ export default function CanvasViewport() {
                       width={image.width}
                       height={image.height}
                       opacity={layer.opacity}
-                      visible={layer.visible} // a hidden layer is neither drawn nor clickable
-                      draggable={movable && !layer.locked}
-                      listening={movable && layer.visible}
+                      visible={layer.visible && compare !== "original"} // a hidden layer is neither drawn nor clickable; the original has no layers
+                      draggable={movable && !layer.locked && !comparing}
+                      listening={movable && layer.visible && !comparing}
                       onMouseDown={() => editorStore.getState().selectLayer(layer.id)}
                       onTouchStart={() => editorStore.getState().selectLayer(layer.id)}
                       onDragMove={(e) => editorStore.getState().previewLayerDrag(layer.id, e.target.x() - screen.x, e.target.y() - screen.y)}
@@ -209,7 +244,7 @@ export default function CanvasViewport() {
                 })}
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
-                  if (!image || layer.id !== selectedId || !layer.visible || showHandles) return null; // with handles, their frame is the outline
+                  if (!image || layer.id !== selectedId || !layer.visible || showHandles || comparing) return null; // with handles, their frame is the outline
                   const at = preview?.layerId === layer.id ? preview : layer.transform;
                   return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} scaleX={layer.transform.scaleX} scaleY={layer.transform.scaleY} rotation={layer.transform.rotation} width={image.width} height={image.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={layer.locked ? [6, 4] : undefined} listening={false} />;
                 })}
@@ -224,7 +259,7 @@ export default function CanvasViewport() {
                   borderStroke={ACCENT}
                   boundBoxFunc={(before, after) => (Math.abs(after.width) < 10 || Math.abs(after.height) < 10 ? before : after)} // never smaller than 10 screen px
                 />
-                {tool === "fill" &&
+                {tool === "fill" && !comparing &&
                   screen.backgroundPatches.map((p) => (
                     <Rect
                       key={`patch-${p.id}`}
@@ -253,6 +288,20 @@ export default function CanvasViewport() {
           원본 크기 · {screen.width} × {screen.height} px
         </div>
       )}
+      {screen && comparing && (
+        <div data-testid="compare-badge" className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-[#171a1f] px-3 py-1 text-xs font-bold text-white">
+          {compare === "original" ? "원본 보기 · 편집할 수 없습니다" : "나란히 보기 · 왼쪽 원본, 오른쪽 수정본 · 편집할 수 없습니다"}
+        </div>
+      )}
+      {screen && compare === "split" &&
+        (["original", "modified"] as const).map((which) => {
+          const at = imageToClient({ x: which === "original" ? -(screen.width + SPLIT_GAP) : 0, y: screen.height }, { x: 0, y: 0 }, view, frameOrigin);
+          return (
+            <div key={which} data-testid={`compare-label-${which}`} className="pointer-events-none absolute rounded bg-[#171a1f] px-2 py-0.5 text-[11px] font-bold text-white" style={{ left: at.x, top: at.y + 8 }}>
+              {which === "original" ? "원본" : "수정본"}
+            </div>
+          );
+        })}
       {marqueeRect && tagAt && (
         <div data-testid="marquee-tag" className="pointer-events-none absolute rounded bg-[#ee6f43] px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ left: tagAt.x, top: tagAt.y - 22 }}>
           선택 영역 {marqueeRect.width} × {marqueeRect.height} px

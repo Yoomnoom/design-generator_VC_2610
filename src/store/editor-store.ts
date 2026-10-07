@@ -21,6 +21,10 @@ export const MAX_LAYER_NAME = 60;
 /** a layer copied with Ctrl+C: kept inside the app only, never put on the system clipboard */
 export type LayerClipboard = { layer: BitmapLayer; pastes: number };
 
+/** how the screen is shown: the edited result, the untouched original, or both side by side.
+ *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
+export type CompareMode = "off" | "original" | "split";
+
 export type Tool = "select" | "hand" | "rect" | "fill";
 
 /** an extraction waiting for the user to pick a background colour; it owns no layer, patch or history entry */
@@ -29,7 +33,7 @@ export type PendingExtraction = { rect: Rect; suggestedHex: string | null };
 export type ExtractionResult =
   | { status: "committed"; layerId: string }
   | { status: "needs-color"; suggestedHex: string | null }
-  | { status: "rejected"; reason: "no-project" | "invalid-rect" | "no-pending" | "invalid-color" };
+  | { status: "rejected"; reason: "no-project" | "invalid-rect" | "no-pending" | "invalid-color" | "comparing" };
 
 type EditorState = {
   /** only the project is undoable; pixels live in `images` */
@@ -44,6 +48,7 @@ type EditorState = {
   selectedPatchId: string | null;
   pendingExtraction: PendingExtraction | null;
   layerClipboard: LayerClipboard | null;
+  compareMode: CompareMode;
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
 };
@@ -76,6 +81,7 @@ type EditorActions = {
 
   undo(): void;
   redo(): void;
+  setCompareMode(mode: CompareMode): void;
   setView(view: View): void;
   markFitted(): void;
   setTool(tool: Tool): void;
@@ -114,6 +120,8 @@ const drawOrder = (layers: readonly BitmapLayer[]) => sortByZ(layers).map((l) =>
 export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorStoreOptions = {}): EditorStoreApi {
   return createStore<EditorStore>()((set, get) => {
     const screenOf = () => get().history?.present.screens[0] ?? null;
+    /** true while comparing: every edit refuses, however it was asked for */
+    const frozen = () => get().compareMode !== "off";
 
     /** history changed by undo/redo: drop whatever no longer exists or was mid-gesture */
     const reconcile = (history: History<Project>) => {
@@ -131,6 +139,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
 
     /** layer + background patch in a single undo step; pixels are always cut from the original image */
     const commitExtraction = (rect: Rect, hex: string): ExtractionResult => {
+      if (frozen()) return { status: "rejected", reason: "comparing" };
       const { history, images } = get();
       const screen = screenOf();
       const source = screen && images.get(screen.source.imageId)?.raw;
@@ -174,6 +183,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
 
     /** one undo step changing one layer; false (and no history entry) when nothing actually changes */
     const editLayer = (layerId: string, label: string, change: (layer: BitmapLayer) => void) => {
+      if (frozen()) return false;
       const { history } = get();
       if (!history?.present.screens[0].layers.some((l) => l.id === layerId)) return false;
       const next = commit(history, label, (draft) => {
@@ -196,6 +206,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         selectedPatchId: null,
         pendingExtraction: null,
         layerClipboard: null, // it points at bitmaps of the project that was just replaced
+        compareMode: "off",
         dragPreview: null,
       });
 
@@ -209,6 +220,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       selectedPatchId: null,
       pendingExtraction: null,
       layerClipboard: null,
+      compareMode: "off",
       dragPreview: null,
 
       newProject({ fileName, raw, blob, name }) {
@@ -247,6 +259,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       },
 
       beginExtraction(rect) {
+        if (frozen()) return { status: "rejected", reason: "comparing" };
         const screen = screenOf();
         const source = screen && get().images.get(screen.source.imageId)?.raw;
         if (!screen || !source) return { status: "rejected", reason: "no-project" };
@@ -271,6 +284,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       cancelExtraction: () => set({ pendingExtraction: null }),
 
       previewLayerDrag(layerId, x, y) {
+        if (frozen()) return;
         const layer = screenOf()?.layers.find((l) => l.id === layerId);
         if (!layer || layer.locked || !Number.isFinite(x) || !Number.isFinite(y)) return; // a locked layer does not move
         set({ dragPreview: { layerId, x: Math.round(x), y: Math.round(y) } });
@@ -279,7 +293,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       commitLayerDrag() {
         const { history, dragPreview } = get();
         set({ dragPreview: null });
-        if (!history || !dragPreview) return false;
+        if (!history || !dragPreview || frozen()) return false;
         const { layerId, x, y } = dragPreview;
         const next = commit(history, "레이어 이동", (draft) => {
           const layer = draft.screens[0].layers.find((l) => l.id === layerId);
@@ -295,6 +309,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       cancelLayerDrag: () => set({ dragPreview: null }),
 
       duplicateLayer(layerId) {
+        if (frozen()) return null;
         const screen = screenOf();
         const source = screen?.layers.find((l) => l.id === layerId);
         if (!screen || !source) return null;
@@ -322,7 +337,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       pasteLayer() {
         const { layerClipboard, history, images } = get();
         const screen = screenOf();
-        if (!layerClipboard || !history || !screen) return null;
+        if (frozen() || !layerClipboard || !history || !screen) return null;
         const source = layerClipboard.layer;
         if (!source.imageId || !images.has(source.imageId)) return null;
         // each paste lands one more step down and right, so repeated pastes do not hide each other
@@ -342,6 +357,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       },
 
       deleteLayer(layerId) {
+        if (frozen()) return false;
         const screen = screenOf();
         const target = screen?.layers.find((l) => l.id === layerId);
         if (!screen || !target || target.locked) return false; // a locked layer cannot be deleted
@@ -352,7 +368,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
 
       reorderLayer(layerId, direction) {
         const screen = screenOf();
-        if (!screen) return false;
+        if (!screen || frozen()) return false;
         const next = moveLayer(screen.layers, layerId, direction);
         if (drawOrder(next) === drawOrder(screen.layers)) return false; // already at that end
         commitLayers(direction === 1 ? "레이어 앞으로" : "레이어 뒤로", next);
@@ -396,7 +412,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       setPatchColor(patchId, hex) {
         const { history } = get();
         const color = normalizeHex(hex);
-        if (!history || !color) return false;
+        if (!history || !color || frozen()) return false;
         const next = commit(history, "배경색 변경", (draft) => {
           const patch = draft.screens[0].backgroundPatches.find((p) => p.id === patchId);
           if (patch) patch.fill = color;
@@ -418,6 +434,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
 
       setView: (view) => set({ view: { ...view, zoom: clampZoom(view.zoom) } }), // not undoable: it is not an edit
       markFitted: () => set({ needsFit: false }),
+      // a gesture or question that was under way is dropped, so nothing half-done lingers behind the comparison
+      setCompareMode: (compareMode) => set({ compareMode, dragPreview: null, pendingExtraction: null }),
       setTool: (activeTool) => set({ activeTool }),
       selectLayer: (layerId) => set({ selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [], selectedPatchId: null }),
       selectPatch: (patchId) => {
