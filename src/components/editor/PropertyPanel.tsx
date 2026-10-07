@@ -85,7 +85,9 @@ export default function PropertyPanel() {
           <Field label="너비" value={fmt(size.width)} id="prop-width" />
           <Field label="높이" value={fmt(size.height)} id="prop-height" />
           <Field label="회전 (°)" value={fmt(layer.transform.rotation)} id="prop-rotation" />
-          <Field label="크기 배율" value={`${fmt(layer.transform.scaleX * 100)}% × ${fmt(layer.transform.scaleY * 100)}%`} id="prop-scale" />
+          <div className="col-span-2">
+            <Field label="크기 배율" value={`${fmt(layer.transform.scaleX * 100)}% × ${fmt(layer.transform.scaleY * 100)}%`} id="prop-scale" />
+          </div>
         </dl>
         <p className="mt-2 text-[11px] text-[var(--muted)]">{layer.locked ? "잠긴 레이어는 크기와 회전을 바꿀 수 없습니다." : "선택한 레이어의 모서리 점으로 크기를, 위쪽 둥근 점으로 회전을 바꿉니다."}</p>
         <button className="btn mini mt-2 w-full" disabled={isOnlyMoved(layer.transform) || layer.locked || comparing} onClick={() => editorStore.getState().resetLayerTransform(layer.id)}>

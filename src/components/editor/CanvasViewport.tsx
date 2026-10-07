@@ -289,7 +289,7 @@ export default function CanvasViewport() {
         </div>
       )}
       {screen && comparing && (
-        <div data-testid="compare-badge" className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-[#171a1f] px-3 py-1 text-xs font-bold text-white">
+        <div data-testid="compare-badge" className="pointer-events-none absolute bottom-4 left-1/2 max-w-[90%] -translate-x-1/2 rounded-full bg-[#171a1f] px-3 py-1 text-center text-xs font-bold text-white">
           {compare === "original" ? "원본 보기 · 편집할 수 없습니다" : "나란히 보기 · 왼쪽 원본, 오른쪽 수정본 · 편집할 수 없습니다"}
         </div>
       )}

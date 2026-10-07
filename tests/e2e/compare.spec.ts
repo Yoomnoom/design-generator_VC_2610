@@ -102,6 +102,20 @@ test.describe("side by side", () => {
   });
 });
 
+test("the compare badge is not hidden behind the zoom controls", async ({ page }) => {
+  await movedCard(page);
+  const controls = (await page.getByRole("button", { name: "화면 맞춤" }).locator("..").boundingBox())!;
+  for (const mode of ["원본", "나란히"] as const) {
+    await show(page, mode);
+    const badge = (await page.getByTestId("compare-badge").boundingBox())!;
+    const overlap = badge.x < controls.x + controls.width && badge.x + badge.width > controls.x && badge.y < controls.y + controls.height && badge.y + badge.height > controls.y;
+    expect(overlap).toBe(false);
+    const vp = (await page.getByTestId("viewport").boundingBox())!;
+    expect(badge.x).toBeGreaterThanOrEqual(vp.x);
+    expect(badge.x + badge.width).toBeLessThanOrEqual(vp.x + vp.width);
+  }
+});
+
 test.describe("nothing can be edited while comparing", () => {
   for (const mode of ["원본", "나란히"] as const) {
     test(`${mode}: the Delete, Ctrl+D and Ctrl+V keys, dragging the layer and extracting change nothing`, async ({ page }) => {
