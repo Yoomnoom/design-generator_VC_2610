@@ -97,6 +97,9 @@ type EditorActions = {
    *  imageId and the old one stays in the cache for undo, so the history holds only the layer's changed fields, never pixels.
    *  One undo step. Returns the layer id, or null when refused (comparing, locked, not a brush layer). */
   commitBitmapEdit(edit: { layerId: string | null; raw: RawImage; x: number; y: number; label: string }): string | null;
+  /** Moves a layer by (dx, dy) pixels, for the arrow keys. Presses on the same layer within NUDGE_MERGE_MS ms of each other are ONE undo step
+   *  (holding a key is not fifty steps). Refused for a locked layer and while comparing. */
+  nudgeLayer(layerId: string, dx: number, dy: number): boolean;
   /** a new vector layer at (x, y) (its top-left, in frame pixels); one undo step */
   addVectorLayer(content: LayerContent, x: number, y: number): string | null;
   /** change a vector layer's look (colours, stroke width); one undo step, refused on a locked layer */
@@ -115,7 +118,10 @@ type EditorActions = {
 
 export type EditorStore = EditorState & EditorActions;
 export type EditorStoreApi = StoreApi<EditorStore>;
-export type EditorStoreOptions = { genId?: () => string };
+export type EditorStoreOptions = { genId?: () => string; /** the clock, so tests can say how much time passed between two key presses */ now?: () => number };
+
+/** key presses on the same layer closer together than this are one undo step */
+export const NUDGE_MERGE_MS = 600;
 
 export const selectProject = (s: EditorState) => s.history?.present ?? null;
 export const selectScreen = (s: EditorState): ScreenNode | null => s.history?.present.screens[0] ?? null;
@@ -145,7 +151,9 @@ const nextNumberFor = (layers: readonly BitmapLayer[], prefix: string) =>
 
 const drawOrder = (layers: readonly BitmapLayer[]) => sortByZ(layers).map((l) => l.id).join("\n");
 
-export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorStoreOptions = {}): EditorStoreApi {
+export function createEditorStore({ genId = () => crypto.randomUUID(), now = () => Date.now() }: EditorStoreOptions = {}): EditorStoreApi {
+  /** the last keyboard move: which layer, when, and the undo entry it made, so the next press can fold into it */
+  let lastNudge: { layerId: string; at: number; entry: unknown; dx: number; dy: number } | null = null;
   return createStore<EditorStore>()((set, get) => {
     const screenOf = () => get().history?.present.screens[0] ?? null;
     /** true while comparing: every edit refuses, however it was asked for */
@@ -449,6 +457,35 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         const clean = name.trim().slice(0, MAX_LAYER_NAME);
         if (!clean) return false; // a layer always has a name
         return editLayer(layerId, "레이어 이름 변경", (l) => void (l.name = clean));
+      },
+
+      nudgeLayer(layerId, dx, dy) {
+        const { history } = get();
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (frozen() || !history || !layer || layer.locked || ![dx, dy].every(Number.isFinite) || (dx === 0 && dy === 0)) return false;
+        const t = now();
+        const fold = lastNudge && lastNudge.layerId === layerId && t - lastNudge.at <= NUDGE_MERGE_MS && history.past.at(-1) === lastNudge.entry;
+        // folding: step back over the previous press and make one move of the total, so the history has a single entry for the burst
+        const base = fold ? undo(history) : history;
+        const total = fold ? { dx: lastNudge!.dx + dx, dy: lastNudge!.dy + dy } : { dx, dy };
+        const moved = commit(base, "레이어 이동(키보드)", (draft) => {
+          const l = draft.screens[0].layers.find((d) => d.id === layerId);
+          if (!l) return;
+          l.transform.x = Math.round((l.transform.x + total.dx) * 100) / 100;
+          l.transform.y = Math.round((l.transform.y + total.dy) * 100) / 100;
+        });
+        if (moved === base) {
+          // the burst netted out to nothing: the earlier press is already undone, so keep that and leave no step behind
+          if (fold) {
+            lastNudge = null;
+            set({ history: base, selectedLayerIds: [layerId], selectedPatchId: null });
+            return true;
+          }
+          return false;
+        }
+        lastNudge = { layerId, at: t, entry: moved.past.at(-1), ...total };
+        set({ history: moved, selectedLayerIds: [layerId], selectedPatchId: null });
+        return true;
       },
 
       commitBitmapEdit({ layerId, raw, x, y, label }) {

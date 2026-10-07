@@ -46,3 +46,21 @@ describe("resolveShortcut", () => {
     expect(resolveShortcut(ctrl("z", { repeat: true }))).toBe("undo");
   });
 });
+
+describe("arrow keys", () => {
+  test.each([
+    ["ArrowLeft", "nudge-left"],
+    ["ArrowRight", "nudge-right"],
+    ["ArrowUp", "nudge-up"],
+    ["ArrowDown", "nudge-down"],
+  ])("%s → %s, with or without Shift, and held down it repeats", (k, expected) => {
+    expect(resolveShortcut(key(k))).toBe(expected);
+    expect(resolveShortcut(key(k, { shiftKey: true }))).toBe(expected);
+    expect(resolveShortcut(key(k, { repeat: true }))).toBe(expected);
+  });
+  test("with Ctrl, ⌘ or Alt the arrow keys are the browser's (back, forward, word jumps), not ours", () => {
+    expect(resolveShortcut(ctrl("ArrowLeft"))).toBeNull();
+    expect(resolveShortcut(key("ArrowRight", { metaKey: true }))).toBeNull();
+    expect(resolveShortcut(key("ArrowLeft", { altKey: true }))).toBeNull();
+  });
+});

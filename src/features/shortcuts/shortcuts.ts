@@ -1,4 +1,4 @@
-export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser";
+export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "nudge-left" | "nudge-right" | "nudge-up" | "nudge-down";
 
 export type KeyInfo = { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat?: boolean };
 
@@ -14,6 +14,9 @@ export function resolveShortcut(e: KeyInfo): ShortcutAction | null {
     else if (key === "y" && !e.shiftKey) action = "redo";
     else if (key === "d" && !e.shiftKey) action = "duplicate";
     else if (key === "c" && !e.shiftKey) action = "copy";
+  } else if (!mod && !e.altKey && e.key.startsWith("Arrow")) {
+    // 1px, or 10px with Shift (that is the caller's to read); holding the key repeats, and the store folds the repeats into one step
+    action = e.key === "ArrowLeft" ? "nudge-left" : e.key === "ArrowRight" ? "nudge-right" : e.key === "ArrowUp" ? "nudge-up" : e.key === "ArrowDown" ? "nudge-down" : null;
   } else if (!mod && !e.altKey && !e.shiftKey) {
     if (e.key === "Delete") action = "delete";
     else if (key === "v") action = "tool-select";

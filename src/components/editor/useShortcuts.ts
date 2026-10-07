@@ -50,6 +50,17 @@ export function useShortcuts() {
         case "tool-rect":
           st.setTool("rect");
           break;
+        case "nudge-left":
+        case "nudge-right":
+        case "nudge-up":
+        case "nudge-down": {
+          if (!layerId) return; // with nothing selected the arrow keys do what they always do
+          const step = e.shiftKey ? 10 : 1;
+          const dx = action === "nudge-left" ? -step : action === "nudge-right" ? step : 0;
+          const dy = action === "nudge-up" ? -step : action === "nudge-down" ? step : 0;
+          st.nudgeLayer(layerId, dx, dy);
+          break;
+        }
         case "tool-line":
           st.setTool("line");
           break;
