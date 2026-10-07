@@ -1,6 +1,6 @@
 import { Page, expect, test } from "@playwright/test";
 import fs from "node:fs";
-import { expectPixel, CARD, CARD2, PAGE, clientOf, dragImageRect, dragLayerBy, editor, idbKeys, openApp, openProjectFile, pageWithCard, pageWithTwoCards, panelNames, pickTool, pixelAt, readPngSize, saveProjectFile, uploadPng, zoomTo } from "./helpers";
+import { reloadAndDiscard, expectPixel, CARD, CARD2, PAGE, clientOf, dragImageRect, dragLayerBy, editor, idbKeys, openApp, openProjectFile, pageWithCard, pageWithTwoCards, panelNames, pickTool, pixelAt, readPngSize, saveProjectFile, uploadPng, zoomTo } from "./helpers";
 
 const GRAY = [240, 240, 240, 255];
 // a spot of plain background that is on screen at the 100% view these tests use (the canvas shows image y from about -19 to 619)
@@ -305,7 +305,7 @@ test.describe("project files", () => {
   test("a saved and re-opened project can be edited further and saved again", async ({ page }) => {
     await withCard(page);
     const text = await saveProjectFile(page);
-    await page.reload();
+    await reloadAndDiscard(page);
     await openProjectFile(page, text);
     await expect(page.getByTestId("layer-item")).toHaveCount(1);
     expect((await editor(page)).selected).toEqual([]); // nothing is selected right after opening

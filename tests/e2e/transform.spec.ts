@@ -1,6 +1,6 @@
 import { Page, expect, test } from "@playwright/test";
 import fs from "node:fs";
-import { CARD, PAGE, clientOf, dragClient, dragImageRect, editor, exportPngBytes, expectPixel, firstLayer, handleAt, layerPointToImage, openApp, openProjectFile, pageWithCard, panelNames, pickTool, pngPixelAt, readPngSize, saveProjectFile, uploadPng, zoomTo } from "./helpers";
+import { reloadAndDiscard, CARD, PAGE, clientOf, dragClient, dragImageRect, editor, exportPngBytes, expectPixel, firstLayer, handleAt, layerPointToImage, openApp, openProjectFile, pageWithCard, panelNames, pickTool, pngPixelAt, readPngSize, saveProjectFile, uploadPng, zoomTo } from "./helpers";
 
 const BLUE = [0, 0, 255, 255];
 const GRAY = [240, 240, 240, 255];
@@ -213,7 +213,7 @@ test.describe("saving and opening", () => {
     expect(JSON.parse(text).project.version).toBe(2);
     expect(JSON.parse(text).project.screens[0].layers[0].transform).toEqual(placed);
 
-    await page.reload();
+    await reloadAndDiscard(page);
     await openProjectFile(page, text);
     await expect(page.getByTestId("screen-label")).toBeVisible();
     expect((await firstLayer(page)).transform).toEqual(placed);

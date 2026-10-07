@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import fs from "node:fs";
-import { expectPixel, CARD, CARD2, PAGE, dragImageRect, dragLayerBy, editor, idbKeys, openApp, openProjectFile, pageWithTwoCards, panelNames, pickTool, pixelAt, readPngSize, saveProjectFile, uploadPng, zoomTo } from "./helpers";
+import { reloadAndDiscard, expectPixel, CARD, CARD2, PAGE, dragImageRect, dragLayerBy, editor, idbKeys, openApp, openProjectFile, pageWithTwoCards, panelNames, pickTool, pixelAt, readPngSize, saveProjectFile, uploadPng, zoomTo } from "./helpers";
 
 /* Handoff v0.2, "E2E 테스트", steps 1–9, in order, in one session. The page is reloaded between 8 and 9. */
 
@@ -89,7 +89,7 @@ test("handoff v0.2 E2E, steps 1–9", async ({ page }) => {
     expect(savedText).not.toMatch(/blob:/); // no Blob URL in the file
     expect(Object.keys(file.images)).toHaveLength(3); // the capture + two layer bitmaps
 
-    await page.reload(); // everything in memory is gone
+    await reloadAndDiscard(page); // everything in memory is gone
     await expect(page.getByRole("heading", { name: "화면 캡처를 올려주세요" })).toBeVisible();
     expect(await page.evaluate(() => (window as any).__slc.getState().history)).toBeNull();
 

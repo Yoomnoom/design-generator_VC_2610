@@ -1,6 +1,6 @@
 import { Page, expect, test } from "@playwright/test";
 import fs from "node:fs";
-import { CARD, PAGE, clientOf, dragImageRect, dragLayerBy, editor, expectPixel, openApp, openProjectFile, pageWithCard, panelNames, pickTool, saveProjectFile, uploadPng, zoomTo } from "./helpers";
+import { reloadAndDiscard, CARD, PAGE, clientOf, dragImageRect, dragLayerBy, editor, expectPixel, openApp, openProjectFile, pageWithCard, panelNames, pickTool, saveProjectFile, uploadPng, zoomTo } from "./helpers";
 
 const cardCenter = { x: CARD.x + CARD.width / 2, y: CARD.y + CARD.height / 2 };
 const spot = { x: CARD.x + 100, y: CARD.y + 60 }; // inside the card, where the layer sits on top of its own patch
@@ -206,7 +206,7 @@ test("name, hidden and locked all survive a save, a reload and an open", async (
   const saved = JSON.parse(text).project.screens[0].layers[0];
   expect(saved).toMatchObject({ name: "Kept name", visible: false, locked: true });
 
-  await page.reload();
+  await reloadAndDiscard(page);
   await openProjectFile(page, text);
   await expect(page.getByTestId("screen-label")).toBeVisible();
   expect(await panelNames(page)).toEqual(["Kept name"]);

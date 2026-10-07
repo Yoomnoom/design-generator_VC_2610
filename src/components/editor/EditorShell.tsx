@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
+import { getAutosave } from "@/features/autosave/browser-autosave";
 import { decidePaste } from "@/features/layer-clipboard/layer-clipboard";
 import { imageFromClipboard } from "@/features/import-image/clipboard";
 import { checkImageFile, importImage } from "@/features/import-image/import-image";
@@ -15,10 +16,12 @@ import { Project } from "@/lib/project/schema";
 import { selectProject, selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { downloadBlob, safeName } from "./download";
+import { AutosaveBanners, AutosaveFooter } from "./AutosaveStatus";
 import ExportDialog from "./ExportDialog";
 import FillColorDialog from "./FillColorDialog";
 import LayerPanel from "./LayerPanel";
 import PropertyPanel from "./PropertyPanel";
+import RestorePrompt from "./RestorePrompt";
 import SourcePanel from "./SourcePanel";
 import ToolRail from "./ToolRail";
 import Notices from "./Notices";
@@ -37,6 +40,20 @@ export default function EditorShell() {
   const tool = useEditorStore((s) => s.activeTool);
 
   useShortcuts();
+
+  // Temporary save: starts once; the page being hidden or closed saves at once instead of waiting for the delay.
+  useEffect(() => {
+    const autosave = getAutosave();
+    autosave.start();
+    const flush = () => void autosave.flush();
+    const onVisibility = () => document.visibilityState === "hidden" && flush();
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
   const imageInput = useRef<HTMLInputElement>(null);
   const projectInput = useRef<HTMLInputElement>(null);
   const savedHistory = useRef<History<Project> | null>(null); // the history as it was when last saved or opened
@@ -143,7 +160,7 @@ export default function EditorShell() {
         onSaveProject={() => void saveProject()}
         onExport={() => setExporting(true)}
       />
-      <Notices />
+      <Notices extra={<AutosaveBanners />} />
       <input ref={imageInput} data-testid="file-input" type="file" accept="image/png,image/jpeg" className="hidden" onChange={pickFrom("image")} />
       <input ref={projectInput} data-testid="project-input" type="file" accept=".json,application/json" className="hidden" onChange={pickFrom("project")} />
 
@@ -199,9 +216,11 @@ export default function EditorShell() {
         <span>
           {tool === "select" ? "선택 도구 · 드래그로 레이어 이동" : tool === "hand" ? "이동 도구 · 드래그로 화면 이동" : tool === "rect" ? "영역 추출 · 드래그로 사각형 지정" : "배경 채움 · 패치를 클릭해 색 변경"}
         </span>
-        <span className="ml-auto">{screen ? `화면 1 · 레이어 ${screen.layers.length} · ${Math.round(zoom * 100)}%` : "화면 없음"}</span>
+        <AutosaveFooter />
+        <span>{screen ? `화면 1 · 레이어 ${screen.layers.length} · ${Math.round(zoom * 100)}%` : "화면 없음"}</span>
       </footer>
 
+      <RestorePrompt />
       <FillColorDialog />
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
     </div>

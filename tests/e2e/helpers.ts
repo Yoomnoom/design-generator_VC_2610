@@ -367,3 +367,63 @@ export const konvaPixels = (page: Page, points: { x: number; y: number }[]) =>
     const g = canvas.getContext("2d")!;
     return pts.map(({ x, y }) => Array.from(g.getImageData(Math.round((x - box.left) * scale), Math.round((y - box.top) * scale), 1, 1).data));
   }, points);
+
+/* ---- temporary save ---- */
+
+export const autosaveStatus = (page: Page) => page.getByTestId("autosave-status");
+
+/** waits until the app has settled whether there is a saved copy to offer */
+export const autosaveReady = (page: Page) => expect(autosaveStatus(page)).toHaveAttribute("data-ready", "yes");
+
+/** when the last temporary save finished (ms since 1970; 0 = none yet) */
+export const savedAtOf = async (page: Page) => Number(await autosaveStatus(page).getAttribute("data-saved-at"));
+
+/** waits for a temporary save that finished after `after` (pass the value of savedAtOf from before the edit) */
+export const waitForAutosave = async (page: Page, after = 0) => {
+  await expect.poll(() => savedAtOf(page), { timeout: 15000, message: "a temporary save" }).toBeGreaterThan(after);
+  await expect(autosaveStatus(page)).toHaveAttribute("data-saving", "no");
+};
+
+/** the stored temporary copy and the blobs, read straight from IndexedDB */
+export const idbRecord = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<unknown>((resolve, reject) => {
+        const open = indexedDB.open("screenshot-layer-canvas");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const req = db.transaction("autosave").objectStore("autosave").get("current");
+          req.onsuccess = () => (db.close(), resolve(req.result));
+        };
+      }),
+  );
+
+/** change what IndexedDB holds, the way a crash or another program might */
+export const idbDo = (page: Page, store: "autosave" | "blobs", action: "put" | "delete", key: string, value?: unknown) =>
+  page.evaluate(
+    ([s, a, k, v]) =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open("screenshot-layer-canvas");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction(s as string, "readwrite");
+          if (a === "put") tx.objectStore(s as string).put(v, k as string);
+          else tx.objectStore(s as string).delete(k as string);
+          tx.oncomplete = () => (db.close(), resolve());
+        };
+      }),
+    [store, action, key, value] as const,
+  );
+
+/** Reloads the page and answers the "restore earlier work?" question with "discard" if it is asked, so a test can start from an
+ *  empty editor. (A test that wants to restore reloads by itself.) */
+export async function reloadAndDiscard(page: Page) {
+  await page.reload();
+  await autosaveReady(page);
+  if ((await autosaveStatus(page).getAttribute("data-candidate")) === "yes") {
+    await page.getByRole("button", { name: "버리기" }).click();
+    await expect(page.getByTestId("restore-dialog")).toHaveCount(0);
+  }
+}
