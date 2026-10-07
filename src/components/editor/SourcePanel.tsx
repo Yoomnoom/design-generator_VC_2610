@@ -34,7 +34,7 @@ export default function SourcePanel({ screen, busy, error, replaceName, onPickFi
         {replaceName && (
           <div role="alertdialog" aria-label="이미지 교체 확인" className="mt-3 rounded-lg border border-[#ead9a2] bg-[#fff9e8] p-2.5 text-xs text-[#75601b]">
             <p className="mb-2">
-              <b>{replaceName}</b>을(를) 불러오면 현재 작업이 사라집니다. 아직 저장 기능이 없어 되돌릴 수 없습니다.
+              <b>{replaceName}</b>을(를) 불러오면 저장하지 않은 현재 작업이 사라집니다.
             </p>
             <div className="flex gap-2">
               <button className="btn mini primary" onClick={onConfirmReplace}>

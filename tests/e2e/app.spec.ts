@@ -335,7 +335,7 @@ test.describe("background that needs a human", () => {
     await expect(page.getByRole("dialog", { name: "배경색을 골라주세요" })).toBeVisible();
     expect(await editor(page)).toMatchObject({ pending: true, past: 0, layers: [], patches: [] });
 
-    await page.getByRole("button", { name: /취소/ }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /취소/ }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(await editor(page)).toMatchObject({ pending: false, past: 0, layers: [], patches: [] });
   });

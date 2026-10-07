@@ -3,19 +3,9 @@
 import { useState } from "react";
 import { readPngSize, renderProjectPng } from "@/features/export-image/export-png";
 import { canvasCodec } from "@/lib/image/canvas-codec";
+import { downloadBlob, safeName } from "./download";
 import { selectProject } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
-
-const safeName = (name: string) => name.replace(/[\\/:*?"<>|]/g, "_").trim() || "mockup";
-
-function download(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob); // only to hand the file to the browser; never stored anywhere
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 export default function ExportDialog({ onClose }: { onClose: () => void }) {
   const project = useEditorStore(selectProject);
@@ -33,7 +23,7 @@ export default function ExportDialog({ onClose }: { onClose: () => void }) {
       if (!written || written.width !== screen.width || written.height !== screen.height) {
         throw new Error(`출력 크기(${written ? `${written.width} × ${written.height}` : "PNG 아님"})가 원본(${screen.width} × ${screen.height})과 다릅니다`);
       }
-      download(blob, fileName);
+      downloadBlob(blob, fileName);
       setState({ kind: "done", width, height });
     } catch (e) {
       setState({ kind: "error", message: e instanceof Error ? e.message : "내보내기에 실패했습니다" });

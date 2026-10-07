@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Image as KImage, Layer, Rect, Stage } from "react-konva";
+import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
 import { Point, clientToImage, imageToClient } from "@/lib/geometry/coords";
 import { selectionFromImagePoints } from "@/lib/geometry/rect";
@@ -31,6 +32,8 @@ export default function CanvasViewport() {
   const view = useEditorStore((s) => s.view);
   const tool = useEditorStore((s) => s.activeTool);
   const selectedId = useEditorStore((s) => s.selectedLayerIds[0]);
+  const selectedPatchId = useEditorStore((s) => s.selectedPatchId);
+  const needsFit = useEditorStore((s) => s.needsFit);
   const preview = useEditorStore((s) => s.dragPreview);
 
   useEffect(() => {
@@ -41,12 +44,14 @@ export default function CanvasViewport() {
     return () => observer.disconnect();
   }, []);
 
-  // a new image is shown whole and centred
+  // a newly uploaded image is shown whole and centred; an opened project keeps the view it was saved with
   const hasSize = size.width > 0 && size.height > 0;
   useEffect(() => {
-    if (screen && hasSize) editorStore.getState().setView(fitView(size, screen));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refit only when a different screen appears or the viewport first gets a size
-  }, [screen?.id, hasSize]);
+    if (!screen || !hasSize || !needsFit) return;
+    editorStore.getState().setView(fitView(size, screen));
+    editorStore.getState().markFitted();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- size is read only at the moment a fit is requested
+  }, [screen?.id, hasSize, needsFit]);
 
   // wheel: Ctrl/⌘ + wheel (and trackpad pinch) zooms at the cursor, plain wheel pans
   useEffect(() => {
@@ -74,6 +79,10 @@ export default function CanvasViewport() {
     const { view: v, activeTool } = editorStore.getState();
     if (e.button === 1 || (e.button === 0 && activeTool === "hand")) {
       gesture.current = { kind: "pan", startX: e.clientX, startY: e.clientY, panX: v.panX, panY: v.panY };
+    } else if (e.button === 0 && activeTool === "fill") {
+      const patch = patchAt(screen.backgroundPatches, toImage(e, v));
+      editorStore.getState().selectPatch(patch?.id ?? null);
+      return;
     } else if (e.button === 0 && activeTool === "rect") {
       const a = toImage(e, v);
       gesture.current = { kind: "rect", a };
@@ -120,7 +129,7 @@ export default function CanvasViewport() {
   const tagAt = marqueeRect ? imageToClient({ x: marqueeRect.x, y: marqueeRect.y }, { x: 0, y: 0 }, view, frameOrigin) : null;
 
   const zoomBy = (factor: number) => editorStore.getState().setView(zoomAt(view, view.zoom * factor, { x: size.width / 2, y: size.height / 2 }));
-  const cursor = tool === "hand" ? "grab" : tool === "rect" ? "crosshair" : "default";
+  const cursor = tool === "hand" ? "grab" : tool === "rect" ? "crosshair" : tool === "fill" ? "pointer" : "default";
 
   return (
     <div
@@ -180,6 +189,21 @@ export default function CanvasViewport() {
                   const at = preview?.layerId === layer.id ? preview : layer.transform;
                   return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} width={image.width} height={image.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} listening={false} />;
                 })}
+                {tool === "fill" &&
+                  screen.backgroundPatches.map((p) => (
+                    <Rect
+                      key={`patch-${p.id}`}
+                      x={screen.x + p.rect.x}
+                      y={screen.y + p.rect.y}
+                      width={p.rect.width}
+                      height={p.rect.height}
+                      stroke={p.id === selectedPatchId ? ACCENT : "#888"}
+                      strokeWidth={p.id === selectedPatchId ? 2.5 : 1}
+                      strokeScaleEnabled={false}
+                      dash={p.id === selectedPatchId ? undefined : [5, 4]}
+                      listening={false}
+                    />
+                  ))}
                 {marqueeRect && (
                   <Rect x={screen.x + marqueeRect.x} y={screen.y + marqueeRect.y} width={marqueeRect.width} height={marqueeRect.height} stroke={MARQUEE} strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} fill="rgba(238,111,67,0.07)" listening={false} />
                 )}

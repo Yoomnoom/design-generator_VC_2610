@@ -29,6 +29,8 @@ type EditorState = {
   history: History<Project> | null;
   images: ImageCache;
   view: View;
+  /** a newly uploaded image wants to be shown whole; an opened project keeps the view it was saved with */
+  needsFit: boolean;
   activeTool: Tool;
   selectedLayerIds: string[];
   /** a background patch picked with the fill tool, so its colour can be changed; never selected together with a layer */
@@ -59,6 +61,7 @@ type EditorActions = {
   undo(): void;
   redo(): void;
   setView(view: View): void;
+  markFitted(): void;
   setTool(tool: Tool): void;
   selectLayer(layerId: string | null): void;
   selectPatch(patchId: string | null): void;
@@ -158,6 +161,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         history: createHistory(project),
         images,
         view: { ...project.canvas },
+        needsFit: false,
         activeTool: "select",
         selectedLayerIds: [],
         selectedPatchId: null,
@@ -169,6 +173,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       history: null,
       images: new Map(),
       view: { zoom: 1, panX: 0, panY: 0 },
+      needsFit: false,
       activeTool: "select",
       selectedLayerIds: [],
       selectedPatchId: null,
@@ -200,6 +205,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
           },
           new Map([[imageId, { raw, blob }]]),
         );
+        set({ needsFit: true });
       },
 
       loadProject: (project, images) => reset(project, images),
@@ -312,6 +318,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       },
 
       setView: (view) => set({ view: { ...view, zoom: clampZoom(view.zoom) } }), // not undoable: it is not an edit
+      markFitted: () => set({ needsFit: false }),
       setTool: (activeTool) => set({ activeTool }),
       selectLayer: (layerId) => set({ selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [], selectedPatchId: null }),
       selectPatch: (patchId) => {

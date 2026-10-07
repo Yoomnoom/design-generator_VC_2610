@@ -136,7 +136,7 @@ export async function dragImageRect(page: Page, from: { x: number; y: number }, 
   if (opts.release !== false) await page.mouse.up();
 }
 
-export const pickTool = (page: Page, name: "선택" | "이동" | "영역 추출") => page.getByRole("button", { name, exact: true }).click();
+export const pickTool = (page: Page, name: "선택" | "이동" | "영역 추출" | "배경 채움") => page.getByRole("button", { name, exact: true }).click();
 
 /** the colour of one CSS pixel of what Konva actually painted */
 export const konvaPixel = (page: Page, clientX: number, clientY: number) =>
@@ -150,3 +150,68 @@ export const konvaPixel = (page: Page, clientX: number, clientY: number) =>
     },
     [clientX, clientY],
   );
+
+/* ---- 5-B helpers ---- */
+
+export const GREEN: Rgba = [0, 160, 0, 255];
+export const CARD2 = { x: 700, y: 200, width: 200, height: 100 };
+
+/** pageWithCard plus a second, green card to the right: two distinguishable layers */
+export const pageWithTwoCards = () => {
+  const p = pageWithCard();
+  fill(p, CARD2.x, CARD2.y, CARD2.width, CARD2.height, GREEN);
+  return p;
+};
+
+/** clicks "프로젝트 저장" and returns the downloaded file's text */
+export async function saveProjectFile(page: Page): Promise<string> {
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "프로젝트 저장" }).click();
+  const d = await download;
+  expect(d.suggestedFilename()).toMatch(/\.slc\.json$/);
+  return (await import("node:fs")).readFileSync(await d.path(), "utf8");
+}
+
+export const openProjectFile = (page: Page, text: string, name = "mockup.slc.json") =>
+  page.getByTestId("project-input").setInputFiles({ name, mimeType: "application/json", buffer: Buffer.from(text) });
+
+/** layer names as listed in the panel, front-most first */
+export const panelNames = (page: Page) => page.getByTestId("layer-item").allInnerTexts().then((t) => t.map((s) => s.trim()));
+
+/** the keys currently in the page's IndexedDB blob store */
+export const idbKeys = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<string[]>((resolve, reject) => {
+        const open = indexedDB.open("screenshot-layer-canvas");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const req = db.transaction("blobs").objectStore("blobs").getAllKeys();
+          req.onsuccess = () => {
+            db.close();
+            resolve(req.result.map(String));
+          };
+        };
+      }),
+  );
+
+/** drags the layer whose centre is at image point `from` by (dx, dy) original pixels, at the current zoom */
+export async function dragLayerBy(page: Page, from: { x: number; y: number }, dx: number, dy: number) {
+  const a = await clientOf(page, from.x, from.y);
+  const b = await clientOf(page, from.x + dx, from.y + dy);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 6 });
+  await page.mouse.move(b.x, b.y, { steps: 6 });
+  await page.mouse.up();
+}
+
+export const pixelAt = async (page: Page, x: number, y: number) => {
+  const c = await clientOf(page, x, y);
+  return (await konvaPixel(page, c.x, c.y)).rgba;
+};
+
+/** Konva repaints a frame after the store changes, so a pixel is polled instead of read once. */
+export const expectPixel = (page: Page, x: number, y: number, rgba: number[]) =>
+  expect.poll(() => pixelAt(page, x, y), { timeout: 5000, message: `pixel at image (${x}, ${y})` }).toEqual(rgba);
