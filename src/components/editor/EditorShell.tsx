@@ -1,11 +1,13 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { imageFromClipboard } from "@/features/import-image/clipboard";
 import { checkImageFile, importImage } from "@/features/import-image/import-image";
 import { parseProjectFile } from "@/features/project-persistence/project-file";
 import { loadProjectText, saveProjectText } from "@/features/project-persistence/project-io";
 import { canvasCodec } from "@/lib/image/canvas-codec";
+import { isTypingTarget } from "@/lib/dom";
 import { getBlobStore } from "@/lib/storage/browser-blob-store";
 import { History } from "@/store/history";
 import { Project } from "@/lib/project/schema";
@@ -99,6 +101,21 @@ export default function EditorShell() {
     if (unsaved) setIncoming(next);
     else void run(next);
   };
+
+  // Ctrl/⌘+V with an image on the clipboard loads it exactly like an upload, including the "discard current work?" question
+  const requestRef = useRef(request);
+  requestRef.current = request;
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      const file = imageFromClipboard(e.clipboardData);
+      if (!file) return;
+      e.preventDefault();
+      void requestRef.current({ kind: "image", file });
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
 
   const pickFrom = (kind: Incoming["kind"]) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
