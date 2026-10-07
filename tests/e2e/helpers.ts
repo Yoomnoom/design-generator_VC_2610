@@ -215,3 +215,81 @@ export const pixelAt = async (page: Page, x: number, y: number) => {
 /** Konva repaints a frame after the store changes, so a pixel is polled instead of read once. */
 export const expectPixel = (page: Page, x: number, y: number, rgba: number[]) =>
   expect.poll(() => pixelAt(page, x, y), { timeout: 5000, message: `pixel at image (${x}, ${y})` }).toEqual(rgba);
+
+/* ---- a screenshot that looks like a real web app: gradient page, shadowed cards, buttons, text bars ---- */
+
+export type CaptureRects = Record<string, { x: number; y: number; width: number; height: number }>;
+
+/** Draws the capture in the browser (gradients and blurred shadows are the point) and returns it as a PNG with the
+ *  rectangles of its parts, in original pixels. Layout scales with the image so any size works. */
+export async function realisticCapture(page: Page, W: number, H: number): Promise<{ png: Buffer; rects: CaptureRects }> {
+  const out = await page.evaluate(
+    async ([W, H]) => {
+      const u = H / 600; // one design unit in pixels
+      const ox = Math.round((W - 960 * u) / 2); // content is centred when the image is wider than 960:600
+      const c = new OffscreenCanvas(W, H);
+      const g = c.getContext("2d")!;
+      const px = (n: number) => Math.round(n * u);
+      const R = (x: number, y: number, w: number, h: number) => ({ x: ox + px(x), y: px(y), width: px(w), height: px(h) });
+
+      const bg = g.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, "#f4f6ff");
+      bg.addColorStop(1, "#d3def8");
+      g.fillStyle = bg;
+      g.fillRect(0, 0, W, H);
+
+      const box = (r: { x: number; y: number; width: number; height: number }, radius: number, fill: string, shadow?: [number, number, string]) => {
+        g.save();
+        if (shadow) {
+          g.shadowBlur = px(shadow[0]);
+          g.shadowOffsetY = px(shadow[1]);
+          g.shadowColor = shadow[2];
+        }
+        g.fillStyle = fill;
+        g.beginPath();
+        g.roundRect(r.x, r.y, r.width, r.height, px(radius));
+        g.fill();
+        g.restore();
+      };
+      const bar = (x: number, y: number, w: number, h: number, fill = "#d5d9e2") => box(R(x, y, w, h), 5, fill);
+
+      const rects: Record<string, { x: number; y: number; width: number; height: number }> = {};
+      rects.header = { x: 0, y: 0, width: W, height: px(64) };
+      g.save();
+      g.shadowBlur = px(12);
+      g.shadowOffsetY = px(2);
+      g.shadowColor = "rgba(20,30,60,0.14)";
+      g.fillStyle = "#ffffff";
+      g.fillRect(0, 0, W, px(64));
+      g.restore();
+      box(R(24, 18, 28, 28), 14, "#4f5bd5");
+      bar(66, 26, 90, 12, "#c9ced9");
+      for (const x of [200, 270, 340]) bar(x, 28, 48, 9);
+
+      const thumbs = ["#cfe9ee", "#f4dcd3", "#e3e1f7"];
+      for (let i = 0; i < 3; i++) {
+        const x = 60 + i * 300;
+        rects[`card${i}`] = R(x, 110, 240, 220);
+        box(rects[`card${i}`], 14, "#ffffff", [28, 10, "rgba(30,40,90,0.22)"]);
+        box(R(x + 16, 126, 208, 90), 8, thumbs[i]);
+        bar(x + 16, 232, 170, 10);
+        bar(x + 16, 252, 112, 10);
+        rects[`button${i}`] = R(x + 16, 288, 96, 30);
+        box(rects[`button${i}`], 8, "#4f5bd5");
+        bar(x + 36, 299, 56, 8, "#ffffff");
+      }
+      rects.thumb0 = R(76, 126, 208, 90);
+      rects.textbar0 = R(76, 232, 170, 10);
+      rects.wide = R(60, 380, 840, 170);
+      box(rects.wide, 14, "#ffffff", [28, 10, "rgba(30,40,90,0.22)"]);
+      for (let i = 0; i < 12; i++) bar(90 + i * 60, 520 - (30 + ((i * 37) % 90)), 36, 30 + ((i * 37) % 90), i % 3 === 0 ? "#4f5bd5" : "#c4c9f0");
+
+      const bytes = new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
+      let s = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return { base64: btoa(s), rects };
+    },
+    [W, H],
+  );
+  return { png: Buffer.from(out.base64, "base64"), rects: out.rects as CaptureRects };
+}

@@ -1,0 +1,62 @@
+{
+  "header": {
+    "x": 0,
+    "y": 0,
+    "width": 960,
+    "height": 64
+  },
+  "card0": {
+    "x": 60,
+    "y": 110,
+    "width": 240,
+    "height": 220
+  },
+  "button0": {
+    "x": 76,
+    "y": 288,
+    "width": 96,
+    "height": 30
+  },
+  "card1": {
+    "x": 360,
+    "y": 110,
+    "width": 240,
+    "height": 220
+  },
+  "button1": {
+    "x": 376,
+    "y": 288,
+    "width": 96,
+    "height": 30
+  },
+  "card2": {
+    "x": 660,
+    "y": 110,
+    "width": 240,
+    "height": 220
+  },
+  "button2": {
+    "x": 676,
+    "y": 288,
+    "width": 96,
+    "height": 30
+  },
+  "thumb0": {
+    "x": 76,
+    "y": 126,
+    "width": 208,
+    "height": 90
+  },
+  "textbar0": {
+    "x": 76,
+    "y": 232,
+    "width": 170,
+    "height": 10
+  },
+  "wide": {
+    "x": 60,
+    "y": 380,
+    "width": 840,
+    "height": 170
+  }
+}
