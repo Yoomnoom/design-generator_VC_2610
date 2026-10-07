@@ -46,7 +46,9 @@ export const splitPage = (): RawImage => {
   return img;
 };
 
-export const CARD = { x: 10, y: 10, width: 20, height: 10 };
+export const solidPage = (w: number, h: number): RawImage => solid(w, h, GRAY);
+
+export const CARD ={ x: 10, y: 10, width: 20, height: 10 };
 
 export function storeWith(raw: RawImage = pageWithCard(), fileName = "capture.png") {
   const store = createEditorStore({ genId: sequentialIds() });

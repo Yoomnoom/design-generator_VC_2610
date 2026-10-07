@@ -1,3 +1,5 @@
+import EditorShell from "@/components/editor/EditorShell";
+
 export default function Page() {
-  return <main className="p-6">Screenshot Layer Canvas</main>;
+  return <EditorShell />;
 }
