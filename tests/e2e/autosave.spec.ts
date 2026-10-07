@@ -49,6 +49,19 @@ const savedLatest = async (page: Page) => {
     .toBe(true);
   await expect(autosaveStatus(page)).toHaveAttribute("data-saving", "no");
 };
+/** Waits until the stored copy satisfies `check`. Used instead of "a save finished after time X": a restore schedules a save of its
+ *  own, so a later save time can belong to the state before the edit the test just made. */
+const recordHolds = (page: Page, check: (project: any) => boolean, what: string) =>
+  expect
+    .poll(
+      async () => {
+        const rec = (await idbRecord(page)) as { project?: unknown } | undefined;
+        return !!rec?.project && check(rec.project);
+      },
+      { timeout: 20000, message: what },
+    )
+    .toBe(true);
+const layerCount = (project: any) => project.screens[0].layers.length;
 const savedAfterEdit = async (page: Page) => {
   await waitForAutosave(page);
   return savedAtOf(page);
@@ -84,11 +97,10 @@ test.describe("saving as you go", () => {
 
   test("it follows later edits", async ({ page }) => {
     await richProject(page);
-    const first = await savedAfterEdit(page);
+    await savedAfterEdit(page);
     await page.getByTestId("layer-item").first().click();
     await page.getByRole("button", { name: "복제" }).click();
-    await waitForAutosave(page, first);
-    expect(((await idbRecord(page)) as { project: { screens: { layers: unknown[] }[] } }).project.screens[0].layers).toHaveLength(3);
+    await recordHolds(page, (pr) => layerCount(pr) === 3, "the stored copy to have three layers");
   });
 });
 
@@ -169,12 +181,10 @@ test.describe("restoring", () => {
     await autosaveReady(page);
     await page.getByRole("button", { name: "복원" }).click();
     await expect(page.getByTestId("screen-label")).toBeVisible();
-    const was = await savedAtOf(page);
     await page.getByTestId("layer-item").first().click();
     await page.getByTestId("prop-name").fill("renamed after restore");
     await page.getByTestId("prop-name").press("Enter");
-    await waitForAutosave(page, was);
-    expect(JSON.stringify(await idbRecord(page))).toContain("renamed after restore");
+    await recordHolds(page, (pr) => JSON.stringify(pr).includes("renamed after restore"), "the stored copy to hold the new name");
     await page.keyboard.press("Control+z");
     expect(await panelNames(page)).not.toContain("renamed after restore");
     await page.keyboard.press("Control+z"); // nothing earlier than the restore to go back to
@@ -306,9 +316,8 @@ test.describe("what starting something new does to the stored copy", () => {
     await autosaveReady(page);
     await page.getByRole("button", { name: "복원" }).click();
     await expect(page.getByTestId("screen-label")).toBeVisible();
-    const was = await savedAtOf(page);
     await uploadPng(page, blank(333, 222, [20, 30, 40, 255]), "brand-new.png"); // nothing unsaved, so no question
-    await waitForAutosave(page, was);
+    await recordHolds(page, (pr) => pr.name === "brand-new", "the stored copy to be the new image");
     await page.reload();
     await autosaveReady(page);
     await expect(page.getByTestId("restore-summary")).toContainText("brand-new");
@@ -326,10 +335,9 @@ test.describe("what starting something new does to the stored copy", () => {
     await openProjectFile(page, fileText, "from-file.slc.json");
     await confirmReplace(page);
     await expect(page.getByTestId("screen-label")).toContainText(`${PAGE.width} × ${PAGE.height}`);
-    const was = await savedAtOf(page);
     await page.getByTestId("layer-item").first().click();
     await page.getByRole("button", { name: "복제" }).click();
-    await waitForAutosave(page, was);
+    await recordHolds(page, (pr) => pr.name === "rich" && layerCount(pr) === 3, "the stored copy to be the opened project with its new layer");
     await page.reload();
     await autosaveReady(page);
     await expect(page.getByTestId("restore-summary")).toContainText("rich"); // the opened project, not the one before it
@@ -410,10 +418,9 @@ test.describe("more than one tab", () => {
 
     await other.getByRole("button", { name: "복원" }).click();
     await expect(other.getByTestId("screen-label")).toContainText(`${PAGE.width} × ${PAGE.height}`);
-    const was = await savedAtOf(other);
     await other.getByTestId("layer-item").first().click();
     await other.getByRole("button", { name: "복제" }).click();
-    await waitForAutosave(other, was);
+    await recordHolds(other, (pr) => layerCount(pr) === 3, "the new owner's save of the restored work plus a copy");
   });
 
   test("a second tab that has just become the owner and declines the offer keeps its own work, saved", async ({ page, context }) => {

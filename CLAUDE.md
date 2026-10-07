@@ -52,6 +52,7 @@ Next.js App Router, TypeScript, React, Tailwind CSS, Konva(react-konva), Zustand
 - 커밋 전에 타입 검사(`npx tsc --noEmit`)·단위 테스트(`npm test`)·E2E(`npx playwright test`)가 모두 통과해야 한다.
 - 프로덕션 빌드 E2E: `NEXT_PUBLIC_E2E=1 npm run build` 뒤 `PW_PROD=1 npx playwright test` (`next start`, 포트 3100). 테스트용 `window.__slc`는 이 빌드와 개발 서버에서만 노출된다.
 - 새로고침이 있는 E2E는 `reloadAndDiscard(page)`로 "복원할까요?" 질문에 "버리기"를 답하고 시작한다(복원하는 테스트는 직접 새로고침). 임시저장 E2E는 "저장이 한 번 있었다"가 아니라 **저장본이 현재 프로젝트와 같아질 때까지**(`savedLatest`) 기다린다(부하가 걸리면 중간 상태가 먼저 저장된다).
+- E2E 한도는 테스트 60초, `expect` 10초다(같은 스위트가 이 기계에서 2.5~7분으로 흔들렸다). 앱이 얼마나 빠른지는 타임아웃이 아니라 성능 측정 스펙이 맡는다. 한 번 실패하면 단독·반복 실행으로 부하 때문인지 진짜 경합인지 가리고, 경합이면 테스트가 *현재 상태*를 기다리게 고친다.
 - 성능 측정(선택): `PW_PERF=1 npx playwright test tests/e2e/perf.spec.ts`
 - 핵심 로직(마이그레이션, 좌표 변환, 숨김·잠금의 PNG 반영, 비교 중 편집 차단)은 변이 검사로 테스트가 실제로 실패하는지 확인한다.
 - 화면에 보이는 것은 스크린샷을 직접 열어 확인한다. DOM에 존재하는지만으로는 가려지거나 겹친 것을 못 잡는다.
