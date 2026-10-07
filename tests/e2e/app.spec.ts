@@ -1,7 +1,7 @@
 import { Page, expect, test } from "@playwright/test";
 import fs from "node:fs";
 import {
-  CARD, GRAY, PAGE, blank, clientOf, dragImageRect, editor, encodePng, konvaPixel, openApp, pageWithCard, pickTool, readPngSize, splitPage, upload, uploadPng, zoomTo,
+  CARD, GRAY, PAGE, blank, clientOf, dragImageRect, editor, encodePng, konvaPixel, konvaPixels, openApp, pageWithCard, pickTool, readPngSize, splitPage, upload, uploadPng, zoomTo,
 } from "./helpers";
 
 const cardRect = { from: { x: CARD.x, y: CARD.y }, to: { x: CARD.x + CARD.width, y: CARD.y + CARD.height } };
@@ -138,13 +138,14 @@ test.describe("what is actually visible", () => {
       // every CSS pixel in and around the old spot, edges included, must be background gray: no blue, no red
       const tl = await clientOf(page, CARD.x, CARD.y);
       const br = await clientOf(page, CARD.x + CARD.width, CARD.y + CARD.height);
+      const points: { x: number; y: number }[] = [];
+      for (let x = Math.floor(tl.x) - 3; x <= Math.ceil(br.x) + 3; x += 1)
+        for (const y of [Math.floor(tl.y) - 3, Math.floor(tl.y), Math.floor(br.y) - 1, Math.floor(br.y), Math.ceil(br.y) + 3]) points.push({ x, y });
+      const colours = await konvaPixels(page, points); // one round trip for all of them
       const bad: string[] = [];
-      for (let x = Math.floor(tl.x) - 3; x <= Math.ceil(br.x) + 3; x += 1) {
-        for (const y of [Math.floor(tl.y) - 3, Math.floor(tl.y), Math.floor(br.y) - 1, Math.floor(br.y), Math.ceil(br.y) + 3]) {
-          const [r, g, b] = (await konvaPixel(page, x, y)).rgba;
-          if (Math.abs(r - 240) > 3 || Math.abs(g - 240) > 3 || Math.abs(b - 240) > 3) bad.push(`(${x},${y}) rgb(${r},${g},${b})`);
-        }
-      }
+      colours.forEach(([r, g, b], i) => {
+        if (Math.abs(r - 240) > 3 || Math.abs(g - 240) > 3 || Math.abs(b - 240) > 3) bad.push(`(${points[i].x},${points[i].y}) rgb(${r},${g},${b})`);
+      });
       expect(bad.slice(0, 5)).toEqual([]);
     });
   }

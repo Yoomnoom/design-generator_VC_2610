@@ -260,3 +260,56 @@ test.describe("saving and opening", () => {
     expect((await firstLayer(page)).transform.scaleX).toBeGreaterThan(1);
   });
 });
+
+test.describe("the exported edge of a rotated layer is smooth", () => {
+  /** how many of the pixels along the top edge (right half: the red marker sits in the left corner) are a mix of card blue and page gray */
+  async function mixedAlongTopEdge(page: Page, png: Buffer) {
+    const { transform: t, width } = await firstLayer(page);
+    let mixed = 0;
+    for (const k of [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]) {
+      const p = layerPointToImage(t, { x: width * k, y: 0 });
+      const [r, , b] = await pngPixelAt(page, png, Math.floor(p.x), Math.floor(p.y));
+      if (r > 10 && r < 230 && b > 240) mixed++; // blue (r 0) over gray (r 240): in between is the soft edge
+    }
+    return mixed;
+  }
+
+  test("tilted by hand, the edge pixels are part card, part page", async ({ page }) => {
+    await withLayer(page, 1);
+    const handle = await handleAt(page, "rotate");
+    const c = await clientOf(page, ...(Object.values(await inside(page, { x: CARD.width / 2, y: CARD.height / 2 })) as [number, number]));
+    await dragClient(page, handle, { x: c.x + 120, y: c.y - 70 }); // about 30° clockwise
+    const { transform: t } = await firstLayer(page);
+    expect(t.rotation).toBeGreaterThan(15);
+    expect(t.rotation).toBeLessThan(60);
+    const png = await exportPngBytes(page);
+    expect(readPngSize(png)).toMatchObject({ width: PAGE.width, height: PAGE.height }); // the output size rule is untouched
+    expect(await mixedAlongTopEdge(page, png)).toBeGreaterThanOrEqual(5);
+  });
+
+  test("a layer only moved, or turned a quarter, keeps hard edges: no mixed pixels along its edge", async ({ page }) => {
+    await withLayer(page, 1);
+    const handle = await handleAt(page, "rotate");
+    const c = await clientOf(page, ...(Object.values(await inside(page, { x: CARD.width / 2, y: CARD.height / 2 })) as [number, number]));
+    const radius = Math.hypot(handle.x - c.x, handle.y - c.y);
+    await dragClient(page, handle, { x: c.x + radius, y: c.y }); // about 90°
+    // make it exactly 90° and put its corner on a whole pixel, as a quarter turn that lands on the grid
+    await page.evaluate(() => {
+      const st = (window as any).__slc.getState();
+      const l = st.history.present.screens[0].layers[0];
+      st.transformLayer(l.id, { x: 500, y: 300, scaleX: 1, scaleY: 1, rotation: 90 });
+    });
+    const png = await exportPngBytes(page);
+    const { transform: t, width, height } = await firstLayer(page);
+    expect(t).toEqual({ x: 500, y: 300, scaleX: 1, scaleY: 1, rotation: 90 });
+    // every pixel in a band across the card edge is a pure colour
+    const left = 500 - height; // a quarter turn puts the card left of x = 500, `height` wide and `width` tall
+    for (const y of [310, 330, 400, 500]) {
+      for (const x of [left - 2, left - 1, left, left + 1, 498, 499, 500, 501]) {
+        const [r, g, b] = await pngPixelAt(page, png, x, y);
+        expect([[0, 0, 255], [255, 0, 0], [240, 240, 240]]).toContainEqual([r, g, b]); // card blue, its red corner marker, or page gray: never a mix
+      }
+    }
+    expect(width).toBe(CARD.width);
+  });
+});

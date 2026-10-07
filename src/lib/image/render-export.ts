@@ -68,9 +68,17 @@ function drawMoved(out: RawImage, layer: RenderLayer) {
   }
 }
 
-/** A scaled and/or rotated layer. Every output pixel whose centre lies inside the placed layer is traced back to the
- *  bitmap and filled by bilinear sampling (premultiplied, so a transparent edge does not bleed colour into its neighbours).
- *  A quarter turn or a whole-number scale-down of an exact grid lands on pixel centres, so it stays sharp. */
+/** Samples per side for the coverage of an edge pixel (4 × 4 = 16 samples, 17 distinct coverages). */
+const EDGE_SAMPLES = 4;
+
+/** A scaled and/or rotated layer, with anti-aliased edges.
+ *  Each output pixel is traced back into the bitmap (inverse of T · R · S). Its colour is a bilinear sample (premultiplied, so a
+ *  transparent edge does not bleed colour into its neighbours) at the pixel's centre, held inside the bitmap. Its alpha is
+ *  multiplied by the share of the pixel the layer covers, so an edge that cuts through a pixel gives a partly transparent pixel
+ *  of the layer's own colour instead of a stair step.
+ *  A pixel the layer covers completely, or not at all, is decided from its four corners with no sampling; an edge that falls
+ *  exactly on the pixel grid (quarter turns, whole-number scales, whole-number positions) has no pixel in between, so such a
+ *  layer comes out exactly as a hard-edged copy would. */
 function drawTransformed(out: RawImage, layer: RenderLayer, t: LayerTransform) {
   const { image, opacity } = layer;
   const b = layerBounds(t, image.width, image.height);
@@ -80,17 +88,40 @@ function drawTransformed(out: RawImage, layer: RenderLayer, t: LayerTransform) {
   const px = new Uint8ClampedArray(4);
   const { data, width: iw, height: ih } = image;
 
+  // a point of the output, in the bitmap's own pixels
+  const lx = (u: number, v: number) => (cos * (u - t.x) + sin * (v - t.y)) / t.scaleX;
+  const ly = (u: number, v: number) => (-sin * (u - t.x) + cos * (v - t.y)) / t.scaleY;
+  const step = 1 / EDGE_SAMPLES;
+
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
-      // the output pixel's centre, traced back into the bitmap's own pixels (inverse of T · R · S)
-      const dx = x + 0.5 - t.x;
-      const dy = y + 0.5 - t.y;
-      const lx = (cos * dx + sin * dy) / t.scaleX;
-      const ly = (-sin * dx + cos * dy) / t.scaleY;
-      if (lx < 0 || ly < 0 || lx >= iw || ly >= ih) continue; // centre outside the layer: not part of it
+      const a0 = lx(x, y), a1 = lx(x + 1, y), a2 = lx(x, y + 1), a3 = lx(x + 1, y + 1);
+      const b0 = ly(x, y), b1 = ly(x + 1, y), b2 = ly(x, y + 1), b3 = ly(x + 1, y + 1);
+      // all four corners beyond the same side of the bitmap: the pixel is outside it
+      if ((a0 <= 0 && a1 <= 0 && a2 <= 0 && a3 <= 0) || (a0 >= iw && a1 >= iw && a2 >= iw && a3 >= iw)) continue;
+      if ((b0 <= 0 && b1 <= 0 && b2 <= 0 && b3 <= 0) || (b0 >= ih && b1 >= ih && b2 >= ih && b3 >= ih)) continue;
 
+      let coverage = 1;
+      const wholly = a0 >= 0 && a1 >= 0 && a2 >= 0 && a3 >= 0 && a0 <= iw && a1 <= iw && a2 <= iw && a3 <= iw && b0 >= 0 && b1 >= 0 && b2 >= 0 && b3 >= 0 && b0 <= ih && b1 <= ih && b2 <= ih && b3 <= ih;
+      if (!wholly) {
+        // an edge cuts through this pixel: count how many of its sample points fall inside the bitmap
+        let inside = 0;
+        for (let j = 0; j < EDGE_SAMPLES; j++) {
+          for (let i = 0; i < EDGE_SAMPLES; i++) {
+            const u = x + (i + 0.5) * step, v = y + (j + 0.5) * step;
+            const sx = lx(u, v), sy = ly(u, v);
+            if (sx >= 0 && sx < iw && sy >= 0 && sy < ih) inside++;
+          }
+        }
+        if (inside === 0) continue;
+        coverage = inside / (EDGE_SAMPLES * EDGE_SAMPLES);
+      }
+
+      // colour at the pixel's centre, held inside the bitmap so a pixel that only touches the edge takes the edge's colour
+      const cx = Math.min(Math.max(lx(x + 0.5, y + 0.5), 0), iw);
+      const cy = Math.min(Math.max(ly(x + 0.5, y + 0.5), 0), ih);
       // bilinear between the four nearest pixel centres; at the edge the nearest edge pixel is used
-      const fx = lx - 0.5, fy = ly - 0.5;
+      const fx = cx - 0.5, fy = cy - 0.5;
       const ix = Math.floor(fx), iy = Math.floor(fy);
       const wx = fx - ix, wy = fy - iy;
       const xa = Math.min(Math.max(ix, 0), iw - 1), xb = Math.min(Math.max(ix + 1, 0), iw - 1);
@@ -113,7 +144,7 @@ function drawTransformed(out: RawImage, layer: RenderLayer, t: LayerTransform) {
       px[0] = r / a;
       px[1] = g / a;
       px[2] = bl / a;
-      px[3] = a * 255;
+      px[3] = a * 255 * coverage;
       blend(out.data, (y * out.width + x) * 4, px, 0, opacity);
     }
   }

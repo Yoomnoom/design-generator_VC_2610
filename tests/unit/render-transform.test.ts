@@ -96,10 +96,12 @@ describe("scale", () => {
 });
 
 describe("rotation by other angles", () => {
-  test("45°: the covered area is the area of the bitmap, to within a few percent", () => {
+  test("45°: the covered area (alpha-weighted, so an edge pixel counts by how much of it is covered) is the area of the bitmap", () => {
     const out = render([layer(solid(20, 20, A), { x: 30, y: 5, rotation: 45 })], 60, 40);
-    expect(painted(out).length).toBeGreaterThan(400 * 0.96);
-    expect(painted(out).length).toBeLessThan(400 * 1.04);
+    let area = 0;
+    for (let i = 3; i < out.data.length; i += 4) area += out.data[i] / 255;
+    expect(area).toBeGreaterThan(400 * 0.99);
+    expect(area).toBeLessThan(400 * 1.01);
     expect(getPixel(out, 30, 5 + 14)).toEqual(A); // the middle of the diamond
     expect(getPixel(out, 30, 3)).toEqual(CLEAR); // above its top corner
   });
@@ -132,10 +134,12 @@ describe("cross-checks", () => {
     expect(Array.from(turned.data)).toEqual(Array.from(still.data));
   });
 
-  test("scale 1 with a hair of rotation still draws the same shape (no pixel lost or invented at the edges)", () => {
+  test("scale 1 with a hair of rotation still covers the same area (nothing lost or invented at the edges)", () => {
     const out = render([layer(solid(10, 10, A), { x: 5, y: 5, rotation: 0.001 })]);
-    expect(painted(out).length).toBeGreaterThanOrEqual(98);
-    expect(painted(out).length).toBeLessThanOrEqual(102);
+    let area = 0;
+    for (let i = 3; i < out.data.length; i += 4) area += out.data[i] / 255;
+    expect(area).toBeGreaterThan(99.5);
+    expect(area).toBeLessThan(100.5);
   });
 
   test("opacity applies to a transformed layer too", () => {

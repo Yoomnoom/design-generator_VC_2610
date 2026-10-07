@@ -357,3 +357,13 @@ export const pngPixelAt = (page: Page, png: Buffer, x: number, y: number) =>
     },
     [png.toString("base64"), Math.round(x), Math.round(y)] as const,
   );
+
+/** many pixels of what Konva painted, read in one round trip (a loop of konvaPixel calls is slow enough to time out under load) */
+export const konvaPixels = (page: Page, points: { x: number; y: number }[]) =>
+  page.evaluate((pts) => {
+    const canvas = document.querySelector(".konvajs-content canvas") as HTMLCanvasElement;
+    const box = canvas.getBoundingClientRect();
+    const scale = canvas.width / box.width;
+    const g = canvas.getContext("2d")!;
+    return pts.map(({ x, y }) => Array.from(g.getImageData(Math.round((x - box.left) * scale), Math.round((y - box.top) * scale), 1, 1).data));
+  }, points);
