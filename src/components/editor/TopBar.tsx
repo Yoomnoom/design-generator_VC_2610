@@ -28,10 +28,10 @@ export default function TopBar({ projectName, canExport, busy, onPickImage, onOp
         {projectName ?? "새 프로젝트"}
       </div>
       <div className="flex-1" />
-      <button className="btn ghost" disabled={!canUndo} title={undoLabel ? `실행 취소: ${undoLabel}` : "실행 취소"} onClick={() => editorStore.getState().undo()}>
+      <button className="btn ghost" disabled={!canUndo} title={`${undoLabel ? `실행 취소: ${undoLabel}` : "실행 취소"} (Ctrl+Z)`} onClick={() => editorStore.getState().undo()}>
         ↶ 실행 취소
       </button>
-      <button className="btn ghost" disabled={!canRedo} title={redoLabel ? `다시 실행: ${redoLabel}` : "다시 실행"} onClick={() => editorStore.getState().redo()}>
+      <button className="btn ghost" disabled={!canRedo} title={`${redoLabel ? `다시 실행: ${redoLabel}` : "다시 실행"} (Ctrl+Shift+Z)`} onClick={() => editorStore.getState().redo()}>
         ↷ 다시 실행
       </button>
       <span className="h-5 border-l border-[#3c4048]" />

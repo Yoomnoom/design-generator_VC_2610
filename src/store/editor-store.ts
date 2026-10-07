@@ -14,6 +14,9 @@ import { ImageCache } from "./images";
 /** where a duplicated layer lands relative to its original, in original pixels */
 export const DUPLICATE_OFFSET = 16;
 
+/** a layer copied with Ctrl+C: kept inside the app only, never put on the system clipboard */
+export type LayerClipboard = { layer: BitmapLayer; pastes: number };
+
 export type Tool = "select" | "hand" | "rect" | "fill";
 
 /** an extraction waiting for the user to pick a background colour; it owns no layer, patch or history entry */
@@ -36,6 +39,7 @@ type EditorState = {
   /** a background patch picked with the fill tool, so its colour can be changed; never selected together with a layer */
   selectedPatchId: string | null;
   pendingExtraction: PendingExtraction | null;
+  layerClipboard: LayerClipboard | null;
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
 };
@@ -54,6 +58,8 @@ type EditorActions = {
   cancelLayerDrag(): void;
 
   duplicateLayer(layerId: string): string | null;
+  copyLayer(layerId: string): boolean;
+  pasteLayer(): string | null;
   deleteLayer(layerId: string): boolean;
   reorderLayer(layerId: string, direction: 1 | -1): boolean;
   setPatchColor(patchId: string, hex: string): boolean;
@@ -166,6 +172,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         selectedLayerIds: [],
         selectedPatchId: null,
         pendingExtraction: null,
+        layerClipboard: null, // it points at bitmaps of the project that was just replaced
         dragPreview: null,
       });
 
@@ -178,6 +185,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       selectedLayerIds: [],
       selectedPatchId: null,
       pendingExtraction: null,
+      layerClipboard: null,
       dragPreview: null,
 
       newProject({ fileName, raw, blob, name }) {
@@ -275,6 +283,33 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         };
         commitLayers("레이어 복제", addOnTop(screen.layers, copy));
         set({ selectedLayerIds: [copy.id], selectedPatchId: null });
+        return copy.id;
+      },
+
+      copyLayer(layerId) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer) return false;
+        set({ layerClipboard: { layer: { ...layer, crop: { ...layer.crop }, transform: { ...layer.transform } }, pastes: 0 } });
+        return true;
+      },
+
+      pasteLayer() {
+        const { layerClipboard, history, images } = get();
+        const screen = screenOf();
+        if (!layerClipboard || !history || !screen) return null;
+        const source = layerClipboard.layer;
+        if (!source.imageId || !images.has(source.imageId)) return null;
+        // each paste lands one more step down and right, so repeated pastes do not hide each other
+        const step = DUPLICATE_OFFSET * (layerClipboard.pastes + 1);
+        const copy: BitmapLayer = {
+          ...source,
+          id: genId(),
+          name: `${source.name} 복사`,
+          crop: { ...source.crop },
+          transform: { ...source.transform, x: source.transform.x + step, y: source.transform.y + step },
+        };
+        commitLayers("레이어 붙여넣기", addOnTop(screen.layers, copy));
+        set({ selectedLayerIds: [copy.id], selectedPatchId: null, layerClipboard: { ...layerClipboard, pastes: layerClipboard.pastes + 1 } });
         return copy.id;
       },
 

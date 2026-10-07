@@ -52,7 +52,7 @@ test.describe("undo / redo buttons", () => {
 
   test("the button's tooltip names the step it would undo", async ({ page }) => {
     await withCard(page);
-    await expect(topBar(page, /실행 취소/)).toHaveAttribute("title", "실행 취소: 영역 추출");
+    await expect(topBar(page, /실행 취소/)).toHaveAttribute("title", "실행 취소: 영역 추출 (Ctrl+Z)");
   });
 
   test("redo is dropped by a new edit", async ({ page }) => {

@@ -1,0 +1,55 @@
+"use client";
+
+import { useEffect } from "react";
+import { resolveShortcut } from "@/features/shortcuts/shortcuts";
+import { isTypingTarget } from "@/lib/dom";
+import { editorStore } from "@/store/use-editor-store";
+
+/** true while a modal dialog (colour question, export) is open: the editor behind it must not react to keys */
+const modalOpen = () => document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+
+/** Editor shortcuts. Nothing happens while a text control has focus or a dialog is open. */
+export function useShortcuts() {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isTypingTarget(e.target) || modalOpen()) return;
+      const action = resolveShortcut(e);
+      const st = editorStore.getState();
+      if (!action || !st.history) return;
+      const layerId = st.selectedLayerIds[0];
+
+      switch (action) {
+        case "undo":
+          st.undo();
+          break;
+        case "redo":
+          st.redo();
+          break;
+        case "delete":
+          if (!layerId || !st.deleteLayer(layerId)) return;
+          break;
+        case "duplicate":
+          if (layerId) st.duplicateLayer(layerId); // Ctrl+D is "bookmark this page" in a browser, so it is always taken
+          break;
+        case "copy":
+          if (!layerId || window.getSelection()?.toString()) return; // with text selected, Ctrl+C is the normal copy
+          st.copyLayer(layerId);
+          // A picture copied earlier would otherwise win the next Ctrl+V over the layer just copied. Best effort: needs permission.
+          void navigator.clipboard?.writeText("").catch(() => {});
+          break;
+        case "tool-select":
+          st.setTool("select");
+          break;
+        case "tool-hand":
+          st.setTool("hand");
+          break;
+        case "tool-rect":
+          st.setTool("rect");
+          break;
+      }
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+}

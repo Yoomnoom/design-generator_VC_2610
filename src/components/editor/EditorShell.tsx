@@ -21,6 +21,7 @@ import PropertyPanel from "./PropertyPanel";
 import SourcePanel from "./SourcePanel";
 import ToolRail from "./ToolRail";
 import TopBar from "./TopBar";
+import { useShortcuts } from "./useShortcuts";
 
 // Konva touches `window`, so the canvas is never rendered on the server
 const CanvasViewport = dynamic(() => import("./CanvasViewport"), { ssr: false, loading: () => <div className="h-full w-full" /> });
@@ -33,6 +34,7 @@ export default function EditorShell() {
   const zoom = useEditorStore((s) => s.view.zoom);
   const tool = useEditorStore((s) => s.activeTool);
 
+  useShortcuts();
   const imageInput = useRef<HTMLInputElement>(null);
   const projectInput = useRef<HTMLInputElement>(null);
   const savedHistory = useRef<History<Project> | null>(null); // the history as it was when last saved or opened
@@ -109,9 +111,12 @@ export default function EditorShell() {
     const onPaste = (e: ClipboardEvent) => {
       if (isTypingTarget(e.target)) return;
       const file = imageFromClipboard(e.clipboardData);
-      if (!file) return;
-      e.preventDefault();
-      void requestRef.current({ kind: "image", file });
+      if (file) {
+        e.preventDefault();
+        void requestRef.current({ kind: "image", file });
+      } else if (editorStore.getState().pasteLayer()) {
+        e.preventDefault(); // no picture on the clipboard: paste the layer copied inside the app, if any
+      }
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);

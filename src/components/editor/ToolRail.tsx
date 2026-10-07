@@ -4,9 +4,9 @@ import { Tool } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 
 const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
-  { id: "select", icon: "↖", label: "선택", title: "레이어를 선택하고 드래그해서 옮깁니다" },
-  { id: "hand", icon: "✋", label: "이동", title: "드래그해서 화면을 옮깁니다" },
-  { id: "rect", icon: "▱", label: "영역 추출", title: "드래그한 사각형을 이미지 레이어로 추출합니다" },
+  { id: "select", icon: "↖", label: "선택", title: "레이어를 선택하고 드래그해서 옮깁니다 (V)" },
+  { id: "hand", icon: "✋", label: "이동", title: "드래그해서 화면을 옮깁니다 (H)" },
+  { id: "rect", icon: "▱", label: "영역 추출", title: "드래그한 사각형을 이미지 레이어로 추출합니다 (R)" },
   { id: "fill", icon: "▨", label: "배경 채움", title: "추출하고 남은 배경 패치를 클릭해 색을 바꿉니다" },
 ];
 

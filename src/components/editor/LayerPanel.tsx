@@ -54,8 +54,8 @@ export default function LayerPanel() {
       <div className="mb-2.5 grid grid-cols-4 gap-1.5">
         <button className="btn mini px-0" disabled={!has || index === 0} onClick={() => act.reorderLayer(selectedId, 1)}>앞으로</button>
         <button className="btn mini px-0" disabled={!has || index === front.length - 1} onClick={() => act.reorderLayer(selectedId, -1)}>뒤로</button>
-        <button className="btn mini px-0" disabled={!has} onClick={() => act.duplicateLayer(selectedId)}>복제</button>
-        <button className="btn mini px-0" disabled={!has} onClick={() => act.deleteLayer(selectedId)}>삭제</button>
+        <button className="btn mini px-0" disabled={!has} title="복제 (Ctrl+D)" onClick={() => act.duplicateLayer(selectedId)}>복제</button>
+        <button className="btn mini px-0" disabled={!has} title="삭제 (Delete)" onClick={() => act.deleteLayer(selectedId)}>삭제</button>
       </div>
       {front.length === 0 ? (
         <p className="text-xs text-[var(--muted)]">영역 추출 도구로 사각형을 드래그하면 레이어가 생깁니다.</p>
