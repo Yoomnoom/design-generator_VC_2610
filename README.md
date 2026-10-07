@@ -1,0 +1,66 @@
+# Screenshot Layer Canvas
+
+웹·앱 스크린샷을 올려서 화면 일부를 레이어로 떼어 내고, 옮기고 고치고 도형을 더해, 원본 크기 PNG로 저장하는 브라우저 앱입니다. 디자인 파일 복원기가 아니라 **시각적 목업 편집기**입니다. 서버·계정·외부 AI·유료 API 없이 전부 브라우저 안에서 동작합니다.
+
+## 실행
+
+```bash
+npm install
+npm run dev          # http://localhost:3000
+```
+
+| 명령 | 하는 일 |
+|---|---|
+| `npm run build` / `npm start` | 프로덕션 빌드와 실행 |
+| `npx tsc --noEmit` | 타입 검사 |
+| `npm test` | 단위 테스트(Vitest) |
+| `npx playwright install chromium` | E2E용 브라우저 설치(처음 한 번) |
+| `npx playwright test` | E2E(개발 서버를 자동으로 띄움, 브라우저는 한 번에 하나) |
+| `NEXT_PUBLIC_E2E=1 npm run build` 후 `PW_PROD=1 npx playwright test` | 프로덕션 서버(`next start`)로 E2E |
+| `PW_PERF=1 npx playwright test tests/e2e/perf.spec.ts` | 성능 측정(1920×1080) |
+
+Node 22 이상. 프로젝트 파일(`*.slc.json`)과 임시저장은 브라우저(IndexedDB)와 사용자가 받는 파일에만 있습니다.
+
+## 쓰는 법
+
+1. 캡처를 올립니다(파일 선택, 끌어다 놓기, Ctrl+V). 화면 프레임은 이미지의 원본 크기입니다.
+2. **영역 추출**(R)로 사각형을 드래그하면 그 부분이 레이어가 되고 원래 자리는 배경색으로 채워집니다.
+3. 레이어를 끌어 옮기고, 모서리 점으로 크기를, 위쪽 둥근 점으로 회전을 바꿉니다.
+4. 필요하면 **선**(L)·**사각형**(M)·**원**(O)을 그리고, **스포이트**(I)로 화면의 색을 읽어 씁니다.
+5. **PNG 내보내기**로 저장합니다. 크기는 항상 업로드한 원본 크기이고, 투명한 부분은 투명 그대로입니다.
+
+## 기능
+
+**Phase 1 (MVP, 태그 `mvp`)**: 업로드, 원본 크기 프레임, 수동 사각형 추출, 레이어 선택·이동·복제·삭제·앞뒤 순서, 배경색 채움, Undo/Redo(100단계), zoom/pan, 원본 크기 PNG, 프로젝트 저장·불러오기.
+
+**Phase 1.5**: 이미지 붙여넣기, 배경 채움 개선(그림자 감지), 단축키, 레이어 잠금·숨김·이름 변경, 크기 조절·회전(안티앨리어싱), 원본/수정본 비교, 레이어 복사·붙여넣기(시스템 클립보드), 임시저장(자동 복원, 여러 탭 안전).
+
+**Phase 2** (진행 상황과 결정은 [`docs/ROADMAP_PHASE2.md`](docs/ROADMAP_PHASE2.md)): 선·도형·스포이트(벡터 레이어), 브러시·지우개, 텍스트 상자, 메모, 자동 영역 후보, 키보드 레이어 이동 등.
+
+## 단축키
+
+| 키 | 동작 |
+|---|---|
+| V / H / R | 선택 / 이동 / 영역 추출 |
+| L / M / O / I | 선 / 사각형 / 원 / 스포이트 |
+| Ctrl+Z, Ctrl+Shift+Z (Ctrl+Y) | 실행 취소 / 다시 실행 |
+| Delete | 레이어 삭제 |
+| Ctrl+D | 레이어 복제 |
+| Ctrl+C, Ctrl+V | 레이어 복사·붙여넣기(그림이 시스템 클립보드에 올라가며, 다른 곳에서 복사한 이미지는 새 이미지로 불러옵니다) |
+
+입력창에 포커스가 있거나 대화상자가 열려 있으면 단축키는 동작하지 않습니다.
+
+## 구조
+
+- `src/lib/` 순수 로직: 좌표 변환(`geometry/`), 이미지 처리·합성(`image/`), 프로젝트 스키마·검증·마이그레이션(`project/`), 저장소(`storage/`)
+- `src/store/` Zustand 스토어와 immer 패치 기반 히스토리(이미지 픽셀은 복사하지 않습니다)
+- `src/features/` 기능 단위 로직(가져오기, 내보내기, 저장·복원, 임시저장, 단축키, 클립보드)
+- `src/components/editor/` UI(Konva 캔버스는 `"use client"` + `dynamic(ssr: false)`)
+- `tests/unit`, `tests/e2e`, `tests/fixtures`(이전 빌드가 실제로 저장한 프로젝트 파일 포함)
+- 규칙과 결정은 [`CLAUDE.md`](CLAUDE.md), 변경 내용은 [`docs/CHANGELOG_1_5.md`](docs/CHANGELOG_1_5.md)
+
+## 알아둘 점
+
+- 프로젝트는 **화면 1개**만 다룹니다(다중 화면은 범위 밖).
+- 이미지 한 변은 8192px까지입니다.
+- Chromium에서 검증했습니다. Firefox·Safari·터치 입력은 확인하지 못했습니다.
