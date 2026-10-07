@@ -31,6 +31,8 @@ type EditorState = {
   view: View;
   activeTool: Tool;
   selectedLayerIds: string[];
+  /** a background patch picked with the fill tool, so its colour can be changed; never selected together with a layer */
+  selectedPatchId: string | null;
   pendingExtraction: PendingExtraction | null;
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
@@ -59,6 +61,7 @@ type EditorActions = {
   setView(view: View): void;
   setTool(tool: Tool): void;
   selectLayer(layerId: string | null): void;
+  selectPatch(patchId: string | null): void;
 };
 
 export type EditorStore = EditorState & EditorActions;
@@ -95,8 +98,16 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
 
     /** history changed by undo/redo: drop whatever no longer exists or was mid-gesture */
     const reconcile = (history: History<Project>) => {
-      const ids = new Set(history.present.screens[0].layers.map((l) => l.id));
-      set({ history, selectedLayerIds: get().selectedLayerIds.filter((id) => ids.has(id)), pendingExtraction: null, dragPreview: null });
+      const screen = history.present.screens[0];
+      const ids = new Set(screen.layers.map((l) => l.id));
+      const patch = get().selectedPatchId;
+      set({
+        history,
+        selectedLayerIds: get().selectedLayerIds.filter((id) => ids.has(id)),
+        selectedPatchId: patch && screen.backgroundPatches.some((p) => p.id === patch) ? patch : null,
+        pendingExtraction: null,
+        dragPreview: null,
+      });
     };
 
     /** layer + background patch in a single undo step; pixels are always cut from the original image */
@@ -129,6 +140,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         history: next,
         images: new Map(images).set(imageId, { raw: cropRaw(source, rect) }),
         selectedLayerIds: [layerId],
+        selectedPatchId: null,
         activeTool: "select",
         pendingExtraction: null,
       });
@@ -148,6 +160,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         view: { ...project.canvas },
         activeTool: "select",
         selectedLayerIds: [],
+        selectedPatchId: null,
         pendingExtraction: null,
         dragPreview: null,
       });
@@ -158,6 +171,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       view: { zoom: 1, panX: 0, panY: 0 },
       activeTool: "select",
       selectedLayerIds: [],
+      selectedPatchId: null,
       pendingExtraction: null,
       dragPreview: null,
 
@@ -235,7 +249,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
           layer.transform.y = y;
         });
         if (next === history) return false;
-        set({ history: next, selectedLayerIds: [layerId] });
+        set({ history: next, selectedLayerIds: [layerId], selectedPatchId: null });
         return true;
       },
 
@@ -253,7 +267,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
           transform: { ...source.transform, x: source.transform.x + DUPLICATE_OFFSET, y: source.transform.y + DUPLICATE_OFFSET },
         };
         commitLayers("레이어 복제", addOnTop(screen.layers, copy));
-        set({ selectedLayerIds: [copy.id] });
+        set({ selectedLayerIds: [copy.id], selectedPatchId: null });
         return copy.id;
       },
 
@@ -299,7 +313,11 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
 
       setView: (view) => set({ view: { ...view, zoom: clampZoom(view.zoom) } }), // not undoable: it is not an edit
       setTool: (activeTool) => set({ activeTool }),
-      selectLayer: (layerId) => set({ selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [] }),
+      selectLayer: (layerId) => set({ selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [], selectedPatchId: null }),
+      selectPatch: (patchId) => {
+        const known = patchId && screenOf()?.backgroundPatches.some((p) => p.id === patchId);
+        set({ selectedPatchId: known ? patchId : null, selectedLayerIds: [] });
+      },
     };
   });
 }
