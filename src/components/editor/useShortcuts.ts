@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+import { copyLayerToClipboard, writePngToSystemClipboard } from "@/features/layer-clipboard/layer-clipboard";
 import { resolveShortcut } from "@/features/shortcuts/shortcuts";
+import { canvasCodec } from "@/lib/image/canvas-codec";
 import { isTypingTarget } from "@/lib/dom";
 import { editorStore } from "@/store/use-editor-store";
 
@@ -33,7 +35,11 @@ export function useShortcuts() {
           break;
         case "copy":
           if (!layerId || window.getSelection()?.toString()) return; // with text selected, Ctrl+C is the normal copy
-          st.copyLayer(layerId); // kept inside the app; the system clipboard is not touched
+          // the layer's picture goes to the system clipboard; the app remembers the layer and the picture's hash.
+          // A refusal (no permission, no clipboard API) is shown to the user, never swallowed.
+          void copyLayerToClipboard({ layerId, store: editorStore, codec: canvasCodec, write: writePngToSystemClipboard }).then((r) => {
+            editorStore.getState().setNotice(r.ok ? null : r.reason);
+          });
           break;
         case "tool-select":
           st.setTool("select");

@@ -30,6 +30,14 @@ input {
   font: inherit;
 }
 
+/* The editor's own controls are not text to be selected: dragging across the canvas must not highlight a stray "−" or a label,
+   which would also stop Ctrl+C from copying a layer. Fields you type in, and a few readable values, stay selectable. */
+input,
+textarea,
+.selectable {
+  user-select: text;
+}
+
 .btn {
   height: 32px;
   border: 1px solid var(--line);

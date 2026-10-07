@@ -18,8 +18,8 @@ export const DUPLICATE_OFFSET = 16;
 /** longest layer name kept; a longer one is cut */
 export const MAX_LAYER_NAME = 60;
 
-/** a layer copied with Ctrl+C: kept inside the app only, never put on the system clipboard */
-export type LayerClipboard = { layer: BitmapLayer; pastes: number };
+/** a layer copied with Ctrl+C. The system clipboard holds its picture; the app keeps the layer itself and the picture's hash. */
+export type LayerClipboard = { layer: BitmapLayer; pastes: number; /** hash of the picture put on the system clipboard with it ("" when there is none) */ hash: string };
 
 /** how the screen is shown: the edited result, the untouched original, or both side by side.
  *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
@@ -48,6 +48,7 @@ type EditorState = {
   selectedPatchId: string | null;
   pendingExtraction: PendingExtraction | null;
   layerClipboard: LayerClipboard | null;
+  notice: string | null;
   compareMode: CompareMode;
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
@@ -67,9 +68,10 @@ type EditorActions = {
   cancelLayerDrag(): void;
 
   duplicateLayer(layerId: string): string | null;
-  copyLayer(layerId: string): boolean;
-  /** forget the layer copied inside the app (the window was left, so the system clipboard may have changed) */
+  copyLayer(layerId: string, hash?: string): boolean;
   clearLayerClipboard(): void;
+  /** a message for the user about something that did not work (shown until dismissed) */
+  setNotice(message: string | null): void;
   pasteLayer(): string | null;
   deleteLayer(layerId: string): boolean;
   reorderLayer(layerId: string, direction: 1 | -1): boolean;
@@ -222,6 +224,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       selectedPatchId: null,
       pendingExtraction: null,
       layerClipboard: null,
+      notice: null,
       compareMode: "off",
       dragPreview: null,
 
@@ -329,14 +332,15 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         return copy.id;
       },
 
-      copyLayer(layerId) {
+      copyLayer(layerId, hash = "") {
         const layer = screenOf()?.layers.find((l) => l.id === layerId);
         if (!layer) return false;
-        set({ layerClipboard: { layer: { ...layer, crop: { ...layer.crop }, transform: { ...layer.transform } }, pastes: 0 } });
+        set({ layerClipboard: { layer: { ...layer, crop: { ...layer.crop }, transform: { ...layer.transform } }, pastes: 0, hash } });
         return true;
       },
 
       clearLayerClipboard: () => set({ layerClipboard: null }),
+      setNotice: (notice) => set({ notice }),
 
       pasteLayer() {
         const { layerClipboard, history, images } = get();

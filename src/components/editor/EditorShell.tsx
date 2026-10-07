@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
+import { decidePaste } from "@/features/layer-clipboard/layer-clipboard";
 import { imageFromClipboard } from "@/features/import-image/clipboard";
 import { checkImageFile, importImage } from "@/features/import-image/import-image";
 import { parseProjectFile } from "@/features/project-persistence/project-file";
@@ -20,6 +21,7 @@ import LayerPanel from "./LayerPanel";
 import PropertyPanel from "./PropertyPanel";
 import SourcePanel from "./SourcePanel";
 import ToolRail from "./ToolRail";
+import Notices from "./Notices";
 import TopBar from "./TopBar";
 import { useShortcuts } from "./useShortcuts";
 
@@ -104,32 +106,24 @@ export default function EditorShell() {
     else void run(next);
   };
 
-  // Ctrl/⌘+V. A layer copied inside the app is pasted as a layer. Otherwise a picture on the system clipboard is loaded exactly like
-  // an upload, including the "discard current work?" question; with neither, nothing happens.
-  // The app never writes to the system clipboard, so it cannot know whether something else was copied after its own copy.
-  // Leaving the window is what could have changed that, so the in-app copy is forgotten then and Ctrl+V reads the system clipboard.
+  // Ctrl/⌘+V needs a picture on the system clipboard; with none, nothing happens. A picture whose hash is the one the app put there
+  // when a layer was copied is pasted as that layer. Any other picture is loaded exactly like an upload, including the
+  // "discard current work?" question. (Leaving the window changes nothing: the copy stays until something else is copied.)
   const requestRef = useRef(request);
   requestRef.current = request;
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       if (isTypingTarget(e.target)) return;
-      if (editorStore.getState().pasteLayer()) {
-        e.preventDefault();
-        return;
-      }
       const file = imageFromClipboard(e.clipboardData);
-      if (file) {
-        e.preventDefault();
-        void requestRef.current({ kind: "image", file });
-      }
+      if (!file) return; // no picture: nothing is pasted
+      e.preventDefault();
+      void decidePaste({ file, store: editorStore, codec: canvasCodec }).then((what) => {
+        if (what === "layer") editorStore.getState().pasteLayer();
+        else if (what === "image") void requestRef.current({ kind: "image", file });
+      });
     };
-    const onBlur = () => editorStore.getState().clearLayerClipboard();
     document.addEventListener("paste", onPaste);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      document.removeEventListener("paste", onPaste);
-      window.removeEventListener("blur", onBlur);
-    };
+    return () => document.removeEventListener("paste", onPaste);
   }, []);
 
   const pickFrom = (kind: Incoming["kind"]) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,7 +133,7 @@ export default function EditorShell() {
   };
 
   return (
-    <div className="grid h-screen grid-rows-[54px_1fr_28px]">
+    <div className="flex h-screen select-none flex-col">
       <TopBar
         projectName={project?.name ?? null}
         canExport={!!project}
@@ -149,10 +143,11 @@ export default function EditorShell() {
         onSaveProject={() => void saveProject()}
         onExport={() => setExporting(true)}
       />
+      <Notices />
       <input ref={imageInput} data-testid="file-input" type="file" accept="image/png,image/jpeg" className="hidden" onChange={pickFrom("image")} />
       <input ref={projectInput} data-testid="project-input" type="file" accept=".json,application/json" className="hidden" onChange={pickFrom("project")} />
 
-      <main className="grid min-h-0 grid-cols-[76px_248px_minmax(420px,1fr)_282px]">
+      <main className="grid min-h-0 flex-1 grid-cols-[76px_248px_minmax(420px,1fr)_282px]">
         <ToolRail enabled={!!project} />
         <SourcePanel
           screen={screen}
@@ -200,7 +195,7 @@ export default function EditorShell() {
         </aside>
       </main>
 
-      <footer className="flex items-center border-t border-[var(--line)] bg-white px-3 text-[11px] text-[#71767d]">
+      <footer className="flex h-7 shrink-0 items-center border-t border-[var(--line)] bg-white px-3 text-[11px] text-[#71767d]">
         <span>
           {tool === "select" ? "선택 도구 · 드래그로 레이어 이동" : tool === "hand" ? "이동 도구 · 드래그로 화면 이동" : tool === "rect" ? "영역 추출 · 드래그로 사각형 지정" : "배경 채움 · 패치를 클릭해 색 변경"}
         </span>

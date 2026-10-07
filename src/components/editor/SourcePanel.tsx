@@ -52,7 +52,7 @@ export default function SourcePanel({ screen, busy, error, replaceName, onPickFi
         <>
           <div className="panel-title">현재 화면</div>
           <div className="card text-xs">
-            <p data-testid="source-name" className="truncate font-bold" title={screen.source.fileName}>
+            <p data-testid="source-name" className="selectable truncate font-bold" title={screen.source.fileName}>
               {screen.source.fileName}
             </p>
             <p className="mt-1 text-[var(--muted)]">

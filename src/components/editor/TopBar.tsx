@@ -26,7 +26,7 @@ export default function TopBar({ projectName, canExport, busy, onPickImage, onOp
   const compare = useEditorStore((s) => s.compareMode);
   const redoLabel = useEditorStore((s) => s.history?.future[0]?.label);
   return (
-    <header className="flex items-center gap-3 border-b border-black bg-[#171a1f] px-4 text-white">
+    <header className="flex h-[54px] shrink-0 items-center gap-3 border-b border-black bg-[#171a1f] px-4 text-white">
       <div className="font-extrabold tracking-tight">
         <i className="mr-[9px] inline-block h-3 w-3 rotate-45 rounded-[3px] bg-[var(--accent2)]" />
         LayerCanvas
