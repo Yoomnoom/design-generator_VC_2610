@@ -8,6 +8,10 @@ const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
   { id: "hand", icon: "✋", label: "이동", title: "드래그해서 화면을 옮깁니다 (H)" },
   { id: "rect", icon: "▱", label: "영역 추출", title: "드래그한 사각형을 이미지 레이어로 추출합니다 (R)" },
   { id: "fill", icon: "▨", label: "배경 채움", title: "추출하고 남은 배경 패치를 클릭해 색을 바꿉니다" },
+  { id: "line", icon: "╱", label: "선", title: "드래그해서 직선을 그립니다 (L)" },
+  { id: "box", icon: "□", label: "사각형", title: "드래그해서 사각형을 그립니다 (M)" },
+  { id: "ellipse", icon: "○", label: "원", title: "드래그해서 원·타원을 그립니다 (O)" },
+  { id: "eyedropper", icon: "💧", label: "스포이트", title: "화면의 색을 읽어 그리기 색으로 씁니다 (I)" },
 ];
 
 export default function ToolRail({ enabled }: { enabled: boolean }) {

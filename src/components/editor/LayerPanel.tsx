@@ -5,6 +5,8 @@ import { sortByZ } from "@/features/layer-transform/order";
 import { RawImage } from "@/lib/image/raw-image";
 import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
+import { LayerContent } from "@/lib/project/schema";
+import { DrawCtx, contentBounds, drawContent } from "@/lib/image/vector";
 import { rawToCanvas } from "./raw-canvas";
 
 const W = 40;
@@ -33,6 +35,24 @@ function Thumb({ raw }: { raw: RawImage }) {
       style={{ width: W, height: H, backgroundImage: "conic-gradient(#ddd 25%, #fff 0 50%, #ddd 0 75%, #fff 0)", backgroundSize: "8px 8px" }}
     />
   );
+}
+
+/** the same drawing the canvas and the export use, scaled to fit the thumbnail */
+function ContentThumb({ content }: { content: LayerContent }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = ref.current!;
+    const dpr = window.devicePixelRatio || 1;
+    c.width = W * dpr;
+    c.height = H * dpr;
+    const g = c.getContext("2d")!;
+    const b = contentBounds(content);
+    const scale = Math.min((W - 6) / b.width, (H - 6) / b.height) * dpr;
+    g.translate((c.width - b.width * scale) / 2 - b.x * scale, (c.height - b.height * scale) / 2 - b.y * scale);
+    g.scale(scale, scale);
+    drawContent(g as unknown as DrawCtx, content);
+  }, [content]);
+  return <canvas ref={ref} aria-hidden data-testid="vector-thumb" className="shrink-0 rounded border border-[var(--line)] bg-white" style={{ width: W, height: H }} />;
 }
 
 const icon = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true } as const;
@@ -104,7 +124,7 @@ export default function LayerPanel() {
                   onClick={() => act.selectLayer(layer.id)}
                   className={`flex h-[38px] min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-1.5 text-left text-xs text-inherit ${layer.visible ? "" : "opacity-45"}`}
                 >
-                  {raw && <Thumb raw={raw} />}
+                  {layer.content ? <ContentThumb content={layer.content} /> : raw && <Thumb raw={raw} />}
                   <span className={`flex-1 truncate ${layer.visible ? "" : "line-through"}`}>{layer.name}</span>
                 </button>
                 <button type="button" disabled={comparing} className={iconButton} aria-pressed={!layer.visible} aria-label={layer.visible ? `${layer.name} 숨기기` : `${layer.name} 보이기`} title={layer.visible ? "숨기기" : "보이기"} onClick={() => act.setLayerVisible(layer.id, !layer.visible)}>

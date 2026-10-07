@@ -13,6 +13,25 @@ const isId = (v: unknown): v is string => isStr(v) && v.length > 0;
 const isImageId = (v: unknown): v is string => isId(v) && !/^(blob|data):/i.test(v);
 /** a sanity ceiling for a file's scale; the editor itself stops well below it */
 const MAX_ABS_SCALE = 1000;
+const isColor = (v: unknown): v is string => isStr(v) && !!hexToRgb(v);
+const MAX_SIDE = 100000;
+/** a vector layer's content: kinds, positive sizes, colours, stroke widths */
+export function contentError(c: unknown): string | null {
+  if (!isRec(c)) return "content가 객체가 아닙니다";
+  if (c.kind !== "rect" && c.kind !== "ellipse" && c.kind !== "line") return "content.kind가 올바르지 않습니다";
+  if (!isNum(c.width) || !isNum(c.height) || c.width <= 0 || c.height <= 0 || c.width > MAX_SIDE || c.height > MAX_SIDE) return "content의 width/height가 올바르지 않습니다";
+  if (!isNum(c.strokeWidth) || c.strokeWidth < 0 || c.strokeWidth > 1000) return "content.strokeWidth가 올바르지 않습니다";
+  if (c.kind === "line") {
+    if (c.direction !== "down" && c.direction !== "up") return "content.direction이 올바르지 않습니다";
+    if (c.strokeWidth <= 0) return "선의 굵기는 0보다 커야 합니다"; // a line of no width would be invisible
+    if (!isColor(c.stroke)) return "content.stroke가 색상이 아닙니다";
+    return null;
+  }
+  if (c.stroke !== null && !isColor(c.stroke)) return "content.stroke가 색상이 아닙니다";
+  if (c.fill !== null && !isColor(c.fill)) return "content.fill이 색상이 아닙니다";
+  if (c.stroke === null && c.fill === null) return "content에 채움도 테두리도 없습니다";
+  return null;
+}
 const isRect = (v: unknown): v is Rect => isRec(v) && isNum(v.x) && isNum(v.y) && isNum(v.width) && isNum(v.height) && v.width >= 0 && v.height >= 0;
 
 function layerError(l: unknown, i: number): string | null {
@@ -20,6 +39,11 @@ function layerError(l: unknown, i: number): string | null {
   if (!isRec(l)) return `${at}가 객체가 아닙니다`;
   if (!isId(l.id) || !isStr(l.name)) return `${at}.id/name이 올바르지 않습니다`;
   if (!isRect(l.crop)) return `${at}.crop이 올바르지 않습니다`;
+  if (l.content !== undefined) {
+    const e = contentError(l.content);
+    if (e) return `${at}.${e}`;
+    if (l.imageId !== undefined) return `${at}: 벡터 레이어에는 imageId가 없어야 합니다`;
+  }
   if (l.imageId !== undefined && !isImageId(l.imageId)) return `${at}.imageId가 올바르지 않습니다`;
   const t = l.transform;
   if (!isRec(t) || !isNum(t.x) || !isNum(t.y)) return `${at}.transform이 올바르지 않습니다`;

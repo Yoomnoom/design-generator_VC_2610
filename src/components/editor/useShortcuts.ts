@@ -50,6 +50,18 @@ export function useShortcuts() {
         case "tool-rect":
           st.setTool("rect");
           break;
+        case "tool-line":
+          st.setTool("line");
+          break;
+        case "tool-box":
+          st.setTool("box");
+          break;
+        case "tool-ellipse":
+          st.setTool("ellipse");
+          break;
+        case "tool-eyedropper":
+          st.setTool("eyedropper");
+          break;
       }
       e.preventDefault();
     };

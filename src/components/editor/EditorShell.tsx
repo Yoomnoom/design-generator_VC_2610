@@ -17,6 +17,7 @@ import { selectProject, selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { downloadBlob, safeName } from "./download";
 import { AutosaveBanners, AutosaveFooter } from "./AutosaveStatus";
+import DrawStylePanel from "./DrawStylePanel";
 import ExportDialog from "./ExportDialog";
 import FillColorDialog from "./FillColorDialog";
 import LayerPanel from "./LayerPanel";
@@ -207,6 +208,7 @@ export default function EditorShell() {
           {dropping && <div className="pointer-events-none absolute inset-2 rounded-xl border-2 border-dashed border-[var(--accent)] bg-[var(--soft)]/60" />}
         </section>
         <aside aria-label="레이어와 속성" className="min-h-0 overflow-auto border-l border-[var(--line)] bg-[var(--panel)]">
+          <DrawStylePanel />
           <LayerPanel />
           <PropertyPanel />
         </aside>

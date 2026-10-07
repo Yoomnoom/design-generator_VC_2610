@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { isOnlyMoved, scaledSize } from "@/lib/geometry/layer-transform";
 import { MAX_LAYER_NAME, selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
+import { LayerContent } from "@/lib/project/schema";
+import { SHAPE_LABEL } from "@/lib/image/vector";
+import { ColorField, WidthField } from "./StyleFields";
 
 /** 240, 12.5, 33.33: whole numbers without decimals, others to at most two places */
 const fmt = (n: number) => String(Number(n.toFixed(2)));
@@ -56,6 +59,35 @@ function NameField({ id, name, disabled }: { id: string; name: string; disabled:
   );
 }
 
+/** Colours and stroke width of a vector layer. Each commit is one undo step; a line has no fill and always has an outline. */
+function VectorSection({ id, content, disabled }: { id: string; content: LayerContent; disabled: boolean }) {
+  const set = (change: Partial<{ stroke: string | null; fill: string | null; strokeWidth: number }>) => editorStore.getState().setLayerContent(id, change);
+  const isLine = content.kind === "line";
+  const fill = isLine ? null : content.fill;
+  return (
+    <div data-testid="vector-section" className="mt-3 grid gap-2 border-t border-[var(--line)] pt-3">
+      <div className="text-xs font-bold">{SHAPE_LABEL[content.kind]} 모양</div>
+      <ColorField label="테두리" value={content.stroke ?? "#000000"} disabled={disabled || content.stroke === null} testId="vec-stroke" onCommit={(stroke) => set({ stroke })} />
+      {!isLine && (
+        <label className="flex items-center gap-2 pl-14 text-xs">
+          <input data-testid="vec-stroke-none" type="checkbox" disabled={disabled} checked={content.stroke === null} onChange={(e) => set({ stroke: e.target.checked ? null : "#000000" })} />
+          테두리 없음
+        </label>
+      )}
+      {!isLine && (
+        <>
+          <ColorField label="채움" value={fill ?? "#ffd84d"} disabled={disabled || fill === null} testId="vec-fill" onCommit={(c) => set({ fill: c })} />
+          <label className="flex items-center gap-2 pl-14 text-xs">
+            <input data-testid="vec-fill-none" type="checkbox" disabled={disabled} checked={fill === null} onChange={(e) => set({ fill: e.target.checked ? null : "#ffd84d" })} />
+            채움 없음
+          </label>
+        </>
+      )}
+      <WidthField value={content.strokeWidth} disabled={disabled || content.stroke === null} testId="vec-width" onCommit={(strokeWidth) => set({ strokeWidth })} />
+    </div>
+  );
+}
+
 /** Numbers for the selected layer or patch. X, Y, width and height are read-only; a layer's name and a patch's colour can be changed. */
 export default function PropertyPanel() {
   const screen = useEditorStore(selectScreen);
@@ -72,7 +104,7 @@ export default function PropertyPanel() {
   if (layer) {
     const raw = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
     const at = preview?.layerId === layer.id ? preview : layer.transform; // follows the drag live
-    const size = scaledSize(layer.transform, raw?.width ?? layer.crop.width, raw?.height ?? layer.crop.height); // as placed, after any resizing
+    const size = layer.content ? { width: layer.content.width, height: layer.content.height } : scaledSize(layer.transform, raw?.width ?? layer.crop.width, raw?.height ?? layer.crop.height); // as placed, after any resizing
     return (
       <section aria-label="선택 레이어" className="px-3.5 py-3">
         <h3 className="mb-2.5 text-[13px] font-bold">선택 레이어</h3>
@@ -89,6 +121,7 @@ export default function PropertyPanel() {
             <Field label="크기 배율" value={`${fmt(layer.transform.scaleX * 100)}% × ${fmt(layer.transform.scaleY * 100)}%`} id="prop-scale" />
           </div>
         </dl>
+        {layer.content && <VectorSection id={layer.id} content={layer.content} disabled={layer.locked || comparing} />}
         <p className="mt-2 text-[11px] text-[var(--muted)]">{layer.locked ? "잠긴 레이어는 크기와 회전을 바꿀 수 없습니다." : "선택한 레이어의 모서리 점으로 크기를, 위쪽 둥근 점으로 회전을 바꿉니다."}</p>
         <button className="btn mini mt-2 w-full" disabled={isOnlyMoved(layer.transform) || layer.locked || comparing} onClick={() => editorStore.getState().resetLayerTransform(layer.id)}>
           크기·회전 초기화

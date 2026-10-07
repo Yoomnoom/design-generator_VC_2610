@@ -1,6 +1,6 @@
 import { CURRENT_VERSION } from "./schema";
 
-/* Each entry upgrades a raw document from version N to N+1, keyed by N. Phase 2 (multi-screen) will add the next one. */
+/* Each entry upgrades a raw document from version N to N+1, keyed by N. */
 type Doc = Record<string, unknown>;
 const isRec = (v: unknown): v is Doc => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -24,6 +24,8 @@ const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
       }),
     };
   },
+  /** 2 → 3: vector layers are new and optional, so every version 2 file is already a valid version 3 file. */
+  2: (doc) => doc,
 };
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };

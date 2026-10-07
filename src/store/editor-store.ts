@@ -2,13 +2,15 @@ import { StoreApi, createStore } from "zustand/vanilla";
 import { addOnTop, moveLayer, removeLayer, sortByZ } from "@/features/layer-transform/order";
 import { View } from "@/lib/geometry/coords";
 import { isInside } from "@/lib/geometry/rect";
+import { MAX_STROKE_WIDTH, SHAPE_LABEL, withSize } from "@/lib/image/vector";
+import { contentError } from "@/lib/project/parse";
 import { LayerTransform, isOnlyMoved, sanitizeTransform } from "@/lib/geometry/layer-transform";
 import { clampZoom } from "@/lib/geometry/view-transform";
 import { cropRaw } from "@/lib/image/crop-bitmap";
 import { normalizeHex } from "@/lib/image/color";
 import { RawImage } from "@/lib/image/raw-image";
 import { sampleBackground } from "@/lib/image/sample-background";
-import { BitmapLayer, CURRENT_VERSION, Project, Rect, ScreenNode } from "@/lib/project/schema";
+import { BitmapLayer, CURRENT_VERSION, LayerContent, Project, Rect, ScreenNode } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
 
@@ -25,7 +27,14 @@ export type LayerClipboard = { layer: BitmapLayer; pastes: number; /** hash of t
  *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
 export type CompareMode = "off" | "original" | "split";
 
-export type Tool = "select" | "hand" | "rect" | "fill";
+export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper";
+
+/** the tools that drag out a new vector layer, and what each makes */
+export const SHAPE_TOOLS: Partial<Record<Tool, LayerContent["kind"]>> = { line: "line", box: "rect", ellipse: "ellipse" };
+
+/** What a new shape looks like. Not part of the project and not undoable. The eyedropper sets the colour named by `pickTarget`. */
+export type DrawStyle = { stroke: string; fill: string | null; strokeWidth: number; pickTarget: "stroke" | "fill" };
+export const DEFAULT_DRAW_STYLE: DrawStyle = { stroke: "#e5322d", fill: null, strokeWidth: 3, pickTarget: "stroke" };
 
 /** an extraction waiting for the user to pick a background colour; it owns no layer, patch or history entry */
 export type PendingExtraction = { rect: Rect; suggestedHex: string | null };
@@ -50,6 +59,7 @@ type EditorState = {
   layerClipboard: LayerClipboard | null;
   notice: string | null;
   compareMode: CompareMode;
+  drawStyle: DrawStyle;
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
 };
@@ -82,6 +92,12 @@ type EditorActions = {
   setLayerLocked(layerId: string, locked: boolean): boolean;
   renameLayer(layerId: string, name: string): boolean;
   setPatchColor(patchId: string, hex: string): boolean;
+
+  /** a new vector layer at (x, y) (its top-left, in frame pixels); one undo step */
+  addVectorLayer(content: LayerContent, x: number, y: number): string | null;
+  /** change a vector layer's look (colours, stroke width); one undo step, refused on a locked layer */
+  setLayerContent(layerId: string, change: Partial<{ stroke: string | null; fill: string | null; strokeWidth: number }>): boolean;
+  setDrawStyle(change: Partial<DrawStyle>): void;
 
   undo(): void;
   redo(): void;
@@ -118,6 +134,10 @@ function applyLayers(draft: BitmapLayer[], next: readonly BitmapLayer[]) {
     else if (existing.zIndex !== layer.zIndex) existing.zIndex = layer.zIndex;
   }
 }
+
+/** "<prefix> N" with N one past the highest already used */
+const nextNumberFor = (layers: readonly BitmapLayer[], prefix: string) =>
+  layers.reduce((max, l) => (l.name.startsWith(`${prefix} `) && /^\d+$/.test(l.name.slice(prefix.length + 1)) ? Math.max(max, Number(l.name.slice(prefix.length + 1))) : max), 0) + 1;
 
 const drawOrder = (layers: readonly BitmapLayer[]) => sortByZ(layers).map((l) => l.id).join("\n");
 
@@ -226,6 +246,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       layerClipboard: null,
       notice: null,
       compareMode: "off",
+      drawStyle: DEFAULT_DRAW_STYLE,
       dragPreview: null,
 
       newProject({ fileName, raw, blob, name }) {
@@ -347,7 +368,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         const screen = screenOf();
         if (frozen() || !layerClipboard || !history || !screen) return null;
         const source = layerClipboard.layer;
-        if (!source.imageId || !images.has(source.imageId)) return null;
+        if (!source.content && (!source.imageId || !images.has(source.imageId))) return null;
         // each paste lands one more step down and right, so repeated pastes do not hide each other
         const step = DUPLICATE_OFFSET * (layerClipboard.pastes + 1);
         const copy: BitmapLayer = {
@@ -390,9 +411,18 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         return editLayer(layerId, "레이어 크기·회전", (l) => {
           l.transform.x = next.x;
           l.transform.y = next.y;
-          l.transform.scaleX = next.scaleX;
-          l.transform.scaleY = next.scaleY;
           l.transform.rotation = next.rotation;
+          if (l.content) {
+            // a vector layer is resized through its box, never through scale: the stroke keeps its thickness
+            const box = withSize(l.content as LayerContent, l.content.width * Math.abs(next.scaleX), l.content.height * Math.abs(next.scaleY));
+            l.content.width = box.width;
+            l.content.height = box.height;
+            l.transform.scaleX = 1;
+            l.transform.scaleY = 1;
+          } else {
+            l.transform.scaleX = next.scaleX;
+            l.transform.scaleY = next.scaleY;
+          }
         });
       },
 
@@ -416,6 +446,43 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         if (!clean) return false; // a layer always has a name
         return editLayer(layerId, "레이어 이름 변경", (l) => void (l.name = clean));
       },
+
+      addVectorLayer(content, x, y) {
+        const screen = screenOf();
+        if (frozen() || !screen || contentError(content) || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+        const id = genId();
+        const label = SHAPE_LABEL[content.kind];
+        const layer: BitmapLayer = {
+          id,
+          name: `${label} ${nextNumberFor(screen.layers, label)}`,
+          crop: { x: 0, y: 0, width: 0, height: 0 },
+          content: { ...content } as LayerContent,
+          transform: { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, scaleX: 1, scaleY: 1, rotation: 0 },
+          zIndex: 0,
+          opacity: 1,
+          visible: true,
+          locked: false,
+        };
+        commitLayers(`${label} 추가`, addOnTop(screen.layers, layer));
+        set({ selectedLayerIds: [id], selectedPatchId: null, activeTool: "select" });
+        return id;
+      },
+
+      setLayerContent(layerId, change) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer?.content || layer.locked) return false;
+        const merged = { ...layer.content, ...change } as LayerContent;
+        merged.strokeWidth = Math.min(Math.max(Math.round(merged.strokeWidth * 100) / 100, merged.kind === "line" ? 0.5 : 0), MAX_STROKE_WIDTH);
+        if (contentError(merged)) return false;
+        return editLayer(layerId, "도형 속성 변경", (l) => {
+          if (!l.content) return;
+          const target = l.content as Record<string, unknown>;
+          const wanted = merged as Record<string, unknown>;
+          for (const key of ["stroke", "fill", "strokeWidth"]) if (key in wanted && target[key] !== wanted[key]) target[key] = wanted[key];
+        });
+      },
+
+      setDrawStyle: (change) => set({ drawStyle: { ...get().drawStyle, ...change } }),
 
       setPatchColor(patchId, hex) {
         const { history } = get();

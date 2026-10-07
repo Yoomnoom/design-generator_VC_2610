@@ -9,6 +9,7 @@ export default defineConfig({
   testDir: "tests/e2e",
   // The same suite has taken between 2.5 and 7 minutes on this machine depending on what else it was doing, so the limits leave
   // room for a slow run. How fast the app is is measured separately (tests/e2e/perf.spec.ts), not by these timeouts.
+  workers: 1, // one browser at a time: this machine runs short of memory with several
   timeout: 60_000,
   expect: { timeout: 10_000 },
   webServer: { command: prod ? `npx next start -p ${port}` : "npm run dev", url: `http://localhost:${port}`, reuseExistingServer: !prod },

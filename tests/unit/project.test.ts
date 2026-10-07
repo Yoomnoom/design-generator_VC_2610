@@ -67,7 +67,7 @@ describe("migrate", () => {
     expect(migrate(doc)).toEqual({ ok: true, doc });
   });
   test("a file from a newer app is refused", () => {
-    expect(errorOf(tweak((d) => (d.version = 3)))).toContain("새로운");
+    expect(errorOf(tweak((d) => (d.version = 4)))).toContain("새로운");
   });
   test.each([[undefined], ["1"], [0], [1.5]])("a bad version (%s) is refused", (v) => {
     expect(errorOf(tweak((d) => (d.version = v)))).toContain("version");

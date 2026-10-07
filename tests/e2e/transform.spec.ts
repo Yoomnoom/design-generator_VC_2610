@@ -210,7 +210,7 @@ test.describe("saving and opening", () => {
     const placed = (await firstLayer(page)).transform;
     const pngBefore = await exportPngBytes(page);
     const text = await saveProjectFile(page);
-    expect(JSON.parse(text).project.version).toBe(2);
+    expect(JSON.parse(text).project.version).toBe(3);
     expect(JSON.parse(text).project.screens[0].layers[0].transform).toEqual(placed);
 
     await reloadAndDiscard(page);
@@ -221,7 +221,7 @@ test.describe("saving and opening", () => {
     expect(pngAfter.equals(pngBefore)).toBe(true);
   });
 
-  test("a version 1 file saved by the Phase 1 app opens, shows its layers where they were, and saves as version 2", async ({ page }) => {
+  test("a version 1 file saved by the Phase 1 app opens, shows its layers where they were, and saves as the current version", async ({ page }) => {
     const v1 = fs.readFileSync("tests/fixtures/project-v1.slc.json", "utf8");
     const expected = JSON.parse(fs.readFileSync("tests/fixtures/project-v1.expected.json", "utf8")) as { layers: { name: string; x: number; y: number; zIndex: number; crop: { width: number; height: number } }[]; patches: number };
     expect(JSON.parse(v1).project.version).toBe(1);
@@ -245,7 +245,7 @@ test.describe("saving and opening", () => {
     expect(await pngPixelAt(page, png, 400, 290)).toEqual(BLUE);
 
     const saved = JSON.parse(await saveProjectFile(page));
-    expect(saved.project.version).toBe(2);
+    expect(saved.project.version).toBe(3);
     expect(saved.project.screens[0].layers).toHaveLength(2);
   });
 

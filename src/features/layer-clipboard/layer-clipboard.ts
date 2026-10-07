@@ -1,5 +1,6 @@
 import { ImageCodec } from "@/lib/image/codec";
 import { hashPixels } from "@/lib/image/hash";
+import { Rasterize, rasterizeContentAlone, rasterizeVectorLayer } from "@/lib/image/vector-raster";
 import { EditorStoreApi } from "@/store/editor-store";
 
 /* Copying a layer puts its bitmap on the system clipboard as a PNG, and the app remembers the layer together with a hash of
@@ -30,11 +31,12 @@ export const writePngToSystemClipboard: ClipboardWriter = async (png) => {
 
 /** Copies a layer: PNG to the system clipboard, then remembers the layer and the picture's hash. On failure nothing is remembered,
  *  because a paste without a matching picture on the clipboard would do nothing anyway. */
-export async function copyLayerToClipboard(args: { layerId: string; store: EditorStoreApi; codec: ImageCodec; write: ClipboardWriter }): Promise<CopyResult> {
-  const { layerId, store, codec, write } = args;
+export async function copyLayerToClipboard(args: { layerId: string; store: EditorStoreApi; codec: ImageCodec; write: ClipboardWriter; rasterize?: Rasterize }): Promise<CopyResult> {
+  const { layerId, store, codec, write, rasterize = rasterizeVectorLayer } = args;
   const state = store.getState();
   const layer = state.history?.present.screens[0].layers.find((l) => l.id === layerId);
-  const raw = layer?.imageId ? state.images.get(layer.imageId)?.raw : undefined;
+  // a vector layer has no bitmap: its picture is drawn for the clipboard (the layer itself stays a description)
+  const raw = layer?.content ? (rasterizeContentAlone(layer.content, rasterize) ?? undefined) : layer?.imageId ? state.images.get(layer.imageId)?.raw : undefined;
   if (!layer || !raw) return { ok: false, reason: "레이어를 복사하지 못했습니다. 복사할 레이어를 찾을 수 없습니다." };
   try {
     const png = await codec.encode(raw);

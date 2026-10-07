@@ -94,7 +94,7 @@ export const editor = (page: Page) =>
     return {
       view: s.view as { zoom: number; panX: number; panY: number },
       screen: screen && { x: screen.x, y: screen.y, width: screen.width, height: screen.height },
-      layers: (screen?.layers ?? []) as { id: string; name: string; crop: { x: number; y: number; width: number; height: number }; transform: { x: number; y: number }; zIndex: number }[],
+      layers: (screen?.layers ?? []) as { id: string; name: string; crop: { x: number; y: number; width: number; height: number }; transform: { x: number; y: number; scaleX: number; scaleY: number; rotation: number }; zIndex: number; imageId?: string; visible: boolean; locked: boolean; content?: any }[],
       patches: (screen?.backgroundPatches ?? []) as { rect: { x: number; y: number; width: number; height: number }; fill: string }[],
       past: (s.history?.past.length ?? 0) as number,
       selected: s.selectedLayerIds as string[],
@@ -136,7 +136,7 @@ export async function dragImageRect(page: Page, from: { x: number; y: number }, 
   if (opts.release !== false) await page.mouse.up();
 }
 
-export const pickTool = (page: Page, name: "선택" | "이동" | "영역 추출" | "배경 채움") => page.getByRole("button", { name, exact: true }).click();
+export const pickTool = (page: Page, name: "선택" | "이동" | "영역 추출" | "배경 채움" | "선" | "사각형" | "원" | "스포이트") => page.getByRole("button", { name, exact: true }).click();
 
 /** the colour of one CSS pixel of what Konva actually painted */
 export const konvaPixel = (page: Page, clientX: number, clientY: number) =>
@@ -303,8 +303,8 @@ export const firstLayer = (page: Page) =>
   page.evaluate(() => {
     const s = (window as any).__slc.getState();
     const l = s.history.present.screens[0].layers[0];
-    const raw = s.images.get(l.imageId).raw;
-    return { transform: l.transform as { x: number; y: number; scaleX: number; scaleY: number; rotation: number }, width: raw.width as number, height: raw.height as number, name: l.name as string };
+    const raw = l.imageId ? s.images.get(l.imageId).raw : null; // a vector layer has no bitmap: its size is its box
+    return { transform: l.transform as { x: number; y: number; scaleX: number; scaleY: number; rotation: number }, width: (l.content ? l.content.width : raw.width) as number, height: (l.content ? l.content.height : raw.height) as number, name: l.name as string };
   });
 
 /** a bitmap point (in the layer's own pixels) → image pixels, by the same rule the app documents: T · R · S */
@@ -359,14 +359,15 @@ export const pngPixelAt = (page: Page, png: Buffer, x: number, y: number) =>
   );
 
 /** many pixels of what Konva painted, read in one round trip (a loop of konvaPixel calls is slow enough to time out under load) */
-export const konvaPixels = (page: Page, points: { x: number; y: number }[]) =>
-  page.evaluate((pts) => {
+export const konvaPixels = (page: Page, points: { x: number; y: number }[], floor = false) =>
+  page.evaluate(([pts, useFloor]) => {
     const canvas = document.querySelector(".konvajs-content canvas") as HTMLCanvasElement;
     const box = canvas.getBoundingClientRect();
     const scale = canvas.width / box.width;
     const g = canvas.getContext("2d")!;
-    return pts.map(({ x, y }) => Array.from(g.getImageData(Math.round((x - box.left) * scale), Math.round((y - box.top) * scale), 1, 1).data));
-  }, points);
+    const at = (v: number) => (useFloor ? Math.floor(v + 1e-6) : Math.round(v));
+    return pts.map(({ x, y }) => Array.from(g.getImageData(at((x - box.left) * scale), at((y - box.top) * scale), 1, 1).data));
+  }, [points, floor] as const);
 
 /* ---- temporary save ---- */
 
@@ -426,4 +427,34 @@ export async function reloadAndDiscard(page: Page) {
     await page.getByRole("button", { name: "버리기" }).click();
     await expect(page.getByTestId("restore-dialog")).toHaveCount(0);
   }
+}
+
+/* ---- Phase 2: drawing ---- */
+
+/** the drawing style the editor holds (stroke, fill, width, eyedropper target) */
+export const drawStyleOf = (page: Page) => page.evaluate(() => (window as any).__slc.getState().drawStyle as { stroke: string; fill: string | null; strokeWidth: number; pickTarget: string });
+
+/** drags out a shape with a tool picked by name, between two image points */
+export async function drawShape(page: Page, tool: "선" | "사각형" | "원", from: { x: number; y: number }, to: { x: number; y: number }) {
+  await pickTool(page, tool);
+  await dragImageRect(page, from, to);
+}
+
+/** sets a native colour input the way the picker does: input events while dragging, then a change event when it settles */
+export async function setColorInput(page: Page, testId: string, hex: string, opts: { settle?: boolean } = {}) {
+  await page.getByTestId(testId).evaluate(
+    (el: HTMLInputElement, [value, settle]) => {
+      el.value = value as string;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      if (settle) el.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    [hex, opts.settle ?? true] as const,
+  );
+}
+
+/** the RGBA of the frame's pixel as Konva painted it on screen, found from image coordinates (any zoom, any devicePixelRatio) */
+export async function screenPixel(page: Page, x: number, y: number) {
+  const c = await clientOf(page, x + 0.5, y + 0.5); // the middle of that image pixel
+  // the canvas pixel that CONTAINS the point (floor): konvaPixel rounds, which at a pixel centre picks the next one along
+  return (await konvaPixels(page, [c], true))[0];
 }

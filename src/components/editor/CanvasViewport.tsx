@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type Konva from "konva";
-import { Image as KImage, Layer, Rect, Stage, Transformer } from "react-konva";
+import type { KonvaEventObject } from "konva/lib/Node";
+import { Image as KImage, Layer, Rect, Shape, Stage, Transformer } from "react-konva";
+import { renderProjectRaw } from "@/features/export-image/export-png";
+import { rgbToHex } from "@/lib/image/color";
+import { DrawCtx, drawContent, shapeFromDrag } from "@/lib/image/vector";
+import { SHAPE_TOOLS } from "@/store/editor-store";
 import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
 import { Point, clientToImage, imageToClient } from "@/lib/geometry/coords";
@@ -13,6 +18,7 @@ import { ZOOM_STEP, fitView, panBy, zoomAt } from "@/lib/geometry/view-transform
 import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { rawToCanvas } from "./raw-canvas";
+import VectorShape from "./VectorShape";
 
 const ACCENT = "#5b5ce2";
 /** the space between the original and the edited frame in the side-by-side view, in image pixels */
@@ -21,6 +27,7 @@ const MARQUEE = "#ee6f43";
 
 type Gesture =
   | { kind: "rect"; a: Point }
+  | { kind: "shape"; a: Point }
   | { kind: "pan"; startX: number; startY: number; panX: number; panY: number };
 
 /** The working canvas. Konva only draws. Every pointer position goes through lib/geometry/coords,
@@ -29,6 +36,8 @@ export default function CanvasViewport() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [marquee, setMarquee] = useState<{ a: Point; b: Point } | null>(null);
+  const [shapeDrag, setShapeDrag] = useState<{ a: Point; b: Point } | null>(null);
+  const drawStyle = useEditorStore((s) => s.drawStyle);
   const gesture = useRef<Gesture | null>(null);
 
   const screen = useEditorStore(selectScreen);
@@ -101,6 +110,24 @@ export default function CanvasViewport() {
   const toImage = (e: { clientX: number; clientY: number }, v = editorStore.getState().view) =>
     clientToImage({ x: e.clientX, y: e.clientY }, origin(), v, { x: screen!.x, y: screen!.y });
 
+  const roundPoint = (p: Point): Point => ({ x: Math.round(p.x), y: Math.round(p.y) });
+
+  /** The eyedropper: the colour of the finished picture (source, patches, layers) at an image pixel. It reads the same pixels the
+   *  PNG export produces, so zoom, devicePixelRatio and what is drawn on top of what cannot change the answer. */
+  const pickColorAt = (p: Point) => {
+    const st = editorStore.getState();
+    const project = st.snapshotProject();
+    if (!project) return;
+    const sc = project.screens[0];
+    const x = Math.floor(p.x);
+    const y = Math.floor(p.y);
+    if (x < 0 || y < 0 || x >= sc.width || y >= sc.height) return;
+    const raw = renderProjectRaw(project, st.images);
+    const i = (y * raw.width + x) * 4;
+    if (raw.data[i + 3] === 0) return st.setNotice("그 자리는 투명해서 색을 읽을 수 없습니다.");
+    st.setDrawStyle({ [st.drawStyle.pickTarget]: rgbToHex({ r: raw.data[i], g: raw.data[i + 1], b: raw.data[i + 2] }) });
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     if (!screen) return;
     const { view: v, activeTool } = editorStore.getState();
@@ -115,6 +142,13 @@ export default function CanvasViewport() {
       const a = toImage(e, v);
       gesture.current = { kind: "rect", a };
       setMarquee({ a, b: a });
+    } else if (e.button === 0 && SHAPE_TOOLS[activeTool]) {
+      const a = roundPoint(toImage(e, v));
+      gesture.current = { kind: "shape", a };
+      setShapeDrag({ a, b: a });
+    } else if (e.button === 0 && activeTool === "eyedropper") {
+      pickColorAt(toImage(e, v));
+      return;
     } else return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -126,13 +160,22 @@ export default function CanvasViewport() {
     if (g.kind === "pan") {
       const v = editorStore.getState().view;
       editorStore.getState().setView({ ...v, panX: g.panX + e.clientX - g.startX, panY: g.panY + e.clientY - g.startY });
-    } else setMarquee({ a: g.a, b: toImage(e) });
+    } else if (g.kind === "shape") setShapeDrag({ a: g.a, b: roundPoint(toImage(e)) });
+    else setMarquee({ a: g.a, b: toImage(e) });
   };
 
   const endGesture = (e: React.PointerEvent, commit: boolean) => {
     const g = gesture.current;
     gesture.current = null;
     if (!g || !screen) return;
+    if (g.kind === "shape") {
+      const st = editorStore.getState();
+      const kind = SHAPE_TOOLS[st.activeTool];
+      setShapeDrag(null);
+      const made = commit && kind ? shapeFromDrag(kind, g.a, roundPoint(toImage(e)), st.drawStyle) : null;
+      if (made) st.addVectorLayer(made.content, made.x, made.y); // one undo step; a click or a tiny drag makes nothing
+      return;
+    }
     if (g.kind === "rect") {
       const rect = commit ? selectionFromImagePoints(g.a, toImage(e), screen) : null;
       setMarquee(null);
@@ -166,13 +209,15 @@ export default function CanvasViewport() {
     tr.getLayer()?.batchDraw();
   });
   const originalX = screen ? (compare === "split" ? screen.x - screen.width - SPLIT_GAP : screen.x) : 0;
+  const dragKind = SHAPE_TOOLS[tool];
+  const shapePreview = shapeDrag && dragKind ? shapeFromDrag(dragKind, shapeDrag.a, shapeDrag.b, drawStyle) : null;
   const marqueeRect = marquee && screen ? selectionFromImagePoints(marquee.a, marquee.b, screen) : null;
   const frameOrigin = { x: screen?.x ?? 0, y: screen?.y ?? 0 };
   const labelAt = screen ? imageToClient({ x: 0, y: 0 }, { x: 0, y: 0 }, view, frameOrigin) : null;
   const tagAt = marqueeRect ? imageToClient({ x: marqueeRect.x, y: marqueeRect.y }, { x: 0, y: 0 }, view, frameOrigin) : null;
 
   const zoomBy = (factor: number) => editorStore.getState().setView(zoomAt(view, view.zoom * factor, { x: size.width / 2, y: size.height / 2 }));
-  const cursor = tool === "hand" ? "grab" : tool === "rect" ? "crosshair" : tool === "fill" ? "pointer" : "default";
+  const cursor = tool === "hand" ? "grab" : tool === "rect" || tool === "eyedropper" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
 
   return (
     <div
@@ -208,45 +253,48 @@ export default function CanvasViewport() {
                 )}
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
-                  if (!image) return null;
+                  const content = layer.content;
+                  if (!image && !content) return null;
                   const at = preview?.layerId === layer.id ? preview : layer.transform;
                   const movable = tool === "select";
-                  return (
-                    <KImage
-                      key={layer.id}
-                      name={`layer-${layer.id}`}
-                      image={rawToCanvas(image)}
-                      x={screen.x + at.x}
-                      y={screen.y + at.y}
-                      scaleX={layer.transform.scaleX}
-                      scaleY={layer.transform.scaleY}
-                      rotation={layer.transform.rotation}
-                      width={image.width}
-                      height={image.height}
-                      opacity={layer.opacity}
-                      visible={layer.visible && compare !== "original"} // a hidden layer is neither drawn nor clickable; the original has no layers
-                      draggable={movable && !layer.locked && !comparing}
-                      listening={movable && layer.visible && !comparing}
-                      onMouseDown={() => editorStore.getState().selectLayer(layer.id)}
-                      onTouchStart={() => editorStore.getState().selectLayer(layer.id)}
-                      onDragMove={(e) => editorStore.getState().previewLayerDrag(layer.id, e.target.x() - screen.x, e.target.y() - screen.y)}
-                      onDragEnd={() => editorStore.getState().commitLayerDrag()} // one history step, on release
-                      onTransformEnd={(e) => {
-                        // handles were dragged: the node holds the new placement; the store keeps it (one history step) or refuses it
-                        const node = e.target;
-                        const ok = editorStore.getState().transformLayer(layer.id, { x: node.x() - screen.x, y: node.y() - screen.y, scaleX: node.scaleX(), scaleY: node.scaleY(), rotation: node.rotation() });
-                        if (!ok) node.setAttrs({ x: screen.x + layer.transform.x, y: screen.y + layer.transform.y, scaleX: layer.transform.scaleX, scaleY: layer.transform.scaleY, rotation: layer.transform.rotation });
-                      }}
-                      onMouseEnter={(e) => movable && (e.target.getStage()!.container().style.cursor = "move")}
-                      onMouseLeave={(e) => (e.target.getStage()!.container().style.cursor = "")}
-                    />
-                  );
+                  const shared = {
+                    name: `layer-${layer.id}`,
+                    x: screen.x + at.x,
+                    y: screen.y + at.y,
+                    scaleX: layer.transform.scaleX,
+                    scaleY: layer.transform.scaleY,
+                    rotation: layer.transform.rotation,
+                    opacity: layer.opacity,
+                    visible: layer.visible && compare !== "original", // a hidden layer is neither drawn nor clickable; the original has no layers
+                    draggable: movable && !layer.locked && !comparing,
+                    listening: movable && layer.visible && !comparing,
+                    onMouseDown: () => editorStore.getState().selectLayer(layer.id),
+                    onTouchStart: () => editorStore.getState().selectLayer(layer.id),
+                    onDragMove: (e: KonvaEventObject<DragEvent>) => editorStore.getState().previewLayerDrag(layer.id, e.target.x() - screen.x, e.target.y() - screen.y),
+                    onDragEnd: () => editorStore.getState().commitLayerDrag(), // one history step, on release
+                    onTransformEnd: (e: KonvaEventObject<Event>) => {
+                      // handles were dragged: the node holds the new placement; the store keeps it (one history step) or refuses it
+                      const node = e.target;
+                      const ok = editorStore.getState().transformLayer(layer.id, { x: node.x() - screen.x, y: node.y() - screen.y, scaleX: node.scaleX(), scaleY: node.scaleY(), rotation: node.rotation() });
+                      if (content) {
+                        // a vector layer's size lives in its box (the store baked the scale in): the node goes back to scale 1
+                        node.scaleX(1);
+                        node.scaleY(1);
+                        if (!ok) node.setAttrs({ x: screen.x + layer.transform.x, y: screen.y + layer.transform.y, rotation: layer.transform.rotation, width: content.width, height: content.height });
+                      } else if (!ok) node.setAttrs({ x: screen.x + layer.transform.x, y: screen.y + layer.transform.y, scaleX: layer.transform.scaleX, scaleY: layer.transform.scaleY, rotation: layer.transform.rotation });
+                    },
+                    onMouseEnter: (e: KonvaEventObject<MouseEvent>) => movable && (e.target.getStage()!.container().style.cursor = "move"),
+                    onMouseLeave: (e: KonvaEventObject<MouseEvent>) => (e.target.getStage()!.container().style.cursor = ""),
+                  };
+                  if (content) return <VectorShape key={layer.id} content={content} {...shared} />;
+                  return <KImage key={layer.id} image={rawToCanvas(image!)} width={image!.width} height={image!.height} {...shared} />;
                 })}
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
-                  if (!image || layer.id !== selectedId || !layer.visible || showHandles || comparing) return null; // with handles, their frame is the outline
+                  const box = layer.content ? { width: layer.content.width, height: layer.content.height } : image;
+                  if (!box || layer.id !== selectedId || !layer.visible || showHandles || comparing) return null; // with handles, their frame is the outline
                   const at = preview?.layerId === layer.id ? preview : layer.transform;
-                  return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} scaleX={layer.transform.scaleX} scaleY={layer.transform.scaleY} rotation={layer.transform.rotation} width={image.width} height={image.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={layer.locked ? [6, 4] : undefined} listening={false} />;
+                  return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} scaleX={layer.transform.scaleX} scaleY={layer.transform.scaleY} rotation={layer.transform.rotation} width={box.width} height={box.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={layer.locked ? [6, 4] : undefined} listening={false} />;
                 })}
                 <Transformer
                   ref={transformerRef}
@@ -274,6 +322,17 @@ export default function CanvasViewport() {
                       listening={false}
                     />
                   ))}
+                {shapePreview && (
+                  <Shape
+                    x={screen.x + shapePreview.x}
+                    y={screen.y + shapePreview.y}
+                    width={shapePreview.content.width}
+                    height={shapePreview.content.height}
+                    opacity={0.85}
+                    listening={false}
+                    sceneFunc={(ctx) => drawContent((ctx as unknown as { _context: DrawCtx })._context, shapePreview.content)}
+                  />
+                )}
                 {marqueeRect && (
                   <Rect x={screen.x + marqueeRect.x} y={screen.y + marqueeRect.y} width={marqueeRect.width} height={marqueeRect.height} stroke={MARQUEE} strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} fill="rgba(238,111,67,0.07)" listening={false} />
                 )}

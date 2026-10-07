@@ -53,7 +53,7 @@ describe("the file Phase 1 saved", () => {
     expect((await blobs.keys()).sort()).toEqual(referencedImageIds(result.project).sort());
   });
 
-  test("opened and saved again, it is a version 2 file that opens again", async () => {
+  test("opened and saved again, it is a current-version file that opens again", async () => {
     const blobs = await openBlobStore("v1c", new IDBFactory());
     const opened = await loadProjectText(v1Text, { blobs, codec: pngCodec });
     if (!opened.ok) throw new Error(opened.error);
@@ -61,7 +61,7 @@ describe("the file Phase 1 saved", () => {
     store.getState().loadProject(opened.project, opened.images);
     // saving needs an encoder; the images keep their original blobs, so nothing is re-encoded
     const saved = await saveProjectText(store.getState().snapshotProject()!, store.getState().images, { blobs, codec: fakeCodec() });
-    expect(JSON.parse(saved).project.version).toBe(2);
+    expect(JSON.parse(saved).project.version).toBe(CURRENT_VERSION);
     const again = await loadProjectText(saved, { blobs: await openBlobStore("v1d", new IDBFactory()), codec: pngCodec });
     expect(again.ok).toBe(true);
   });
@@ -74,11 +74,11 @@ describe("migrate 1 → 2", () => {
     return p;
   };
 
-  test("the version becomes 2 and the placements of the layers are untouched", () => {
+  test("the version becomes the current one and the placements of the layers are untouched", () => {
     const doc = v1();
     doc.screens[0].layers[0].transform = { x: 12, y: 34, scaleX: 1, scaleY: 1, rotation: 0 };
     const r = migrate(doc);
-    expect(r.ok && r.doc.version).toBe(2);
+    expect(r.ok && r.doc.version).toBe(CURRENT_VERSION);
     expect(r.ok && (r.doc.screens as any)[0].layers[0].transform).toEqual({ x: 12, y: 34, scaleX: 1, scaleY: 1, rotation: 0 });
   });
 
@@ -114,9 +114,9 @@ describe("migrate 1 → 2", () => {
     expect((migrate(doc) as any).doc).toEqual(doc);
   });
 
-  test("parseProject takes a v1 text straight to a valid v2 project", () => {
+  test("parseProject takes a v1 text straight to a valid current project", () => {
     const r = parseProject(JSON.stringify(v1()));
-    expect(r.ok && r.project.version).toBe(2);
+    expect(r.ok && r.project.version).toBe(CURRENT_VERSION);
   });
 });
 
@@ -130,5 +130,30 @@ describe("a v2 file with a rotated and scaled layer", () => {
 
   test("a mirrored (negative) scale is allowed", () => {
     expect(parseProject(serializeProject(makeProject([makeLayer("a", 0, { transform: { x: 0, y: 0, scaleX: -1, scaleY: 1, rotation: 0 } })]))).ok).toBe(true);
+  });
+});
+
+/* tests/fixtures/project-v2.slc.json was saved by the Phase 1.5 build (tag phase1.5): two layers, one scaled and rotated, one
+ * renamed, hidden and locked and sent back. Version 3 added vector layers, so it must open exactly as it was. */
+describe("the file Phase 1.5 saved (version 2)", () => {
+  const v2Text = fs.readFileSync("tests/fixtures/project-v2.slc.json", "utf8");
+
+  test("it really is version 2, with a scaled and rotated layer", () => {
+    const project = JSON.parse(v2Text).project;
+    expect(project.version).toBe(2);
+    expect(project.screens[0].layers.some((l: { transform: { rotation: number } }) => l.transform.rotation !== 0)).toBe(true);
+  });
+
+  test("it opens as it is, version 3, every layer field untouched and no vector content invented", async () => {
+    const before = JSON.parse(v2Text).project;
+    const result = await loadProjectText(v2Text, { blobs: await openBlobStore("v2", new IDBFactory()), codec: pngCodec });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.version).toBe(3);
+    expect(result.project.screens[0].layers).toEqual(before.screens[0].layers);
+    expect(result.project.screens[0].backgroundPatches).toEqual(before.screens[0].backgroundPatches);
+    expect(result.project.canvas).toEqual(before.canvas);
+    expect(result.project.screens[0].layers.every((l) => l.content === undefined)).toBe(true);
+    const green = result.project.screens[0].layers.find((l) => l.name === "Green card")!;
+    expect(green).toMatchObject({ visible: false, locked: true });
   });
 });
