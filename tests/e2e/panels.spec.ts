@@ -72,7 +72,7 @@ test.describe("layer panel", () => {
     await page.getByTestId("layer-item").filter({ hasText: "레이어 1" }).click();
     const s = await editor(page);
     expect(s.selected).toEqual([s.layers.find((l) => l.name === "레이어 1")!.id]);
-    await expect(page.getByTestId("prop-name")).toHaveText("레이어 1");
+    await expect(page.getByTestId("prop-name")).toHaveValue("레이어 1");
   });
 
   test("clicking a layer on the canvas highlights it in the list", async ({ page }) => {
@@ -132,14 +132,16 @@ test.describe("layer panel", () => {
 });
 
 test.describe("property panel", () => {
-  test("shows name, X, Y, width and height; none of them is editable", async ({ page }) => {
+  test("shows name, X, Y, width and height; only the name can be edited", async ({ page }) => {
     await withCard(page);
-    await expect(page.getByTestId("prop-name")).toHaveText("레이어 1");
+    await expect(page.getByTestId("prop-name")).toHaveValue("레이어 1");
     await expect(page.getByTestId("prop-x")).toHaveText(String(CARD.x));
     await expect(page.getByTestId("prop-y")).toHaveText(String(CARD.y));
     await expect(page.getByTestId("prop-width")).toHaveText(String(CARD.width));
     await expect(page.getByTestId("prop-height")).toHaveText(String(CARD.height));
-    await expect(page.getByRole("region", { name: "선택 레이어" }).locator("input, textarea, [contenteditable]")).toHaveCount(0);
+    // the name is the only input in the section: X, Y, width and height are plain text
+    await expect(page.getByRole("region", { name: "선택 레이어" }).locator("input, textarea, [contenteditable]")).toHaveCount(1);
+    await expect(page.getByTestId("prop-name")).toBeEditable();
   });
 
   test("X and Y follow the layer live while it is being dragged", async ({ page }) => {

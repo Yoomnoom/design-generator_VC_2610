@@ -35,6 +35,34 @@ function Thumb({ raw }: { raw: RawImage }) {
   );
 }
 
+const icon = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true } as const;
+const EyeIcon = () => (
+  <svg {...icon}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const EyeOffIcon = () => (
+  <svg {...icon}>
+    <path d="M10.7 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7c1.7 0 3.2-.4 4.5-1M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    <path d="m2 2 20 20" />
+  </svg>
+);
+const LockIcon = () => (
+  <svg {...icon}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
+);
+const UnlockIcon = () => (
+  <svg {...icon}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 7.5-2" />
+  </svg>
+);
+
+const iconButton = "grid h-[30px] w-[30px] shrink-0 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-[#6b7280] hover:bg-[#ebebe6] focus-visible:outline-2 focus-visible:outline-[var(--accent)]";
+
 export default function LayerPanel() {
   const screen = useEditorStore(selectScreen);
   const images = useEditorStore((s) => s.images);
@@ -43,6 +71,7 @@ export default function LayerPanel() {
 
   const front = sortByZ(screen.layers).reverse(); // the layer on top of the canvas is first in the list
   const index = front.findIndex((l) => l.id === selectedId);
+  const selected = front[index];
   const has = index >= 0;
   const act = editorStore.getState();
 
@@ -55,7 +84,7 @@ export default function LayerPanel() {
         <button className="btn mini px-0" disabled={!has || index === 0} onClick={() => act.reorderLayer(selectedId, 1)}>앞으로</button>
         <button className="btn mini px-0" disabled={!has || index === front.length - 1} onClick={() => act.reorderLayer(selectedId, -1)}>뒤로</button>
         <button className="btn mini px-0" disabled={!has} title="복제 (Ctrl+D)" onClick={() => act.duplicateLayer(selectedId)}>복제</button>
-        <button className="btn mini px-0" disabled={!has} title="삭제 (Delete)" onClick={() => act.deleteLayer(selectedId)}>삭제</button>
+        <button className="btn mini px-0" disabled={!has || selected?.locked} title={selected?.locked ? "잠긴 레이어는 삭제할 수 없습니다" : "삭제 (Delete)"} onClick={() => act.deleteLayer(selectedId)}>삭제</button>
       </div>
       {front.length === 0 ? (
         <p className="text-xs text-[var(--muted)]">영역 추출 도구로 사각형을 드래그하면 레이어가 생깁니다.</p>
@@ -65,17 +94,23 @@ export default function LayerPanel() {
             const raw = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
             const active = layer.id === selectedId;
             return (
-              <li key={layer.id}>
+              <li key={layer.id} data-hidden={layer.visible ? undefined : "true"} data-locked={layer.locked ? "true" : undefined} className={`mb-0.5 flex items-center rounded-[7px] ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "hover:bg-[#f5f5f2]"}`}>
                 <button
                   type="button"
                   data-testid="layer-item"
                   data-layer-id={layer.id}
                   aria-current={active ? "true" : undefined}
                   onClick={() => act.selectLayer(layer.id)}
-                  className={`mb-0.5 flex h-[38px] w-full cursor-pointer items-center gap-2 rounded-[7px] border-0 px-1.5 text-left text-xs ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "bg-transparent hover:bg-[#f5f5f2]"}`}
+                  className={`flex h-[38px] min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-1.5 text-left text-xs text-inherit ${layer.visible ? "" : "opacity-45"}`}
                 >
                   {raw && <Thumb raw={raw} />}
-                  <span className="flex-1 truncate">{layer.name}</span>
+                  <span className={`flex-1 truncate ${layer.visible ? "" : "line-through"}`}>{layer.name}</span>
+                </button>
+                <button type="button" className={iconButton} aria-pressed={!layer.visible} aria-label={layer.visible ? `${layer.name} 숨기기` : `${layer.name} 보이기`} title={layer.visible ? "숨기기" : "보이기"} onClick={() => act.setLayerVisible(layer.id, !layer.visible)}>
+                  {layer.visible ? <EyeIcon /> : <EyeOffIcon />}
+                </button>
+                <button type="button" className={iconButton} aria-pressed={layer.locked} aria-label={layer.locked ? `${layer.name} 잠금 해제` : `${layer.name} 잠그기`} title={layer.locked ? "잠금 해제" : "잠그기 (이동·삭제 불가)"} onClick={() => act.setLayerLocked(layer.id, !layer.locked)}>
+                  {layer.locked ? <LockIcon /> : <UnlockIcon />}
                 </button>
               </li>
             );

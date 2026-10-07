@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { selectScreen } from "@/store/editor-store";
+import { MAX_LAYER_NAME, selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 
 function Field({ label, value, id }: { label: string; value: string | number; id: string }) {
@@ -15,7 +15,43 @@ function Field({ label, value, id }: { label: string; value: string | number; id
   );
 }
 
-/** Read-only numbers for the selected layer or patch. The one thing you can change here is a patch's colour. */
+/** The layer name, the one editable thing here. Enter or leaving the field keeps it, Escape puts the old name back. */
+function NameField({ id, name }: { id: string; name: string }) {
+  const [draft, setDraft] = useState(name);
+  const cancelled = useRef(false);
+  useEffect(() => setDraft(name), [name]); // follows undo/redo and renames from elsewhere
+  const commit = () => {
+    if (cancelled.current) {
+      cancelled.current = false; // Escape: leaving the field must not keep what was typed
+      return;
+    }
+    if (!editorStore.getState().renameLayer(id, draft)) setDraft(name); // blank or unchanged: show what the layer is really called
+  };
+  return (
+    <label className="block rounded-[7px] border border-[var(--line)] bg-white px-2 py-1.5 text-[#555] focus-within:border-[var(--accent)]">
+      <span className="block text-[9px] text-[#999]">이름</span>
+      <input
+        data-testid="prop-name"
+        type="text"
+        value={draft}
+        maxLength={MAX_LAYER_NAME}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          else if (e.key === "Escape") {
+            cancelled.current = true;
+            setDraft(name);
+            e.currentTarget.blur();
+          }
+        }}
+        className="m-0 w-full border-0 bg-transparent p-0 text-[#333] outline-none"
+      />
+    </label>
+  );
+}
+
+/** Numbers for the selected layer or patch. X, Y, width and height are read-only; a layer's name and a patch's colour can be changed. */
 export default function PropertyPanel() {
   const screen = useEditorStore(selectScreen);
   const images = useEditorStore((s) => s.images);
@@ -35,7 +71,7 @@ export default function PropertyPanel() {
         <h3 className="mb-2.5 text-[13px] font-bold">선택 레이어</h3>
         <dl className="m-0 grid grid-cols-2 gap-[7px]">
           <div className="col-span-2">
-            <Field label="이름" value={layer.name} id="prop-name" />
+            <NameField id={layer.id} name={layer.name} />
           </div>
           <Field label="X" value={at.x} id="prop-x" />
           <Field label="Y" value={at.y} id="prop-y" />

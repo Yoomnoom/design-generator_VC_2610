@@ -172,8 +172,9 @@ export default function CanvasViewport() {
                       width={image.width}
                       height={image.height}
                       opacity={layer.opacity}
-                      draggable={movable}
-                      listening={movable}
+                      visible={layer.visible} // a hidden layer is neither drawn nor clickable
+                      draggable={movable && !layer.locked}
+                      listening={movable && layer.visible}
                       onMouseDown={() => editorStore.getState().selectLayer(layer.id)}
                       onTouchStart={() => editorStore.getState().selectLayer(layer.id)}
                       onDragMove={(e) => editorStore.getState().previewLayerDrag(layer.id, e.target.x() - screen.x, e.target.y() - screen.y)}
@@ -185,9 +186,9 @@ export default function CanvasViewport() {
                 })}
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
-                  if (!image || layer.id !== selectedId) return null;
+                  if (!image || layer.id !== selectedId || !layer.visible) return null;
                   const at = preview?.layerId === layer.id ? preview : layer.transform;
-                  return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} width={image.width} height={image.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} listening={false} />;
+                  return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} width={image.width} height={image.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={layer.locked ? [6, 4] : undefined} listening={false} />;
                 })}
                 {tool === "fill" &&
                   screen.backgroundPatches.map((p) => (

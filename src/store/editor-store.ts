@@ -14,6 +14,9 @@ import { ImageCache } from "./images";
 /** where a duplicated layer lands relative to its original, in original pixels */
 export const DUPLICATE_OFFSET = 16;
 
+/** longest layer name kept; a longer one is cut */
+export const MAX_LAYER_NAME = 60;
+
 /** a layer copied with Ctrl+C: kept inside the app only, never put on the system clipboard */
 export type LayerClipboard = { layer: BitmapLayer; pastes: number };
 
@@ -62,6 +65,9 @@ type EditorActions = {
   pasteLayer(): string | null;
   deleteLayer(layerId: string): boolean;
   reorderLayer(layerId: string, direction: 1 | -1): boolean;
+  setLayerVisible(layerId: string, visible: boolean): boolean;
+  setLayerLocked(layerId: string, locked: boolean): boolean;
+  renameLayer(layerId: string, name: string): boolean;
   setPatchColor(patchId: string, hex: string): boolean;
 
   undo(): void;
@@ -162,6 +168,19 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       set({ history: commit(history, label, (draft) => applyLayers(draft.screens[0].layers, next)) });
     };
 
+    /** one undo step changing one layer; false (and no history entry) when nothing actually changes */
+    const editLayer = (layerId: string, label: string, change: (layer: BitmapLayer) => void) => {
+      const { history } = get();
+      if (!history?.present.screens[0].layers.some((l) => l.id === layerId)) return false;
+      const next = commit(history, label, (draft) => {
+        const layer = draft.screens[0].layers.find((l) => l.id === layerId);
+        if (layer) change(layer);
+      });
+      if (next === history) return false;
+      set({ history: next });
+      return true;
+    };
+
     const reset = (project: Project, images: ImageCache) =>
       set({
         history: createHistory(project),
@@ -248,7 +267,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
       cancelExtraction: () => set({ pendingExtraction: null }),
 
       previewLayerDrag(layerId, x, y) {
-        if (!screenOf()?.layers.some((l) => l.id === layerId) || !Number.isFinite(x) || !Number.isFinite(y)) return;
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer || layer.locked || !Number.isFinite(x) || !Number.isFinite(y)) return; // a locked layer does not move
         set({ dragPreview: { layerId, x: Math.round(x), y: Math.round(y) } });
       },
 
@@ -259,7 +279,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         const { layerId, x, y } = dragPreview;
         const next = commit(history, "레이어 이동", (draft) => {
           const layer = draft.screens[0].layers.find((l) => l.id === layerId);
-          if (!layer) return;
+          if (!layer || layer.locked) return;
           layer.transform.x = x; // unchanged values make no patch, so a click without movement records nothing
           layer.transform.y = y;
         });
@@ -278,6 +298,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
           ...source,
           id: genId(),
           name: `${source.name} 복사`,
+          visible: true, // a copy is a fresh layer: shown and free to move, whatever state the original is in
+          locked: false,
           crop: { ...source.crop }, // same imageId: the copy shares the original's bitmap
           transform: { ...source.transform, x: source.transform.x + DUPLICATE_OFFSET, y: source.transform.y + DUPLICATE_OFFSET },
         };
@@ -305,6 +327,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
           ...source,
           id: genId(),
           name: `${source.name} 복사`,
+          visible: true,
+          locked: false,
           crop: { ...source.crop },
           transform: { ...source.transform, x: source.transform.x + step, y: source.transform.y + step },
         };
@@ -315,7 +339,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
 
       deleteLayer(layerId) {
         const screen = screenOf();
-        if (!screen?.layers.some((l) => l.id === layerId)) return false;
+        const target = screen?.layers.find((l) => l.id === layerId);
+        if (!screen || !target || target.locked) return false; // a locked layer cannot be deleted
         commitLayers("레이어 삭제", removeLayer(screen.layers, layerId));
         set({ selectedLayerIds: get().selectedLayerIds.filter((id) => id !== layerId) });
         return true;
@@ -328,6 +353,20 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         if (drawOrder(next) === drawOrder(screen.layers)) return false; // already at that end
         commitLayers(direction === 1 ? "레이어 앞으로" : "레이어 뒤로", next);
         return true;
+      },
+
+      setLayerVisible(layerId, visible) {
+        return editLayer(layerId, visible ? "레이어 보이기" : "레이어 숨기기", (l) => void (l.visible = visible));
+      },
+
+      setLayerLocked(layerId, locked) {
+        return editLayer(layerId, locked ? "레이어 잠그기" : "레이어 잠금 해제", (l) => void (l.locked = locked));
+      },
+
+      renameLayer(layerId, name) {
+        const clean = name.trim().slice(0, MAX_LAYER_NAME);
+        if (!clean) return false; // a layer always has a name
+        return editLayer(layerId, "레이어 이름 변경", (l) => void (l.name = clean));
       },
 
       setPatchColor(patchId, hex) {
