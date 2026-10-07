@@ -9,3 +9,9 @@ export const hexToRgb = (hex: string): Rgb | null => {
   const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join("") : m[1];
   return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
 };
+
+/** "#abc" / "#AABBCC" → "#aabbcc"; null when it is not a colour */
+export const normalizeHex = (hex: string): string | null => {
+  const rgb = hexToRgb(hex);
+  return rgb && rgbToHex(rgb);
+};

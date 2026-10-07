@@ -9,6 +9,8 @@ const isRec = (v: unknown): v is Rec => typeof v === "object" && v !== null && !
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const isStr = (v: unknown): v is string => typeof v === "string";
 const isId = (v: unknown): v is string => isStr(v) && v.length > 0;
+/** a reference into the blob store; a Blob/data URL dies with the page, so it is never a valid reference */
+const isImageId = (v: unknown): v is string => isId(v) && !/^(blob|data):/i.test(v);
 const isRect = (v: unknown): v is Rect => isRec(v) && isNum(v.x) && isNum(v.y) && isNum(v.width) && isNum(v.height) && v.width >= 0 && v.height >= 0;
 
 function layerError(l: unknown, i: number): string | null {
@@ -16,7 +18,7 @@ function layerError(l: unknown, i: number): string | null {
   if (!isRec(l)) return `${at}가 객체가 아닙니다`;
   if (!isId(l.id) || !isStr(l.name)) return `${at}.id/name이 올바르지 않습니다`;
   if (!isRect(l.crop)) return `${at}.crop이 올바르지 않습니다`;
-  if (l.imageId !== undefined && !isId(l.imageId)) return `${at}.imageId가 올바르지 않습니다`;
+  if (l.imageId !== undefined && !isImageId(l.imageId)) return `${at}.imageId가 올바르지 않습니다`;
   const t = l.transform;
   if (!isRec(t) || !isNum(t.x) || !isNum(t.y)) return `${at}.transform이 올바르지 않습니다`;
   if (t.scaleX !== 1 || t.scaleY !== 1 || t.rotation !== 0) return `${at}: Phase 1에서는 scale 1/1, rotation 0만 허용됩니다`;
@@ -37,7 +39,7 @@ function screenError(s: unknown): string | null {
   if (!isRec(s)) return "screens[0]이 객체가 아닙니다";
   if (!isId(s.id) || !isStr(s.name) || !isNum(s.x) || !isNum(s.y)) return "screens[0]의 id/name/x/y가 올바르지 않습니다";
   if (!isNum(s.width) || !isNum(s.height) || s.width < 1 || s.height < 1) return "screens[0]의 width/height가 올바르지 않습니다";
-  if (!isRec(s.source) || !isId(s.source.imageId) || !isStr(s.source.fileName)) return "screens[0].source가 올바르지 않습니다";
+  if (!isRec(s.source) || !isImageId(s.source.imageId) || !isStr(s.source.fileName)) return "screens[0].source가 올바르지 않습니다";
   if (!Array.isArray(s.backgroundPatches) || !Array.isArray(s.layers)) return "screens[0]의 backgroundPatches/layers가 배열이 아닙니다";
   for (const [i, p] of s.backgroundPatches.entries()) {
     const e = patchError(p, i);
@@ -62,6 +64,11 @@ export function parseProject(text: string): ParseResult {
   } catch {
     return { ok: false, error: "JSON을 읽을 수 없습니다" };
   }
+  return parseProjectValue(raw);
+}
+
+/** the same checks for a value that is already parsed JSON */
+export function parseProjectValue(raw: unknown): ParseResult {
   const migrated = migrate(raw);
   if (!migrated.ok) return migrated;
   const d = migrated.doc;
