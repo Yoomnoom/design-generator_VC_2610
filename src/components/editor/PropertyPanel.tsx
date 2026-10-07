@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isOnlyMoved, scaledSize } from "@/lib/geometry/layer-transform";
 import { MAX_LAYER_NAME, selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
+
+/** 240, 12.5, 33.33: whole numbers without decimals, others to at most two places */
+const fmt = (n: number) => String(Number(n.toFixed(2)));
 
 function Field({ label, value, id }: { label: string; value: string | number; id: string }) {
   return (
@@ -66,6 +70,7 @@ export default function PropertyPanel() {
   if (layer) {
     const raw = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
     const at = preview?.layerId === layer.id ? preview : layer.transform; // follows the drag live
+    const size = scaledSize(layer.transform, raw?.width ?? layer.crop.width, raw?.height ?? layer.crop.height); // as placed, after any resizing
     return (
       <section aria-label="선택 레이어" className="px-3.5 py-3">
         <h3 className="mb-2.5 text-[13px] font-bold">선택 레이어</h3>
@@ -75,9 +80,15 @@ export default function PropertyPanel() {
           </div>
           <Field label="X" value={at.x} id="prop-x" />
           <Field label="Y" value={at.y} id="prop-y" />
-          <Field label="너비" value={raw?.width ?? layer.crop.width} id="prop-width" />
-          <Field label="높이" value={raw?.height ?? layer.crop.height} id="prop-height" />
+          <Field label="너비" value={fmt(size.width)} id="prop-width" />
+          <Field label="높이" value={fmt(size.height)} id="prop-height" />
+          <Field label="회전 (°)" value={fmt(layer.transform.rotation)} id="prop-rotation" />
+          <Field label="크기 배율" value={`${fmt(layer.transform.scaleX * 100)}% × ${fmt(layer.transform.scaleY * 100)}%`} id="prop-scale" />
         </dl>
+        <p className="mt-2 text-[11px] text-[var(--muted)]">{layer.locked ? "잠긴 레이어는 크기와 회전을 바꿀 수 없습니다." : "선택한 레이어의 모서리 점으로 크기를, 위쪽 둥근 점으로 회전을 바꿉니다."}</p>
+        <button className="btn mini mt-2 w-full" disabled={isOnlyMoved(layer.transform) || layer.locked} onClick={() => editorStore.getState().resetLayerTransform(layer.id)}>
+          크기·회전 초기화
+        </button>
       </section>
     );
   }

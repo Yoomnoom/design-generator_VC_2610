@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Image as KImage, Layer, Rect, Stage } from "react-konva";
+import type Konva from "konva";
+import { Image as KImage, Layer, Rect, Stage, Transformer } from "react-konva";
 import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
 import { Point, clientToImage, imageToClient } from "@/lib/geometry/coords";
@@ -123,6 +124,19 @@ export default function CanvasViewport() {
   );
 
   const layers = useMemo(() => (screen ? sortByZ(screen.layers) : []), [screen]);
+
+  // The resize/rotate handles belong to the selected layer, and only while it can actually be changed.
+  const layerRef = useRef<Konva.Layer>(null);
+  const transformerRef = useRef<Konva.Transformer>(null);
+  const selected = layers.find((l) => l.id === selectedId);
+  const showHandles = tool === "select" && !!selected && selected.visible && !selected.locked;
+  useEffect(() => {
+    const tr = transformerRef.current;
+    if (!tr) return;
+    const node = showHandles ? layerRef.current?.findOne(`.layer-${selectedId}`) : null;
+    tr.nodes(node ? [node] : []);
+    tr.getLayer()?.batchDraw();
+  });
   const marqueeRect = marquee && screen ? selectionFromImagePoints(marquee.a, marquee.b, screen) : null;
   const frameOrigin = { x: screen?.x ?? 0, y: screen?.y ?? 0 };
   const labelAt = screen ? imageToClient({ x: 0, y: 0 }, { x: 0, y: 0 }, view, frameOrigin) : null;
@@ -152,7 +166,7 @@ export default function CanvasViewport() {
           scaleY={view.zoom}
           onMouseDown={(e) => e.target === e.target.getStage() && editorStore.getState().activeTool === "select" && editorStore.getState().selectLayer(null)}
         >
-          <Layer imageSmoothingEnabled={view.zoom < 1}>
+          <Layer ref={layerRef} imageSmoothingEnabled={view.zoom < 1}>
             {screen && (
               <>
                 <Rect x={screen.x} y={screen.y} width={screen.width} height={screen.height} fill="#ffffff" shadowColor="#191e23" shadowOpacity={0.18} shadowBlur={24} shadowOffsetY={8} listening={false} />
@@ -169,6 +183,9 @@ export default function CanvasViewport() {
                       image={rawToCanvas(image)}
                       x={screen.x + at.x}
                       y={screen.y + at.y}
+                      scaleX={layer.transform.scaleX}
+                      scaleY={layer.transform.scaleY}
+                      rotation={layer.transform.rotation}
                       width={image.width}
                       height={image.height}
                       opacity={layer.opacity}
@@ -179,6 +196,12 @@ export default function CanvasViewport() {
                       onTouchStart={() => editorStore.getState().selectLayer(layer.id)}
                       onDragMove={(e) => editorStore.getState().previewLayerDrag(layer.id, e.target.x() - screen.x, e.target.y() - screen.y)}
                       onDragEnd={() => editorStore.getState().commitLayerDrag()} // one history step, on release
+                      onTransformEnd={(e) => {
+                        // handles were dragged: the node holds the new placement; the store keeps it (one history step) or refuses it
+                        const node = e.target;
+                        const ok = editorStore.getState().transformLayer(layer.id, { x: node.x() - screen.x, y: node.y() - screen.y, scaleX: node.scaleX(), scaleY: node.scaleY(), rotation: node.rotation() });
+                        if (!ok) node.setAttrs({ x: screen.x + layer.transform.x, y: screen.y + layer.transform.y, scaleX: layer.transform.scaleX, scaleY: layer.transform.scaleY, rotation: layer.transform.rotation });
+                      }}
                       onMouseEnter={(e) => movable && (e.target.getStage()!.container().style.cursor = "move")}
                       onMouseLeave={(e) => (e.target.getStage()!.container().style.cursor = "")}
                     />
@@ -186,10 +209,21 @@ export default function CanvasViewport() {
                 })}
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
-                  if (!image || layer.id !== selectedId || !layer.visible) return null;
+                  if (!image || layer.id !== selectedId || !layer.visible || showHandles) return null; // with handles, their frame is the outline
                   const at = preview?.layerId === layer.id ? preview : layer.transform;
-                  return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} width={image.width} height={image.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={layer.locked ? [6, 4] : undefined} listening={false} />;
+                  return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} scaleX={layer.transform.scaleX} scaleY={layer.transform.scaleY} rotation={layer.transform.rotation} width={image.width} height={image.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={layer.locked ? [6, 4] : undefined} listening={false} />;
                 })}
+                <Transformer
+                  ref={transformerRef}
+                  flipEnabled={false}
+                  rotateAnchorOffset={26}
+                  anchorSize={9}
+                  anchorCornerRadius={2}
+                  anchorFill="#ffffff"
+                  anchorStroke={ACCENT}
+                  borderStroke={ACCENT}
+                  boundBoxFunc={(before, after) => (Math.abs(after.width) < 10 || Math.abs(after.height) < 10 ? before : after)} // never smaller than 10 screen px
+                />
                 {tool === "fill" &&
                   screen.backgroundPatches.map((p) => (
                     <Rect

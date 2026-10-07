@@ -2,6 +2,7 @@ import { StoreApi, createStore } from "zustand/vanilla";
 import { addOnTop, moveLayer, removeLayer, sortByZ } from "@/features/layer-transform/order";
 import { View } from "@/lib/geometry/coords";
 import { isInside } from "@/lib/geometry/rect";
+import { LayerTransform, isOnlyMoved, sanitizeTransform } from "@/lib/geometry/layer-transform";
 import { clampZoom } from "@/lib/geometry/view-transform";
 import { cropRaw } from "@/lib/image/crop-bitmap";
 import { normalizeHex } from "@/lib/image/color";
@@ -65,6 +66,9 @@ type EditorActions = {
   pasteLayer(): string | null;
   deleteLayer(layerId: string): boolean;
   reorderLayer(layerId: string, direction: 1 | -1): boolean;
+  /** resize/rotate in one undo step; a locked layer refuses */
+  transformLayer(layerId: string, transform: LayerTransform): boolean;
+  resetLayerTransform(layerId: string): boolean;
   setLayerVisible(layerId: string, visible: boolean): boolean;
   setLayerLocked(layerId: string, locked: boolean): boolean;
   renameLayer(layerId: string, name: string): boolean;
@@ -353,6 +357,26 @@ export function createEditorStore({ genId = () => crypto.randomUUID() }: EditorS
         if (drawOrder(next) === drawOrder(screen.layers)) return false; // already at that end
         commitLayers(direction === 1 ? "레이어 앞으로" : "레이어 뒤로", next);
         return true;
+      },
+
+      transformLayer(layerId, transform) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        const next = sanitizeTransform(transform);
+        if (!layer || layer.locked || !next) return false;
+        return editLayer(layerId, "레이어 크기·회전", (l) => {
+          l.transform.x = next.x;
+          l.transform.y = next.y;
+          l.transform.scaleX = next.scaleX;
+          l.transform.scaleY = next.scaleY;
+          l.transform.rotation = next.rotation;
+        });
+      },
+
+      resetLayerTransform(layerId) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer || isOnlyMoved(layer.transform)) return false;
+        // back to natural size and upright, the top-left corner staying where it is
+        return get().transformLayer(layerId, { x: layer.transform.x, y: layer.transform.y, scaleX: 1, scaleY: 1, rotation: 0 });
       },
 
       setLayerVisible(layerId, visible) {

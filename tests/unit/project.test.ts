@@ -46,8 +46,10 @@ describe("screens[] rule", () => {
 describe("validation", () => {
   test.each([
     ["invalid JSON", "{nope", "JSON"],
-    ["layer scale other than 1", tweak((d) => (d.screens[0].layers[0].transform.scaleX = 2)), "scale"],
-    ["layer rotation other than 0", tweak((d) => (d.screens[0].layers[0].transform.rotation = 90)), "rotation"],
+    ["layer scale of 0 (it could not be drawn or turned back)", tweak((d) => (d.screens[0].layers[0].transform.scaleX = 0)), "scale"],
+    ["layer scale that is not a number", tweak((d) => (d.screens[0].layers[0].transform.scaleY = "2")), "scale"],
+    ["layer scale beyond any sane size", tweak((d) => (d.screens[0].layers[0].transform.scaleX = 100000)), "scale"],
+    ["layer rotation that is not a number", tweak((d) => (d.screens[0].layers[0].transform.rotation = "90")), "rotation"],
     ["opacity out of range", tweak((d) => (d.screens[0].layers[0].opacity = 2)), "opacity"],
     ["duplicate layer ids", tweak((d) => (d.screens[0].layers[1].id = "a")), "중복"],
     ["patch with a non-colour fill", tweak((d) => (d.screens[0].backgroundPatches[0].fill = "red")), "fill"],
@@ -60,12 +62,12 @@ describe("validation", () => {
 });
 
 describe("migrate", () => {
-  test("version 1 passes through unchanged", () => {
+  test("the current version passes through unchanged", () => {
     const doc = JSON.parse(serializeProject(makeProject()));
     expect(migrate(doc)).toEqual({ ok: true, doc });
   });
   test("a file from a newer app is refused", () => {
-    expect(errorOf(tweak((d) => (d.version = 2)))).toContain("새로운");
+    expect(errorOf(tweak((d) => (d.version = 3)))).toContain("새로운");
   });
   test.each([[undefined], ["1"], [0], [1.5]])("a bad version (%s) is refused", (v) => {
     expect(errorOf(tweak((d) => (d.version = v)))).toContain("version");

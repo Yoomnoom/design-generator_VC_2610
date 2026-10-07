@@ -11,6 +11,8 @@ const isStr = (v: unknown): v is string => typeof v === "string";
 const isId = (v: unknown): v is string => isStr(v) && v.length > 0;
 /** a reference into the blob store; a Blob/data URL dies with the page, so it is never a valid reference */
 const isImageId = (v: unknown): v is string => isId(v) && !/^(blob|data):/i.test(v);
+/** a sanity ceiling for a file's scale; the editor itself stops well below it */
+const MAX_ABS_SCALE = 1000;
 const isRect = (v: unknown): v is Rect => isRec(v) && isNum(v.x) && isNum(v.y) && isNum(v.width) && isNum(v.height) && v.width >= 0 && v.height >= 0;
 
 function layerError(l: unknown, i: number): string | null {
@@ -21,7 +23,8 @@ function layerError(l: unknown, i: number): string | null {
   if (l.imageId !== undefined && !isImageId(l.imageId)) return `${at}.imageId가 올바르지 않습니다`;
   const t = l.transform;
   if (!isRec(t) || !isNum(t.x) || !isNum(t.y)) return `${at}.transform이 올바르지 않습니다`;
-  if (t.scaleX !== 1 || t.scaleY !== 1 || t.rotation !== 0) return `${at}: Phase 1에서는 scale 1/1, rotation 0만 허용됩니다`;
+  if (!isNum(t.scaleX) || !isNum(t.scaleY) || t.scaleX === 0 || t.scaleY === 0 || Math.abs(t.scaleX) > MAX_ABS_SCALE || Math.abs(t.scaleY) > MAX_ABS_SCALE) return `${at}.transform의 scale이 올바르지 않습니다`;
+  if (!isNum(t.rotation)) return `${at}.transform의 rotation이 올바르지 않습니다`;
   if (!isNum(l.zIndex)) return `${at}.zIndex가 올바르지 않습니다`;
   if (!isNum(l.opacity) || l.opacity < 0 || l.opacity > 1) return `${at}.opacity가 0~1이 아닙니다`;
   if (typeof l.visible !== "boolean" || typeof l.locked !== "boolean") return `${at}.visible/locked가 올바르지 않습니다`;

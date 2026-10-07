@@ -132,6 +132,8 @@ test.describe("what is actually visible", () => {
       await page.mouse.down();
       await page.mouse.move(grab.x + 120, grab.y + 260, { steps: 10 });
       await page.mouse.up();
+      // deselect: the moved layer's handles (the round rotate handle sits above it) are drawn over the canvas and could land on the old spot
+      await page.getByTestId("viewport").click({ position: { x: 8, y: 8 } });
 
       // every CSS pixel in and around the old spot, edges included, must be background gray: no blue, no red
       const tl = await clientOf(page, CARD.x, CARD.y);

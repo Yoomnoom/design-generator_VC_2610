@@ -293,3 +293,67 @@ export async function realisticCapture(page: Page, W: number, H: number): Promis
   );
   return { png: Buffer.from(out.base64, "base64"), rects: out.rects as CaptureRects };
 }
+
+/* ---- 1.5-B helpers: where the resize / rotate handles are, and exporting ---- */
+
+export type Placement = { x: number; y: number; scaleX: number; scaleY: number; rotation: number };
+
+/** the first layer's placement and bitmap size, from the store */
+export const firstLayer = (page: Page) =>
+  page.evaluate(() => {
+    const s = (window as any).__slc.getState();
+    const l = s.history.present.screens[0].layers[0];
+    const raw = s.images.get(l.imageId).raw;
+    return { transform: l.transform as { x: number; y: number; scaleX: number; scaleY: number; rotation: number }, width: raw.width as number, height: raw.height as number, name: l.name as string };
+  });
+
+/** a bitmap point (in the layer's own pixels) → image pixels, by the same rule the app documents: T · R · S */
+export const layerPointToImage = (t: Placement, p: { x: number; y: number }) => {
+  const r = (t.rotation * Math.PI) / 180;
+  const sx = p.x * t.scaleX;
+  const sy = p.y * t.scaleY;
+  return { x: t.x + Math.cos(r) * sx - Math.sin(r) * sy, y: t.y + Math.sin(r) * sx + Math.cos(r) * sy };
+};
+
+/** client position of a handle of the first layer: its four corners, or the rotate handle above the top edge */
+export async function handleAt(page: Page, which: "tl" | "tr" | "br" | "bl" | "rotate") {
+  const { transform: t, width, height } = await firstLayer(page);
+  const toClient = async (p: { x: number; y: number }) => clientOf(page, p.x, p.y);
+  const corner = { tl: { x: 0, y: 0 }, tr: { x: width, y: 0 }, br: { x: width, y: height }, bl: { x: 0, y: height } };
+  if (which !== "rotate") return toClient(layerPointToImage(t, corner[which]));
+  const [tl, tr, bl] = await Promise.all([toClient(layerPointToImage(t, corner.tl)), toClient(layerPointToImage(t, corner.tr)), toClient(layerPointToImage(t, corner.bl))]);
+  const up = { x: tl.x - bl.x, y: tl.y - bl.y };
+  const len = Math.hypot(up.x, up.y);
+  const OFFSET = 26; // the app's rotateAnchorOffset, in screen pixels whatever the zoom
+  return { x: (tl.x + tr.x) / 2 + (up.x / len) * OFFSET, y: (tl.y + tr.y) / 2 + (up.y / len) * OFFSET };
+}
+
+export async function dragClient(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 6 });
+  await page.mouse.move(to.x, to.y, { steps: 6 });
+  await page.mouse.up();
+}
+
+/** exports through the dialog; returns the downloaded PNG bytes */
+export async function exportPngBytes(page: Page): Promise<Buffer> {
+  await page.getByRole("button", { name: "PNG 내보내기" }).click();
+  const download = page.waitForEvent("download");
+  await page.getByTestId("export-save").click();
+  const bytes = (await import("node:fs")).readFileSync(await (await download).path());
+  await page.getByRole("button", { name: "닫기" }).click();
+  return bytes;
+}
+
+/** RGBA of one pixel of a PNG, decoded by the browser */
+export const pngPixelAt = (page: Page, png: Buffer, x: number, y: number) =>
+  page.evaluate(
+    async ([b64, px, py]) => {
+      const bmp = await createImageBitmap(new Blob([Uint8Array.from(atob(b64 as string), (c) => c.charCodeAt(0))]), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+      const g = new OffscreenCanvas(bmp.width, bmp.height).getContext("2d")!;
+      g.drawImage(bmp, 0, 0);
+      return Array.from(g.getImageData(px as number, py as number, 1, 1).data);
+    },
+    [png.toString("base64"), Math.round(x), Math.round(y)] as const,
+  );

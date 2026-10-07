@@ -13,7 +13,8 @@ export async function renderProjectPng(project: Project, images: ImageCache, cod
   const layers = screen.layers.map((layer) => {
     const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
     if (!image) throw new Error(`레이어 "${layer.name}"의 이미지가 로드되어 있지 않습니다`);
-    return { image, x: layer.transform.x, y: layer.transform.y, zIndex: layer.zIndex, opacity: layer.opacity, visible: layer.visible };
+    const { x, y, scaleX, scaleY, rotation } = layer.transform;
+    return { image, x, y, scaleX, scaleY, rotation, zIndex: layer.zIndex, opacity: layer.opacity, visible: layer.visible };
   });
 
   const out = renderComposite({ width: screen.width, height: screen.height, source, patches: screen.backgroundPatches, layers });

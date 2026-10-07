@@ -1,8 +1,30 @@
 import { CURRENT_VERSION } from "./schema";
 
-/* Each entry upgrades a raw document from version N to N+1, keyed by N.
- * Empty while the schema is at version 1; Phase 1.5 (resize/rotate) and Phase 2 (multi-screen) add steps here. */
-const MIGRATIONS: Record<number, (doc: Record<string, unknown>) => Record<string, unknown>> = {};
+/* Each entry upgrades a raw document from version N to N+1, keyed by N. Phase 2 (multi-screen) will add the next one. */
+type Doc = Record<string, unknown>;
+const isRec = (v: unknown): v is Doc => typeof v === "object" && v !== null && !Array.isArray(v);
+
+const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
+  /** 1 → 2: a layer's scale and rotation become free. A version 1 file always held 1, 1 and 0 there, so the
+   *  values stay as they are; a file that lacks them gets those same defaults. Anything else is left for the validator. */
+  1: (doc) => {
+    if (!Array.isArray(doc.screens)) return doc;
+    return {
+      ...doc,
+      screens: doc.screens.map((screen) => {
+        if (!isRec(screen) || !Array.isArray(screen.layers)) return screen;
+        return {
+          ...screen,
+          layers: screen.layers.map((layer) => {
+            if (!isRec(layer) || !isRec(layer.transform)) return layer;
+            const t = layer.transform;
+            return { ...layer, transform: { ...t, scaleX: t.scaleX ?? 1, scaleY: t.scaleY ?? 1, rotation: t.rotation ?? 0 } };
+          }),
+        };
+      }),
+    };
+  },
+};
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };
 
