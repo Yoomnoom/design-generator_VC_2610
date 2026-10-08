@@ -1,6 +1,7 @@
 import { ImageCodec } from "@/lib/image/codec";
 import { RawImage } from "@/lib/image/raw-image";
 import { renderComposite } from "@/lib/image/render-export";
+import { MemoOverlay, overlayMemos } from "@/lib/image/memo-raster";
 import { Rasterize, rasterizeVectorLayer } from "@/lib/image/vector-raster";
 import { Project } from "@/lib/project/schema";
 import { ImageCache } from "@/store/images";
@@ -29,8 +30,16 @@ export function renderProjectRaw(project: Project, images: ImageCache, rasterize
 
 /** Renders the screen at its original pixel size and encodes it as PNG. Independent of zoom, pan and devicePixelRatio:
  *  it composites the source image, patches and layers directly, never the on-screen canvas. */
-export async function renderProjectPng(project: Project, images: ImageCache, codec: ImageCodec, rasterize?: Rasterize): Promise<{ blob: Blob; width: number; height: number }> {
-  const out = renderProjectRaw(project, images, rasterize);
+export type ExportOptions = {
+  /** also draw the memos (numbered pins and balloons) onto the picture; off by default, since memos are notes to the editor */
+  memos?: boolean;
+  overlayMemos?: MemoOverlay;
+};
+
+export async function renderProjectPng(project: Project, images: ImageCache, codec: ImageCodec, rasterize?: Rasterize, options: ExportOptions = {}): Promise<{ blob: Blob; width: number; height: number }> {
+  const raw = renderProjectRaw(project, images, rasterize);
+  const memos = options.memos ? project.screens[0].memos ?? [] : [];
+  const out = memos.length ? (options.overlayMemos ?? overlayMemos)(raw, memos) : raw;
   return { blob: await codec.encode(out), width: out.width, height: out.height };
 }
 

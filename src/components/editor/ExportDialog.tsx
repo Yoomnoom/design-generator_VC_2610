@@ -10,15 +10,17 @@ import { editorStore, useEditorStore } from "@/store/use-editor-store";
 export default function ExportDialog({ onClose }: { onClose: () => void }) {
   const project = useEditorStore(selectProject);
   const comparing = useEditorStore((s) => s.compareMode !== "off");
+  const [includeMemos, setIncludeMemos] = useState(false);
   const [state, setState] = useState<{ kind: "idle" } | { kind: "busy" } | { kind: "done"; width: number; height: number } | { kind: "error"; message: string }>({ kind: "idle" });
   if (!project) return null;
   const screen = project.screens[0];
+  const memoCount = screen.memos?.length ?? 0;
   const fileName = `${safeName(project.name)}.png`;
 
   const save = async () => {
     setState({ kind: "busy" });
     try {
-      const { blob, width, height } = await renderProjectPng(project, editorStore.getState().images, canvasCodec);
+      const { blob, width, height } = await renderProjectPng(project, editorStore.getState().images, canvasCodec, undefined, { memos: includeMemos && memoCount > 0 });
       // check the file itself, not just what we meant to write
       const written = await readPngSize(blob);
       if (!written || written.width !== screen.width || written.height !== screen.height) {
@@ -44,6 +46,13 @@ export default function ExportDialog({ onClose }: { onClose: () => void }) {
           </div>
           <div className="mt-0.5 text-xs text-[var(--muted)]">{fileName} · 투명한 부분은 투명 그대로 저장됩니다</div>
         </div>
+        <label className="mb-1 flex items-center gap-2 text-sm">
+          <input data-testid="export-memos" type="checkbox" checked={includeMemos && memoCount > 0} disabled={memoCount === 0 || state.kind === "busy"} onChange={(e) => setIncludeMemos(e.target.checked)} />
+          <span>메모 포함 ({memoCount}개)</span>
+        </label>
+        <p data-testid="export-memos-note" className="mb-3 text-xs text-[var(--muted)]">
+          {memoCount === 0 ? "메모가 없습니다." : includeMemos ? "번호가 붙은 핀과 말풍선이 PNG 위에 그려집니다." : "메모는 PNG에 들어가지 않습니다."}
+        </p>
         {comparing && <p className="mb-3 text-xs text-[var(--muted)]">비교 보기와 관계없이, 수정한 결과를 저장합니다.</p>}
         {state.kind === "done" && (
           <p data-testid="export-done" role="status" className="mb-3 text-xs text-[#2f7952]">

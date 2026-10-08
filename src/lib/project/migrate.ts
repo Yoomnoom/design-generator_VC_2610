@@ -30,6 +30,8 @@ const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
   3: (doc) => doc,
   /** 4 -> 5: text layers are new and optional, so every version 4 file is already a valid version 5 file. */
   4: (doc) => doc,
+  /** 5 -> 6: `memos` is new and optional (a screen without it has none), so every version 5 file is already a valid version 6 file. */
+  5: (doc) => doc,
 };
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };

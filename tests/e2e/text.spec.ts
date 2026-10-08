@@ -364,7 +364,7 @@ test.describe("hidden, saved and restored", () => {
     await autosaveReady(page);
     await waitForAutosave(page);
     const text = await saveProjectFile(page);
-    expect(JSON.parse(text).project.version).toBe(5);
+    expect(JSON.parse(text).project.version).toBe(6);
 
     await reloadAndDiscard(page);
     await openProjectFile(page, text);
@@ -387,7 +387,7 @@ test.describe("hidden, saved and restored", () => {
     await zoomTo(page, 1, AT.x, AT.y);
     await typeBox(page, AT, "added later");
     expect((await editor(page)).layers).toHaveLength(4);
-    expect(JSON.parse(await saveProjectFile(page)).project.version).toBe(5);
+    expect(JSON.parse(await saveProjectFile(page)).project.version).toBe(6);
   });
 
   test("the PNG keeps the size of the capture, with the text in it", async ({ page }) => {

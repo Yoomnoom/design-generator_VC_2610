@@ -14,6 +14,7 @@ const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
   { id: "brush", icon: "🖌", label: "브러시", title: "드래그해서 자유롭게 그립니다. 새 비트맵 레이어에 그려집니다 (B)" },
   { id: "eraser", icon: "⌫", label: "지우개", title: "브러시로 그린 레이어의 그림을 지웁니다. 원본과 다른 레이어는 지울 수 없습니다 (E)" },
   { id: "text", icon: "T", label: "텍스트", title: "클릭하고 글자를 입력해 텍스트 상자를 만듭니다. 두 번 클릭하면 고칩니다 (T)" },
+  { id: "memo", icon: "💬", label: "메모", title: "클릭해서 메모 핀을 꽂습니다. 편집용이며 PNG에는 기본으로 들어가지 않습니다 (N)" },
   { id: "eyedropper", icon: "💧", label: "스포이트", title: "화면의 색을 읽어 그리기 색으로 씁니다 (I)" },
 ];
 

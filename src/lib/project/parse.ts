@@ -1,5 +1,5 @@
 import { migrate } from "./migrate";
-import { BitmapLayer, Project, Rect } from "./schema";
+import { BitmapLayer, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect } from "./schema";
 import { hexToRgb } from "../image/color";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE, MIN_TEXT_WIDTH } from "../image/text-layout";
 
@@ -92,6 +92,16 @@ function screenError(s: unknown): string | null {
     const id = (l as BitmapLayer).id;
     if (ids.has(id)) return `layers[${i}].id가 중복됩니다`;
     ids.add(id);
+  }
+  if (s.memos !== undefined) {
+    if (!Array.isArray(s.memos) || s.memos.length > MAX_MEMOS) return "memos가 올바르지 않습니다";
+    const memoIds = new Set<string>();
+    for (const [i, m] of s.memos.entries()) {
+      if (!isRec(m) || !isId(m.id) || !isStr(m.text) || m.text.length > MAX_MEMO_LENGTH) return `memos[${i}]이 올바르지 않습니다`;
+      if (!isNum(m.x) || !isNum(m.y) || m.x < 0 || m.y < 0 || m.x > (s.width as number) || m.y > (s.height as number)) return `memos[${i}]의 위치가 화면 밖입니다`;
+      if (memoIds.has(m.id)) return `memos[${i}].id가 중복됩니다`;
+      memoIds.add(m.id);
+    }
   }
   return null;
 }

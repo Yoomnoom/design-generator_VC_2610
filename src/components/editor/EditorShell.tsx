@@ -18,6 +18,7 @@ import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { downloadBlob, safeName } from "./download";
 import { AutosaveBanners, AutosaveFooter } from "./AutosaveStatus";
 import DrawStylePanel from "./DrawStylePanel";
+import MemoPanel from "./MemoPanel";
 import TextStylePanel from "./TextStylePanel";
 import ExportDialog from "./ExportDialog";
 import FillColorDialog from "./FillColorDialog";
@@ -213,6 +214,7 @@ export default function EditorShell() {
           <TextStylePanel />
           <LayerPanel />
           <PropertyPanel />
+          <MemoPanel />
         </aside>
       </main>
 

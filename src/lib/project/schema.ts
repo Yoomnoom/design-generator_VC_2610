@@ -3,8 +3,9 @@
 /** 1: layers fixed at scale 1 and rotation 0 (Phase 1). 2: scale and rotation are free (Phase 1.5).
  *  3: vector layers (`content`: line, rectangle, ellipse) (Phase 2).
  *  4: `drawn` marks a bitmap layer made with the brush (Phase 2).
- *  5: text layers (`content.kind` "text") (Phase 2). */
-export const CURRENT_VERSION = 5 as const;
+ *  5: text layers (`content.kind` "text") (Phase 2).
+ *  6: `memos` on a screen: notes pinned to points of the picture (Phase 2). */
+export const CURRENT_VERSION = 6 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -52,6 +53,12 @@ export type BitmapLayer = {
   locked: boolean;
 };
 
+/** A note pinned to a point of the screen (original-image pixels). It is not a layer: it is never part of the picture, and it reaches the
+ *  exported PNG only when the export asks for memos. */
+export type Memo = { id: string; x: number; y: number; text: string };
+export const MAX_MEMOS = 200;
+export const MAX_MEMO_LENGTH = 1000;
+
 export type ScreenNode = {
   id: string;
   name: string;
@@ -62,6 +69,8 @@ export type ScreenNode = {
   source: { imageId: string; fileName: string };
   backgroundPatches: BackgroundPatch[];
   layers: BitmapLayer[];
+  /** absent in files saved before version 6 */
+  memos?: Memo[];
 };
 
 export type Project = {

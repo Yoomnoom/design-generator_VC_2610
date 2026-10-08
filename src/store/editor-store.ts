@@ -12,7 +12,7 @@ import { cropRaw } from "@/lib/image/crop-bitmap";
 import { normalizeHex } from "@/lib/image/color";
 import { RawImage } from "@/lib/image/raw-image";
 import { sampleBackground } from "@/lib/image/sample-background";
-import { BitmapLayer, CURRENT_VERSION, LayerContent, Project, Rect, ScreenNode } from "@/lib/project/schema";
+import { BitmapLayer, CURRENT_VERSION, LayerContent, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
 
@@ -29,7 +29,7 @@ export type LayerClipboard = { layer: BitmapLayer; pastes: number; /** hash of t
  *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
 export type CompareMode = "off" | "original" | "split";
 
-export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text";
+export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text" | "memo";
 
 /** the tools that drag out a new vector layer, and what each makes */
 export const SHAPE_TOOLS: Partial<Record<Tool, Exclude<LayerContent["kind"], "text">>> = { line: "line", box: "rect", ellipse: "ellipse" };
@@ -73,6 +73,8 @@ type EditorState = {
   drawStyle: DrawStyle;
   textStyle: TextStyle;
   textEditing: TextEditing | null;
+  /** the memo whose balloon is open; not part of the project */
+  selectedMemoId: string | null;
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
 };
@@ -128,6 +130,13 @@ type EditorActions = {
   /** finish typing. A new box with no words is dropped, an existing one keeps its old words if emptied; nothing else changes on a no-op. */
   commitTextEdit(text: string): boolean;
   cancelTextEdit(): void;
+  /** a memo pinned at (x, y) (kept inside the frame); selected, empty. One undo step. Refused while comparing and past MAX_MEMOS. */
+  addMemo(x: number, y: number): string | null;
+  setMemoText(memoId: string, text: string): boolean;
+  /** move a memo's pin (kept inside the frame); one undo step, none when it does not move */
+  moveMemo(memoId: string, x: number, y: number): boolean;
+  deleteMemo(memoId: string): boolean;
+  selectMemo(memoId: string | null): void;
 
   undo(): void;
   redo(): void;
@@ -172,6 +181,12 @@ function applyLayers(draft: BitmapLayer[], next: readonly BitmapLayer[]) {
 const nextNumberFor = (layers: readonly BitmapLayer[], prefix: string) =>
   layers.reduce((max, l) => (l.name.startsWith(`${prefix} `) && /^\d+$/.test(l.name.slice(prefix.length + 1)) ? Math.max(max, Number(l.name.slice(prefix.length + 1))) : max), 0) + 1;
 
+/** a point kept inside the frame, to two decimals */
+const clampToFrame = (screen: { width: number; height: number }, x: number, y: number) => ({
+  x: Math.min(Math.max(Math.round(x * 100) / 100, 0), screen.width),
+  y: Math.min(Math.max(Math.round(y * 100) / 100, 0), screen.height),
+});
+
 const drawOrder = (layers: readonly BitmapLayer[]) => sortByZ(layers).map((l) => l.id).join("\n");
 
 export function createEditorStore({ genId = () => crypto.randomUUID(), now = () => Date.now(), measure = canvasMeasureFor }: EditorStoreOptions = {}): EditorStoreApi {
@@ -191,6 +206,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         history,
         selectedLayerIds: get().selectedLayerIds.filter((id) => ids.has(id)),
         selectedPatchId: patch && screen.backgroundPatches.some((p) => p.id === patch) ? patch : null,
+        selectedMemoId: get().selectedMemoId && (screen.memos ?? []).some((m) => m.id === get().selectedMemoId) ? get().selectedMemoId : null,
         pendingExtraction: null,
         dragPreview: null,
       });
@@ -261,6 +277,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         view: { ...project.canvas },
         needsFit: false,
         activeTool: "select",
+        selectedMemoId: null,
         selectedLayerIds: [],
         selectedPatchId: null,
         pendingExtraction: null,
@@ -284,6 +301,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       drawStyle: DEFAULT_DRAW_STYLE,
       textStyle: DEFAULT_TEXT_STYLE,
       textEditing: null,
+      selectedMemoId: null,
       dragPreview: null,
 
       newProject({ fileName, raw, blob, name }) {
@@ -653,6 +671,67 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
 
       cancelTextEdit: () => set({ textEditing: null }),
 
+      addMemo(x, y) {
+        const { history } = get();
+        const screen = screenOf();
+        if (frozen() || !history || !screen || ![x, y].every(Number.isFinite) || (screen.memos?.length ?? 0) >= MAX_MEMOS) return null;
+        const id = genId();
+        const p = clampToFrame(screen, x, y);
+        set({
+          history: commit(history, "메모 추가", (draft) => {
+            (draft.screens[0].memos ??= []).push({ id, x: p.x, y: p.y, text: "" });
+          }),
+          selectedMemoId: id,
+          selectedLayerIds: [],
+          selectedPatchId: null,
+          activeTool: "select",
+        });
+        return id;
+      },
+
+      setMemoText(memoId, text) {
+        const { history } = get();
+        const memo = screenOf()?.memos?.find((m) => m.id === memoId);
+        if (frozen() || !history || !memo || memo.text === text || text.length > MAX_MEMO_LENGTH) return false;
+        set({ history: commit(history, "메모 수정", (draft) => void (draft.screens[0].memos!.find((m) => m.id === memoId)!.text = text)) });
+        return true;
+      },
+
+      moveMemo(memoId, x, y) {
+        const { history } = get();
+        const screen = screenOf();
+        const memo = screen?.memos?.find((m) => m.id === memoId);
+        if (frozen() || !history || !screen || !memo || ![x, y].every(Number.isFinite)) return false;
+        const p = clampToFrame(screen, x, y);
+        if (p.x === memo.x && p.y === memo.y) return false;
+        set({
+          history: commit(history, "메모 이동", (draft) => {
+            const m = draft.screens[0].memos!.find((d) => d.id === memoId)!;
+            m.x = p.x;
+            m.y = p.y;
+          }),
+        });
+        return true;
+      },
+
+      deleteMemo(memoId) {
+        const { history } = get();
+        if (frozen() || !history || !screenOf()?.memos?.some((m) => m.id === memoId)) return false;
+        set({
+          history: commit(history, "메모 삭제", (draft) => {
+            const s = draft.screens[0];
+            s.memos = s.memos!.filter((m) => m.id !== memoId);
+          }),
+          selectedMemoId: get().selectedMemoId === memoId ? null : get().selectedMemoId,
+        });
+        return true;
+      },
+
+      selectMemo(memoId) {
+        if (memoId && screenOf()?.memos?.some((m) => m.id === memoId)) set({ selectedMemoId: memoId, selectedLayerIds: [], selectedPatchId: null });
+        else set({ selectedMemoId: null });
+      },
+
       setPatchColor(patchId, hex) {
         const { history } = get();
         const color = normalizeHex(hex);
@@ -681,7 +760,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       // a gesture or question that was under way is dropped, so nothing half-done lingers behind the comparison
       setCompareMode: (compareMode) => set({ compareMode, dragPreview: null, pendingExtraction: null }),
       setTool: (activeTool) => set({ activeTool }),
-      selectLayer: (layerId) => set({ selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [], selectedPatchId: null }),
+      selectLayer: (layerId) => set({ selectedMemoId: null, selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [], selectedPatchId: null }),
       selectPatch: (patchId) => {
         const known = patchId && screenOf()?.backgroundPatches.some((p) => p.id === patchId);
         set({ selectedPatchId: known ? patchId : null, selectedLayerIds: [] });

@@ -210,7 +210,7 @@ test.describe("saving and opening", () => {
     const placed = (await firstLayer(page)).transform;
     const pngBefore = await exportPngBytes(page);
     const text = await saveProjectFile(page);
-    expect(JSON.parse(text).project.version).toBe(5);
+    expect(JSON.parse(text).project.version).toBe(6);
     expect(JSON.parse(text).project.screens[0].layers[0].transform).toEqual(placed);
 
     await reloadAndDiscard(page);
@@ -245,7 +245,7 @@ test.describe("saving and opening", () => {
     expect(await pngPixelAt(page, png, 400, 290)).toEqual(BLUE);
 
     const saved = JSON.parse(await saveProjectFile(page));
-    expect(saved.project.version).toBe(5);
+    expect(saved.project.version).toBe(6);
     expect(saved.project.screens[0].layers).toHaveLength(2);
   });
 

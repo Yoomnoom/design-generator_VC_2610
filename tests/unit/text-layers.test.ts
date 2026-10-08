@@ -349,7 +349,7 @@ describe("the file format: text layers (version 5)", () => {
     const before = JSON.parse(v4).project;
     const r = await loadProjectText(v4, { blobs: await openBlobStore("v4", new IDBFactory()), codec: codec() });
     if (!r.ok) throw new Error(r.error);
-    expect(r.project.version).toBe(5);
+    expect(r.project.version).toBe(6);
     expect(r.project.screens[0].layers).toEqual(before.screens[0].layers);
     expect(r.project.screens[0].backgroundPatches).toEqual(before.screens[0].backgroundPatches);
   });
@@ -357,7 +357,7 @@ describe("the file format: text layers (version 5)", () => {
   test("migrate takes version 4 to the current version without touching the screens", () => {
     const doc = JSON.parse(v4).project;
     const r = migrate(doc);
-    expect(r.ok && r.doc.version).toBe(5);
+    expect(r.ok && r.doc.version).toBe(6);
     expect(r.ok && (r.doc.screens as unknown[])).toEqual(doc.screens);
   });
 

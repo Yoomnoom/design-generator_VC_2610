@@ -28,7 +28,12 @@ export function useShortcuts() {
           st.redo();
           break;
         case "delete":
-          if (!layerId || !st.deleteLayer(layerId)) return;
+          // with no layer selected, Delete takes the selected memo
+          if (!layerId) {
+            if (!st.selectedMemoId || !st.deleteMemo(st.selectedMemoId)) return;
+            break;
+          }
+          if (!st.deleteLayer(layerId)) return;
           break;
         case "duplicate":
           if (layerId) st.duplicateLayer(layerId); // Ctrl+D is "bookmark this page" in a browser, so it is always taken
@@ -72,6 +77,9 @@ export function useShortcuts() {
           break;
         case "tool-eyedropper":
           st.setTool("eyedropper");
+          break;
+        case "tool-memo":
+          st.setTool("memo");
           break;
         case "tool-text":
           st.setTool("text");

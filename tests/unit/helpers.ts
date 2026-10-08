@@ -22,7 +22,7 @@ export const makeLayer = (id: string, zIndex: number, over: Partial<BitmapLayer>
 export const makeProject = (layers: BitmapLayer[] = []): Project => ({
   id: "p1",
   name: "테스트",
-  version: 5,
+  version: 6,
   canvas: { zoom: 2, panX: -40, panY: -20 },
   screens: [
     {
