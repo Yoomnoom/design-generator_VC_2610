@@ -363,8 +363,9 @@ test.describe("background that needs a human", () => {
     await page.mouse.down();
     await page.mouse.move(spot.x, spot.y + 150, { steps: 8 });
     await page.mouse.up();
-    const left = await konvaPixel(page, spot.x, spot.y);
-    expect(left.rgba.slice(0, 3)).toEqual([0, 255, 0]);
+    // the snap guide that was shown while dragging (the frame's centre line runs through this spot) is taken off the canvas on the next frame,
+    // so wait for the canvas to settle instead of reading it in the instant after the drop
+    await expect.poll(async () => (await konvaPixel(page, spot.x, spot.y)).rgba.slice(0, 3)).toEqual([0, 255, 0]);
   });
 });
 

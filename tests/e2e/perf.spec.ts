@@ -94,10 +94,12 @@ test("1920×1080 with 5 layers: frame rate while dragging a layer", async ({ pag
   });
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
+  let dragging = false;
   for (let i = 0; i < 180; i++) {
     const a = (i / 180) * Math.PI * 2;
     await page.mouse.move(from.x + Math.sin(a) * 80, from.y + (1 - Math.cos(a)) * 40);
     await page.waitForTimeout(8);
+    if (i === 90) dragging = await page.evaluate(() => (window as any).__slc.getState().dragPreview !== null); // halfway round: a drag is under way
   }
   await page.mouse.up();
   const stats = await page.evaluate(() => {
@@ -121,5 +123,9 @@ test("1920×1080 with 5 layers: frame rate while dragging a layer", async ({ pag
   });
   console.log(`PERF drag, 5 layers on 1920×1080: ${JSON.stringify(stats)}`);
   test.info().annotations.push({ type: "drag-fps", description: JSON.stringify(stats) });
-  expect(stats.history).toBe(6); // 5 extractions + the one drag
+  expect(dragging).toBe(true);
+  // 5 extractions, and the drag when it moved the layer: the path ends where it began, and with snapping on (the default, and what is measured) the
+  // layer's own starting place is a line it is pulled back onto, so the drop may be a no-op that records nothing
+  expect(stats.history).toBeGreaterThanOrEqual(5);
+  expect(stats.history).toBeLessThanOrEqual(6);
 });
