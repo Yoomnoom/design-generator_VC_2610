@@ -86,7 +86,8 @@ const iconButton = "grid h-[30px] w-[30px] shrink-0 cursor-pointer place-items-c
 export default function LayerPanel() {
   const screen = useEditorStore(selectScreen);
   const images = useEditorStore((s) => s.images);
-  const selectedId = useEditorStore((s) => s.selectedLayerIds[0]);
+  const selectedIds = useEditorStore((s) => s.selectedLayerIds);
+  const selectedId = selectedIds[0];
   const comparing = useEditorStore((s) => s.compareMode !== "off");
   if (!screen) return null;
 
@@ -94,6 +95,8 @@ export default function LayerPanel() {
   const index = front.findIndex((l) => l.id === selectedId);
   const selected = front[index];
   const has = index >= 0;
+  const multi = selectedIds.length > 1;
+  const unlockedSelected = front.filter((l) => selectedIds.includes(l.id) && !l.locked).length;
   const act = editorStore.getState();
 
   return (
@@ -102,18 +105,23 @@ export default function LayerPanel() {
         레이어 <span className="font-normal text-[#999]" data-testid="layer-count">{front.length}</span>
       </h3>
       <div className="mb-2.5 grid grid-cols-4 gap-1.5">
-        <button className="btn mini px-0" disabled={!has || index === 0 || comparing} onClick={() => act.reorderLayer(selectedId, 1)}>앞으로</button>
-        <button className="btn mini px-0" disabled={!has || index === front.length - 1 || comparing} onClick={() => act.reorderLayer(selectedId, -1)}>뒤로</button>
-        <button className="btn mini px-0" disabled={!has || comparing} title="복제 (Ctrl+D)" onClick={() => act.duplicateLayer(selectedId)}>복제</button>
-        <button className="btn mini px-0" disabled={!has || selected?.locked || comparing} title={selected?.locked ? "잠긴 레이어는 삭제할 수 없습니다" : "삭제 (Delete)"} onClick={() => act.deleteLayer(selectedId)}>삭제</button>
+        <button className="btn mini px-0" disabled={!has || multi || index === 0 || comparing} onClick={() => act.reorderLayer(selectedId, 1)}>앞으로</button>
+        <button className="btn mini px-0" disabled={!has || multi || index === front.length - 1 || comparing} onClick={() => act.reorderLayer(selectedId, -1)}>뒤로</button>
+        <button className="btn mini px-0" disabled={!has || multi || comparing} title={multi ? "여러 레이어는 복제할 수 없습니다. 하나만 선택하세요" : "복제 (Ctrl+D)"} onClick={() => act.duplicateLayer(selectedId)}>복제</button>
+        <button className="btn mini px-0" disabled={!has || (multi ? unlockedSelected === 0 : selected?.locked) || comparing} title={multi ? "선택한 레이어를 모두 삭제합니다 (잠긴 것은 제외, Delete)" : selected?.locked ? "잠긴 레이어는 삭제할 수 없습니다" : "삭제 (Delete)"} onClick={() => (multi ? act.deleteSelectedLayers() : act.deleteLayer(selectedId))}>삭제</button>
       </div>
+      {multi && (
+        <p data-testid="multi-note" className="mb-2 text-xs text-[var(--accent)]">
+          {selectedIds.length}개 선택됨 · 끌기와 방향키로 함께 이동, Delete로 삭제
+        </p>
+      )}
       {front.length === 0 ? (
         <p className="text-xs text-[var(--muted)]">영역 추출 도구로 사각형을 드래그하면 레이어가 생깁니다.</p>
       ) : (
         <ul data-testid="layer-list" className="m-0 list-none p-0">
           {front.map((layer) => {
             const raw = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
-            const active = layer.id === selectedId;
+            const active = selectedIds.includes(layer.id);
             return (
               <li key={layer.id} data-hidden={layer.visible ? undefined : "true"} data-locked={layer.locked ? "true" : undefined} className={`mb-0.5 flex items-center rounded-[7px] ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "hover:bg-[#f5f5f2]"}`}>
                 <button
@@ -121,7 +129,7 @@ export default function LayerPanel() {
                   data-testid="layer-item"
                   data-layer-id={layer.id}
                   aria-current={active ? "true" : undefined}
-                  onClick={() => act.selectLayer(layer.id)}
+                  onClick={(e) => (e.shiftKey || e.ctrlKey || e.metaKey ? act.toggleLayerSelection(layer.id) : act.selectLayer(layer.id))}
                   className={`flex h-[38px] min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-1.5 text-left text-xs text-inherit ${layer.visible ? "" : "opacity-45"}`}
                 >
                   {layer.content ? <ContentThumb content={layer.content} /> : raw && <Thumb raw={raw} />}

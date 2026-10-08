@@ -1,4 +1,4 @@
-export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "tool-auto" | "candidate-extract" | "candidate-clear" | "nudge-left" | "nudge-right" | "nudge-up" | "nudge-down";
+export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "select-all" | "tool-auto" | "candidate-extract" | "candidate-clear" | "nudge-left" | "nudge-right" | "nudge-up" | "nudge-down";
 
 export type KeyInfo = { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat?: boolean };
 
@@ -14,6 +14,7 @@ export function resolveShortcut(e: KeyInfo): ShortcutAction | null {
     else if (key === "y" && !e.shiftKey) action = "redo";
     else if (key === "d" && !e.shiftKey) action = "duplicate";
     else if (key === "c" && !e.shiftKey) action = "copy";
+    else if (key === "a" && !e.shiftKey) action = "select-all";
   } else if (!mod && !e.altKey && !e.shiftKey && (e.key === "Enter" || e.key === "Escape")) {
     // used only while a candidate is chosen (the caller checks); otherwise these keys are left alone
     action = e.key === "Enter" ? "candidate-extract" : "candidate-clear";

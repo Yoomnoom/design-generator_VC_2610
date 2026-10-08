@@ -129,6 +129,7 @@ test.describe("lock", () => {
     await page.getByRole("button", { name: "복제" }).click();
     const names = await panelNames(page);
     expect(names).toEqual(["레이어 1 복사", "레이어 1"]);
+    await page.getByTestId("snap-toggle").uncheck(); // this checks an exact distance; with snapping on, the copy's right edge (596) would be pulled onto the frame's centre line (600)
     await dragLayerBy(page, { x: CARD.x + 16 + 100, y: CARD.y + 16 + 60 }, 40, 0); // the copy moves
     expect((await editor(page)).layers.find((l) => l.name === "레이어 1 복사")!.transform.x).toBe(CARD.x + 16 + 40);
   });

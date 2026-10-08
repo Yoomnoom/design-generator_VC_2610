@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
-import { Image as KImage, Layer, Rect, Shape, Stage, Transformer } from "react-konva";
+import { Image as KImage, Layer, Line, Rect, Shape, Stage, Text, Transformer } from "react-konva";
+import { layerBox } from "@/features/snap/layer-box";
+import { BitmapLayer } from "@/lib/project/schema";
+import { Box, SNAP_SCREEN_PIXELS, snapMove, unionBox } from "@/features/snap/snap";
 import { renderProjectRaw } from "@/features/export-image/export-png";
 import { rgbToHex } from "@/lib/image/color";
 import { DrawCtx, drawContent, shapeFromDrag } from "@/lib/image/vector";
@@ -53,7 +56,10 @@ export default function CanvasViewport() {
   const images = useEditorStore((s) => s.images);
   const view = useEditorStore((s) => s.view);
   const tool = useEditorStore((s) => s.activeTool);
-  const selectedId = useEditorStore((s) => s.selectedLayerIds[0]);
+  const selectedIds = useEditorStore((s) => s.selectedLayerIds);
+  const selectedId = selectedIds[0];
+  const snapGuides = useEditorStore((s) => s.snapGuides);
+  const snapEnabled = useEditorStore((s) => s.snapEnabled);
   const selectedPatchId = useEditorStore((s) => s.selectedPatchId);
   const needsFit = useEditorStore((s) => s.needsFit);
   const compare = useEditorStore((s) => s.compareMode);
@@ -241,11 +247,61 @@ export default function CanvasViewport() {
   const originalCanvas = useMemo(() => (sourceRaw ? rawToCanvas(sourceRaw) : null), [sourceRaw]);
   const layers = useMemo(() => (screen ? sortByZ(screen.layers) : []), [screen]);
 
+  // Dragging a selected layer drags the whole selection: the dragged layer's preview is in the store, the others follow by the same distance
+  // (a locked one stays). Nothing is stored until the drop.
+  const dragged = preview ? layers.find((l) => l.id === preview.layerId) : undefined;
+  const groupDelta = preview && dragged && selectedIds.includes(preview.layerId) ? { dx: preview.x - dragged.transform.x, dy: preview.y - dragged.transform.y } : null;
+  const placedAt = (layer: BitmapLayer): { x: number; y: number } =>
+    preview && preview.layerId === layer.id ? { x: preview.x, y: preview.y } : groupDelta && selectedIds.includes(layer.id) && !layer.locked ? { x: layer.transform.x + groupDelta.dx, y: layer.transform.y + groupDelta.dy } : layer.transform;
+  const bitmapSize = (layer: BitmapLayer) => (layer.imageId ? images.get(layer.imageId)?.raw : undefined);
+  const boxOf = (layer: BitmapLayer, where: { x: number; y: number } = layer.transform): Box | null => layerBox({ ...layer, transform: { ...layer.transform, x: where.x, y: where.y } }, bitmapSize(layer));
+  const groupBox = selectedIds.length > 1 && !comparing ? unionBox(layers.filter((l) => selectedIds.includes(l.id) && l.visible).map((l) => boxOf(l, placedAt(l))).filter((b): b is Box => !!b)) : null;
+
+  /** a press on a layer: with Shift/Ctrl it joins or leaves the selection (and a layer that left is not dragged); without, a member of a
+   *  selection keeps the selection so the group can be dragged, and anything else becomes the selection */
+  const pressLayer = (id: string, additive: boolean, node: Konva.Node) => {
+    const st = editorStore.getState();
+    if (additive) {
+      st.toggleLayerSelection(id);
+      if (!editorStore.getState().selectedLayerIds.includes(id)) node.stopDrag();
+      return;
+    }
+    if (!st.selectedLayerIds.includes(id)) st.selectLayer(id);
+  };
+
+  /** while dragging: where the layer (or the group) would land, pulled onto the lines of other layers and the frame unless Alt is held */
+  const dragMove = (layer: BitmapLayer, e: KonvaEventObject<DragEvent>) => {
+    if (!screen) return;
+    const st = editorStore.getState();
+    let x = e.target.x() - screen.x;
+    let y = e.target.y() - screen.y;
+    let guides: ReturnType<typeof snapMove>["guides"] = [];
+    if (st.snapEnabled && !e.evt.altKey) {
+      const group = st.selectedLayerIds.includes(layer.id) ? st.selectedLayerIds : [layer.id];
+      const dx = x - layer.transform.x;
+      const dy = y - layer.transform.y;
+      const movers = layers.filter((l) => group.includes(l.id) && (l.id === layer.id || !l.locked));
+      const moving = unionBox(movers.map((l) => boxOf(l, { x: l.transform.x + dx, y: l.transform.y + dy })).filter((b): b is Box => !!b));
+      const others = layers.filter((l) => l.visible && !group.includes(l.id)).map((l) => boxOf(l)).filter((b): b is Box => !!b);
+      if (moving) {
+        const r = snapMove(moving, others, screen, SNAP_SCREEN_PIXELS / st.view.zoom);
+        x += r.dx;
+        y += r.dy;
+        guides = r.guides;
+      }
+    }
+    x = Math.round(x);
+    y = Math.round(y);
+    e.target.position({ x: screen.x + x, y: screen.y + y }); // the layer is shown where it would land
+    st.previewLayerDrag(layer.id, x, y);
+    st.setSnapGuides(guides);
+  };
+
   // The resize/rotate handles belong to the selected layer, and only while it can actually be changed.
   const layerRef = useRef<Konva.Layer>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const selected = layers.find((l) => l.id === selectedId);
-  const showHandles = tool === "select" && !comparing && !!selected && selected.visible && !selected.locked;
+  const showHandles = tool === "select" && !comparing && selectedIds.length === 1 && !!selected && selected.visible && !selected.locked;
   useEffect(() => {
     const tr = transformerRef.current;
     if (!tr) return;
@@ -303,7 +359,7 @@ export default function CanvasViewport() {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
                   const content = layer.content;
                   if (!image && !content) return null;
-                  const at = preview?.layerId === layer.id ? preview : layer.transform;
+                  const at = placedAt(layer);
                   const movable = tool === "select";
                   const shared = {
                     name: `layer-${layer.id}`,
@@ -316,11 +372,13 @@ export default function CanvasViewport() {
                     visible: layer.visible && compare !== "original", // a hidden layer is neither drawn nor clickable; the original has no layers
                     draggable: movable && !layer.locked && !comparing,
                     listening: movable && layer.visible && !comparing,
-                    onMouseDown: () => editorStore.getState().selectLayer(layer.id),
-                    onTouchStart: () => editorStore.getState().selectLayer(layer.id),
+                    onMouseDown: (e: KonvaEventObject<MouseEvent>) => pressLayer(layer.id, e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey, e.target),
+                    onTouchStart: (e: KonvaEventObject<TouchEvent>) => pressLayer(layer.id, false, e.target),
+                    // a plain click (no drag) on a member of a selection narrows the selection to that layer
+                    onClick: (e: KonvaEventObject<MouseEvent>) => !(e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey) && editorStore.getState().selectedLayerIds.length > 1 && editorStore.getState().selectLayer(layer.id),
                     onDblClick: () => layer.content?.kind === "text" && editorStore.getState().activeTool === "select" && editorStore.getState().beginTextEdit({ layerId: layer.id }),
                     onDblTap: () => layer.content?.kind === "text" && editorStore.getState().activeTool === "select" && editorStore.getState().beginTextEdit({ layerId: layer.id }),
-                    onDragMove: (e: KonvaEventObject<DragEvent>) => editorStore.getState().previewLayerDrag(layer.id, e.target.x() - screen.x, e.target.y() - screen.y),
+                    onDragMove: (e: KonvaEventObject<DragEvent>) => dragMove(layer, e),
                     onDragEnd: () => editorStore.getState().commitLayerDrag(), // one history step, on release
                     onTransformEnd: (e: KonvaEventObject<Event>) => {
                       // handles were dragged: the node holds the new placement; the store keeps it (one history step) or refuses it
@@ -342,10 +400,15 @@ export default function CanvasViewport() {
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
                   const box = layer.content ? { width: layer.content.width, height: layer.content.height } : image;
-                  if (!box || layer.id !== selectedId || !layer.visible || showHandles || comparing) return null; // with handles, their frame is the outline
-                  const at = preview?.layerId === layer.id ? preview : layer.transform;
+                  if (!box || !selectedIds.includes(layer.id) || !layer.visible || showHandles || comparing) return null; // with handles, their frame is the outline
+                  const at = placedAt(layer);
                   return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} scaleX={layer.transform.scaleX} scaleY={layer.transform.scaleY} rotation={layer.transform.rotation} width={box.width} height={box.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={layer.locked ? [6, 4] : undefined} listening={false} />;
                 })}
+                {groupBox && screen && <Rect x={screen.x + groupBox.x} y={screen.y + groupBox.y} width={groupBox.width} height={groupBox.height} stroke={ACCENT} strokeWidth={1} strokeScaleEnabled={false} dash={[6, 4]} listening={false} />}
+                {snapGuides.map((g, i) => (
+                  <Line key={`guide-${i}`} points={[screen.x + g.x1, screen.y + g.y1, screen.x + g.x2, screen.y + g.y2]} stroke="#ff3d81" strokeWidth={1} strokeScaleEnabled={false} listening={false} />
+                ))}
+                {snapGuides.map((g, i) => g.label && <Text key={`guide-label-${i}`} x={screen.x + (g.x1 + g.x2) / 2} y={screen.y + (g.y1 + g.y2) / 2 - 12 / view.zoom} text={g.label} fontSize={11 / view.zoom} fill="#ff3d81" listening={false} />)}
                 <Transformer
                   ref={transformerRef}
                   flipEnabled={false}
@@ -452,6 +515,10 @@ export default function CanvasViewport() {
           <button className="btn mini" aria-label="축소" onClick={() => zoomBy(1 / ZOOM_STEP)}>−</button>
           <button className="btn mini min-w-14" data-testid="zoom-readout" aria-label="100%로 되돌리기" onClick={() => zoomBy(1 / view.zoom)}>{Math.round(view.zoom * 100)}%</button>
           <button className="btn mini" aria-label="확대" onClick={() => zoomBy(ZOOM_STEP)}>＋</button>
+          <label className="ml-1 flex cursor-pointer items-center gap-1 border-l border-[var(--line)] pl-2 text-xs" title="끌 때 다른 레이어·프레임의 선과 8px 간격에 붙습니다. Alt를 누르고 있으면 잠시 꺼집니다.">
+            <input data-testid="snap-toggle" type="checkbox" checked={snapEnabled} onChange={(e) => editorStore.getState().setSnapEnabled(e.target.checked)} />
+            스냅
+          </label>
           <button className="btn mini" onClick={() => hasSize && editorStore.getState().setView(fitView(size, screen))}>화면 맞춤</button>
         </div>
       )}

@@ -150,10 +150,25 @@ export default function PropertyPanel() {
   const screen = useEditorStore(selectScreen);
   const images = useEditorStore((s) => s.images);
   const layerId = useEditorStore((s) => s.selectedLayerIds[0]);
+  const selectedIds = useEditorStore((s) => s.selectedLayerIds);
+  const selectedCount = selectedIds.length;
   const patchId = useEditorStore((s) => s.selectedPatchId);
   const preview = useEditorStore((s) => s.dragPreview);
   const comparing = useEditorStore((s) => s.compareMode !== "off");
   if (!screen) return null;
+
+  if (selectedCount > 1) {
+    const chosen = screen.layers.filter((l) => selectedIds.includes(l.id));
+    const locked = chosen.filter((l) => l.locked).length;
+    return (
+      <section aria-label="선택 레이어" data-testid="multi-panel" className="px-3.5 py-3">
+        <h3 className="mb-2.5 text-[13px] font-bold">선택 레이어 {chosen.length}개</h3>
+        <p className="m-0 text-xs text-[var(--muted)]">이동과 삭제만 할 수 있습니다. 끌거나 방향키(Shift는 10px)로 함께 옮기고, Delete로 모두 지웁니다.</p>
+        <p className="mb-0 mt-2 text-xs text-[var(--muted)]">크기·회전·이름·복제·복사는 레이어를 하나만 선택했을 때 쓸 수 있습니다.</p>
+        {locked > 0 && <p className="mb-0 mt-2 text-xs text-[#8a5a12]">잠긴 레이어 {locked}개는 함께 움직이지 않고 지워지지도 않습니다.</p>}
+      </section>
+    );
+  }
 
   const layer = screen.layers.find((l) => l.id === layerId);
   const patch = screen.backgroundPatches.find((p) => p.id === patchId);

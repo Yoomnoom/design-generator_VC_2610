@@ -21,6 +21,9 @@ export function useShortcuts() {
       const layerId = st.selectedLayerIds[0];
 
       switch (action) {
+        case "select-all":
+          st.selectAllLayers();
+          break;
         case "undo":
           st.undo();
           break;
@@ -33,13 +36,18 @@ export function useShortcuts() {
             if (!st.selectedMemoId || !st.deleteMemo(st.selectedMemoId)) return;
             break;
           }
-          if (!st.deleteLayer(layerId)) return;
+          if (!st.deleteSelectedLayers()) return; // every selected layer that is not locked
           break;
         case "duplicate":
-          if (layerId) st.duplicateLayer(layerId); // Ctrl+D is "bookmark this page" in a browser, so it is always taken
+          if (st.selectedLayerIds.length > 1) st.setNotice("여러 레이어가 선택되어 있어 복제할 수 없습니다. 하나만 선택하세요.");
+          else if (layerId) st.duplicateLayer(layerId); // Ctrl+D is "bookmark this page" in a browser, so it is always taken
           break;
         case "copy":
           if (!layerId || window.getSelection()?.toString()) return; // with text selected, Ctrl+C is the normal copy
+          if (st.selectedLayerIds.length > 1) {
+            st.setNotice("여러 레이어가 선택되어 있어 복사할 수 없습니다. 하나만 선택하세요.");
+            break;
+          }
           // the layer's picture goes to the system clipboard; the app remembers the layer and the picture's hash.
           // A refusal (no permission, no clipboard API) is shown to the user, never swallowed.
           void copyLayerToClipboard({ layerId, store: editorStore, codec: canvasCodec, write: writePngToSystemClipboard }).then((r) => {
@@ -63,7 +71,7 @@ export function useShortcuts() {
           const step = e.shiftKey ? 10 : 1;
           const dx = action === "nudge-left" ? -step : action === "nudge-right" ? step : 0;
           const dy = action === "nudge-up" ? -step : action === "nudge-down" ? step : 0;
-          st.nudgeLayer(layerId, dx, dy);
+          st.nudgeLayers(st.selectedLayerIds, dx, dy); // the whole selection; a locked layer stays where it is
           break;
         }
         case "tool-line":

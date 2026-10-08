@@ -6,6 +6,7 @@ import { MAX_STROKE_WIDTH, SHAPE_LABEL, withSize } from "@/lib/image/vector";
 import { MAX_FONT_SIZE, MIN_FONT_SIZE, MIN_TEXT_WIDTH, TextAlign } from "@/lib/image/text-layout";
 import { MeasureFor, canvasMeasureFor, fitHeight } from "@/lib/image/text-measure";
 import { Candidate, candidatesAt, pickNext } from "@/lib/image/candidates";
+import { Guide } from "@/features/snap/snap";
 import { contentError } from "@/lib/project/parse";
 import { LayerTransform, isOnlyMoved, sanitizeTransform } from "@/lib/geometry/layer-transform";
 import { clampZoom } from "@/lib/geometry/view-transform";
@@ -87,6 +88,10 @@ type EditorState = {
   candidatePick: CandidatePick | null;
   /** the smallest candidate under the pointer, shown lightly */
   candidateHover: Candidate | null;
+  /** snap to other layers and the frame's lines while dragging; Alt turns it off for one drag */
+  snapEnabled: boolean;
+  /** the guide lines of the snap in progress (empty when not dragging) */
+  snapGuides: Guide[];
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
 };
@@ -127,6 +132,17 @@ type EditorActions = {
   /** Moves a layer by (dx, dy) pixels, for the arrow keys. Presses on the same layer within NUDGE_MERGE_MS ms of each other are ONE undo step
    *  (holding a key is not fifty steps). Refused for a locked layer and while comparing. */
   nudgeLayer(layerId: string, dx: number, dy: number): boolean;
+  /** Moves several layers by the same (dx, dy), the keyboard version of dragging a selection. A locked layer stays where it is (and when
+   *  every one is locked nothing moves). Presses on the same set of layers close together are one undo step. */
+  nudgeLayers(layerIds: readonly string[], dx: number, dy: number): boolean;
+  /** add the layer to the selection, or take it out when it is in */
+  toggleLayerSelection(layerId: string): void;
+  /** every layer */
+  selectAllLayers(): void;
+  /** delete every selected layer that is not locked, as one undo step; the number deleted. Locked ones stay, with a notice. */
+  deleteSelectedLayers(): number;
+  setSnapEnabled(enabled: boolean): void;
+  setSnapGuides(guides: Guide[]): void;
   /** a new vector layer at (x, y) (its top-left, in frame pixels); one undo step */
   addVectorLayer(content: LayerContent, x: number, y: number): string | null;
   /** change a vector layer's look (colours, stroke width); one undo step, refused on a locked layer */
@@ -305,6 +321,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         candidateError: null,
         candidatePick: null,
         candidateHover: null,
+        snapGuides: [],
         selectedLayerIds: [],
         selectedPatchId: null,
         pendingExtraction: null,
@@ -332,6 +349,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       candidateError: null,
       candidatePick: null,
       candidateHover: null,
+      snapEnabled: true,
+      snapGuides: [],
       textEditing: null,
       selectedMemoId: null,
       dragPreview: null,
@@ -404,22 +423,36 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       },
 
       commitLayerDrag() {
-        const { history, dragPreview } = get();
-        set({ dragPreview: null });
+        const { history, dragPreview, selectedLayerIds } = get();
+        set({ dragPreview: null, snapGuides: [] });
         if (!history || !dragPreview || frozen()) return false;
         const { layerId, x, y } = dragPreview;
-        const next = commit(history, "레이어 이동", (draft) => {
-          const layer = draft.screens[0].layers.find((l) => l.id === layerId);
-          if (!layer || layer.locked) return;
-          layer.transform.x = x; // unchanged values make no patch, so a click without movement records nothing
-          layer.transform.y = y;
+        const layers = screenOf()?.layers ?? [];
+        const dragged = layers.find((l) => l.id === layerId);
+        if (!dragged || dragged.locked) return false;
+        // dragging a selected layer drags the whole selection by the same distance; a locked one stays where it is
+        const group = selectedLayerIds.includes(layerId) ? selectedLayerIds : [layerId];
+        const movers = layers.filter((l) => group.includes(l.id) && !l.locked).map((l) => l.id);
+        const dx = x - dragged.transform.x;
+        const dy = y - dragged.transform.y;
+        const next = commit(history, movers.length > 1 ? "레이어 이동(여러 개)" : "레이어 이동", (draft) => {
+          for (const l of draft.screens[0].layers) {
+            if (!movers.includes(l.id)) continue;
+            if (l.id === layerId) {
+              l.transform.x = x; // unchanged values make no patch, so a click without movement records nothing
+              l.transform.y = y;
+            } else {
+              l.transform.x = Math.round((l.transform.x + dx) * 100) / 100;
+              l.transform.y = Math.round((l.transform.y + dy) * 100) / 100;
+            }
+          }
         });
         if (next === history) return false;
-        set({ history: next, selectedLayerIds: [layerId], selectedPatchId: null });
+        set({ history: next, selectedLayerIds: group, selectedPatchId: null });
         return true;
       },
 
-      cancelLayerDrag: () => set({ dragPreview: null }),
+      cancelLayerDrag: () => set({ dragPreview: null, snapGuides: [] }),
 
       duplicateLayer(layerId) {
         if (frozen()) return null;
@@ -540,34 +573,73 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         return editLayer(layerId, "레이어 이름 변경", (l) => void (l.name = clean));
       },
 
-      nudgeLayer(layerId, dx, dy) {
+      nudgeLayer: (layerId, dx, dy) => get().nudgeLayers([layerId], dx, dy),
+
+      nudgeLayers(layerIds, dx, dy) {
         const { history } = get();
-        const layer = screenOf()?.layers.find((l) => l.id === layerId);
-        if (frozen() || !history || !layer || layer.locked || ![dx, dy].every(Number.isFinite) || (dx === 0 && dy === 0)) return false;
+        const layers = screenOf()?.layers ?? [];
+        const movers = layerIds.filter((id) => layers.some((l) => l.id === id && !l.locked));
+        if (frozen() || !history || movers.length === 0 || ![dx, dy].every(Number.isFinite) || (dx === 0 && dy === 0)) return false;
+        const key = [...movers].sort().join("|");
         const t = now();
-        const fold = lastNudge && lastNudge.layerId === layerId && t - lastNudge.at <= NUDGE_MERGE_MS && history.past.at(-1) === lastNudge.entry;
+        const fold = lastNudge && lastNudge.layerId === key && t - lastNudge.at <= NUDGE_MERGE_MS && history.past.at(-1) === lastNudge.entry;
         // folding: step back over the previous press and make one move of the total, so the history has a single entry for the burst
         const base = fold ? undo(history) : history;
         const total = fold ? { dx: lastNudge!.dx + dx, dy: lastNudge!.dy + dy } : { dx, dy };
-        const moved = commit(base, "레이어 이동(키보드)", (draft) => {
-          const l = draft.screens[0].layers.find((d) => d.id === layerId);
-          if (!l) return;
-          l.transform.x = Math.round((l.transform.x + total.dx) * 100) / 100;
-          l.transform.y = Math.round((l.transform.y + total.dy) * 100) / 100;
+        const moved = commit(base, movers.length > 1 ? "레이어 이동(키보드, 여러 개)" : "레이어 이동(키보드)", (draft) => {
+          for (const l of draft.screens[0].layers) {
+            if (!movers.includes(l.id)) continue;
+            l.transform.x = Math.round((l.transform.x + total.dx) * 100) / 100;
+            l.transform.y = Math.round((l.transform.y + total.dy) * 100) / 100;
+          }
         });
+        const selection = movers.length === 1 && layerIds.length === 1 ? { selectedLayerIds: movers } : {};
         if (moved === base) {
           // the burst netted out to nothing: the earlier press is already undone, so keep that and leave no step behind
           if (fold) {
             lastNudge = null;
-            set({ history: base, selectedLayerIds: [layerId], selectedPatchId: null });
+            set({ history: base, selectedPatchId: null, ...selection });
             return true;
           }
           return false;
         }
-        lastNudge = { layerId, at: t, entry: moved.past.at(-1), ...total };
-        set({ history: moved, selectedLayerIds: [layerId], selectedPatchId: null });
+        lastNudge = { layerId: key, at: t, entry: moved.past.at(-1), ...total };
+        set({ history: moved, selectedPatchId: null, ...selection });
         return true;
       },
+
+      toggleLayerSelection(layerId) {
+        if (!screenOf()?.layers.some((l) => l.id === layerId)) return;
+        const current = get().selectedLayerIds;
+        set({ selectedLayerIds: current.includes(layerId) ? current.filter((id) => id !== layerId) : [...current, layerId], selectedPatchId: null, selectedMemoId: null });
+      },
+
+      selectAllLayers() {
+        const screen = screenOf();
+        if (!screen) return;
+        set({ selectedLayerIds: screen.layers.map((l) => l.id), selectedPatchId: null, selectedMemoId: null });
+      },
+
+      deleteSelectedLayers() {
+        if (frozen()) return 0;
+        const screen = screenOf();
+        if (!screen) return 0;
+        const ids = get().selectedLayerIds.filter((id) => screen.layers.some((l) => l.id === id));
+        const deletable = ids.filter((id) => !screen.layers.find((l) => l.id === id)!.locked);
+        if (deletable.length === 0) {
+          if (ids.length > 0) set({ notice: "잠긴 레이어는 삭제할 수 없습니다." });
+          return 0;
+        }
+        let layers: readonly BitmapLayer[] = screen.layers;
+        for (const id of deletable) layers = removeLayer(layers, id);
+        commitLayers(deletable.length > 1 ? `레이어 ${deletable.length}개 삭제` : "레이어 삭제", layers);
+        const kept = ids.filter((id) => !deletable.includes(id));
+        set({ selectedLayerIds: kept, ...(kept.length > 0 ? { notice: `잠긴 레이어 ${kept.length}개는 삭제되지 않았습니다.` } : {}) });
+        return deletable.length;
+      },
+
+      setSnapEnabled: (snapEnabled) => set({ snapEnabled, snapGuides: snapEnabled ? get().snapGuides : [] }),
+      setSnapGuides: (snapGuides) => set({ snapGuides }),
 
       commitBitmapEdit({ layerId, raw, x, y, label }) {
         const { history, images } = get();

@@ -188,6 +188,7 @@ describe("keys", () => {
     expect(resolveShortcut(key("Escape"))).toBe("candidate-clear");
     expect(resolveShortcut(key("Enter", { ctrlKey: true }))).toBeNull();
     expect(resolveShortcut(key("Escape", { shiftKey: true }))).toBeNull();
-    expect(resolveShortcut(key("a", { ctrlKey: true }))).toBeNull(); // select all stays the browser's
+    expect(resolveShortcut(key("a", { ctrlKey: true }))).toBe("select-all"); // Ctrl+A selects every layer (not the tool)
+    expect(resolveShortcut(key("a", { ctrlKey: true, shiftKey: true }))).toBeNull();
   });
 });
