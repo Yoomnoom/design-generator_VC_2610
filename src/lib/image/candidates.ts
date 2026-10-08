@@ -19,13 +19,16 @@ export type CandidateOptions = {
   maxFrameShare?: number;
   /** a region that fills less than this share of its own box is a thin outline or a scatter, not a shape */
   minFill?: number;
+  /** Stop when the picture has more runs of one colour than this (about 35 bytes each while working). A screenshot has a few per row;
+   *  a photo or noise has one per pixel, and 33 million pixels would need over a gigabyte. */
+  maxRuns?: number;
 };
 
-export const DEFAULT_OPTIONS: Required<CandidateOptions> = { tolerance: 4, minSide: 8, maxFrameShare: 0.9, minFill: 0.15 };
+export const DEFAULT_OPTIONS: Required<CandidateOptions> = { tolerance: 4, minSide: 8, maxFrameShare: 0.9, minFill: 0.15, maxRuns: 6_000_000 };
 
 /** Finds regions in `img`. Cost grows with the number of pixels (one pass to join, one to sum up), not with how busy the picture is. */
 export function findCandidates(img: RawImage, options: CandidateOptions = {}): Candidate[] {
-  const { tolerance, minSide, maxFrameShare, minFill } = { ...DEFAULT_OPTIONS, ...options };
+  const { tolerance, minSide, maxFrameShare, minFill, maxRuns } = { ...DEFAULT_OPTIONS, ...options };
   const { width: W, height: H, data } = img;
   if (W < 1 || H < 1) return [];
 
@@ -73,6 +76,7 @@ export function findCandidates(img: RawImage, options: CandidateOptions = {}): C
     runStart[y] = starts;
     runEnd[y] = ends;
     runId[y] = ids;
+    if (parent.length > maxRuns) throw new Error("색이 계속 바뀌는 복잡한 화면(사진이 많은 화면 등)이라 후보를 찾지 못했습니다. 수동 영역 추출은 그대로 쓸 수 있습니다.");
     if (y === 0) continue;
     // join with the row above wherever a pixel and the one above it are alike
     const pS = runStart[y - 1];

@@ -5,6 +5,7 @@ import { isInside } from "@/lib/geometry/rect";
 import { MAX_STROKE_WIDTH, SHAPE_LABEL, withSize } from "@/lib/image/vector";
 import { MAX_FONT_SIZE, MIN_FONT_SIZE, MIN_TEXT_WIDTH, TextAlign } from "@/lib/image/text-layout";
 import { MeasureFor, canvasMeasureFor, fitHeight } from "@/lib/image/text-measure";
+import { Candidate, candidatesAt, pickNext } from "@/lib/image/candidates";
 import { contentError } from "@/lib/project/parse";
 import { LayerTransform, isOnlyMoved, sanitizeTransform } from "@/lib/geometry/layer-transform";
 import { clampZoom } from "@/lib/geometry/view-transform";
@@ -29,7 +30,7 @@ export type LayerClipboard = { layer: BitmapLayer; pastes: number; /** hash of t
  *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
 export type CompareMode = "off" | "original" | "split";
 
-export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text" | "memo";
+export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text" | "memo" | "auto";
 
 /** the tools that drag out a new vector layer, and what each makes */
 export const SHAPE_TOOLS: Partial<Record<Tool, Exclude<LayerContent["kind"], "text">>> = { line: "line", box: "rect", ellipse: "ellipse" };
@@ -46,6 +47,11 @@ export const DEFAULT_TEXT_WIDTH = 240;
 
 /** the text box being typed into: an existing layer, or (layerId null) a new one that exists only once there are words in it */
 export type TextEditing = { layerId: string | null; x: number; y: number };
+
+/** the regions found in the screen's original picture, for the automatic-candidates tool. Not part of the project: it is found again when needed. */
+export type CandidateSet = { imageId: string; list: Candidate[]; /** how long the analysis took, in ms */ ms: number };
+/** the candidate chosen by a click: the smaller ones under that spot come first, and clicking the same spot again takes the next larger */
+export type CandidatePick = { rect: Rect; /** 0 = the smallest under the click */ index: number; /** how many candidates are under the click */ count: number; point: { x: number; y: number } };
 
 /** an extraction waiting for the user to pick a background colour; it owns no layer, patch or history entry */
 export type PendingExtraction = { rect: Rect; suggestedHex: string | null };
@@ -75,6 +81,12 @@ type EditorState = {
   textEditing: TextEditing | null;
   /** the memo whose balloon is open; not part of the project */
   selectedMemoId: string | null;
+  candidates: CandidateSet | null;
+  candidateStatus: "idle" | "running" | "error";
+  candidateError: string | null;
+  candidatePick: CandidatePick | null;
+  /** the smallest candidate under the pointer, shown lightly */
+  candidateHover: Candidate | null;
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
 };
@@ -137,6 +149,16 @@ type EditorActions = {
   moveMemo(memoId: string, x: number, y: number): boolean;
   deleteMemo(memoId: string): boolean;
   selectMemo(memoId: string | null): void;
+  setCandidateStatus(status: "idle" | "running" | "error", error?: string | null): void;
+  setCandidates(set: CandidateSet | null): void;
+  /** light up the smallest candidate under the pointer (null: none) */
+  hoverCandidateAt(point: { x: number; y: number } | null): void;
+  /** a click on a spot of the picture: the smallest candidate under it, or, clicking about the same spot again, the next larger one.
+   *  False (and nothing chosen) when there is no candidate there, no analysis yet, or while comparing. */
+  pickCandidateAt(point: { x: number; y: number }): boolean;
+  /** hand the chosen candidate's box to the ordinary extraction (background colour, undo step, all as if it had been dragged out) */
+  extractCandidatePick(): ExtractionResult | null;
+  clearCandidatePick(): void;
 
   undo(): void;
   redo(): void;
@@ -278,6 +300,11 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         needsFit: false,
         activeTool: "select",
         selectedMemoId: null,
+        candidates: null,
+        candidateStatus: "idle",
+        candidateError: null,
+        candidatePick: null,
+        candidateHover: null,
         selectedLayerIds: [],
         selectedPatchId: null,
         pendingExtraction: null,
@@ -300,6 +327,11 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       compareMode: "off",
       drawStyle: DEFAULT_DRAW_STYLE,
       textStyle: DEFAULT_TEXT_STYLE,
+      candidates: null,
+      candidateStatus: "idle",
+      candidateError: null,
+      candidatePick: null,
+      candidateHover: null,
       textEditing: null,
       selectedMemoId: null,
       dragPreview: null,
@@ -727,6 +759,42 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         return true;
       },
 
+      setCandidateStatus: (candidateStatus, error = null) => set({ candidateStatus, candidateError: candidateStatus === "error" ? error : null }),
+      setCandidates: (candidates) => set({ candidates, candidatePick: null, candidateHover: null }),
+
+      hoverCandidateAt(point) {
+        const { candidates, candidateHover } = get();
+        const screen = screenOf();
+        const found = point && !frozen() && screen && candidates?.imageId === screen.source.imageId ? candidatesAt(candidates.list, point)[0] ?? null : null;
+        if (found === candidateHover) return;
+        if (found && candidateHover && found.x === candidateHover.x && found.y === candidateHover.y && found.width === candidateHover.width && found.height === candidateHover.height) return;
+        set({ candidateHover: found });
+      },
+
+      pickCandidateAt(point) {
+        const { candidates, candidatePick } = get();
+        const screen = screenOf();
+        if (frozen() || !screen || !candidates || candidates.imageId !== screen.source.imageId || ![point.x, point.y].every(Number.isFinite)) return false;
+        const r = pickNext(candidates.list, point, candidatePick ? { point: candidatePick.point, index: candidatePick.index } : null);
+        if (!r) {
+          set({ candidatePick: null });
+          return false;
+        }
+        const { x, y, width, height } = r.candidate;
+        set({ candidatePick: { rect: { x, y, width, height }, index: r.index, count: candidatesAt(candidates.list, point).length, point: { ...point } } });
+        return true;
+      },
+
+      extractCandidatePick() {
+        const pick = get().candidatePick;
+        if (!pick) return null;
+        const result = get().beginExtraction({ ...pick.rect });
+        if (result.status !== "rejected") set({ candidatePick: null, candidateHover: null });
+        return result;
+      },
+
+      clearCandidatePick: () => set({ candidatePick: null }),
+
       selectMemo(memoId) {
         if (memoId && screenOf()?.memos?.some((m) => m.id === memoId)) set({ selectedMemoId: memoId, selectedLayerIds: [], selectedPatchId: null });
         else set({ selectedMemoId: null });
@@ -759,7 +827,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       markFitted: () => set({ needsFit: false }),
       // a gesture or question that was under way is dropped, so nothing half-done lingers behind the comparison
       setCompareMode: (compareMode) => set({ compareMode, dragPreview: null, pendingExtraction: null }),
-      setTool: (activeTool) => set({ activeTool }),
+      setTool: (activeTool) => set(activeTool === "auto" ? { activeTool } : { activeTool, candidatePick: null, candidateHover: null }),
       selectLayer: (layerId) => set({ selectedMemoId: null, selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [], selectedPatchId: null }),
       selectPatch: (patchId) => {
         const known = patchId && screenOf()?.backgroundPatches.some((p) => p.id === patchId);

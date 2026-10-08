@@ -20,6 +20,8 @@ import { ZOOM_STEP, fitView, panBy, zoomAt } from "@/lib/geometry/view-transform
 import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { rawToCanvas } from "./raw-canvas";
+import CandidateBar from "./CandidateBar";
+import CandidateOverlay from "./CandidateOverlay";
 import MemoLayer from "./MemoLayer";
 import TextEditor from "./TextEditor";
 import VectorShape from "./VectorShape";
@@ -164,6 +166,10 @@ export default function CanvasViewport() {
       editorStore.getState().beginTextEdit(roundPoint(toImage(e, v)));
       e.preventDefault();
       return;
+    } else if (e.button === 0 && activeTool === "auto") {
+      editorStore.getState().pickCandidateAt(toImage(e, v));
+      e.preventDefault();
+      return;
     } else if (e.button === 0 && activeTool === "memo") {
       const p = roundPoint(toImage(e, v));
       editorStore.getState().addMemo(p.x, p.y);
@@ -178,6 +184,7 @@ export default function CanvasViewport() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    if (!gesture.current && screen && editorStore.getState().activeTool === "auto") return editorStore.getState().hoverCandidateAt(toImage(e));
     const g = gesture.current;
     if (!g || !screen) return;
     if (g.kind === "pan") {
@@ -257,7 +264,7 @@ export default function CanvasViewport() {
   const tagAt = marqueeRect ? imageToClient({ x: marqueeRect.x, y: marqueeRect.y }, { x: 0, y: 0 }, view, frameOrigin) : null;
 
   const zoomBy = (factor: number) => editorStore.getState().setView(zoomAt(view, view.zoom * factor, { x: size.width / 2, y: size.height / 2 }));
-  const cursor = tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "memo" ? "crosshair" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
+  const cursor = tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "memo" || tool === "auto" ? "crosshair" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
 
   return (
     <div
@@ -269,6 +276,7 @@ export default function CanvasViewport() {
       onPointerMove={onPointerMove}
       onPointerUp={(e) => endGesture(e, true)}
       onPointerCancel={(e) => endGesture(e, false)}
+      onPointerLeave={() => editorStore.getState().hoverCandidateAt(null)}
     >
       {hasSize && (
         <Stage
@@ -437,6 +445,8 @@ export default function CanvasViewport() {
 
       <TextEditor />
       <MemoLayer />
+      <CandidateOverlay />
+      <CandidateBar />
       {screen && (
       <div className="absolute right-4 top-3 flex gap-1.5 rounded-[10px] border border-[var(--line)] bg-white/90 p-1.5 shadow-sm" onPointerDown={(e) => e.stopPropagation()}>
           <button className="btn mini" aria-label="축소" onClick={() => zoomBy(1 / ZOOM_STEP)}>−</button>

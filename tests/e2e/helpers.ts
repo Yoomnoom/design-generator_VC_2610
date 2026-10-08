@@ -136,7 +136,7 @@ export async function dragImageRect(page: Page, from: { x: number; y: number }, 
   if (opts.release !== false) await page.mouse.up();
 }
 
-export const pickTool = (page: Page, name: "선택" | "이동" | "영역 추출" | "배경 채움" | "선" | "사각형" | "원" | "스포이트" | "브러시" | "지우개" | "텍스트" | "메모") => page.getByRole("button", { name, exact: true }).click();
+export const pickTool = (page: Page, name: "선택" | "이동" | "영역 추출" | "배경 채움" | "선" | "사각형" | "원" | "스포이트" | "브러시" | "지우개" | "텍스트" | "메모" | "자동 후보") => page.getByRole("button", { name, exact: true }).click();
 
 /** the colour of one CSS pixel of what Konva actually painted */
 export const konvaPixel = (page: Page, clientX: number, clientY: number) =>

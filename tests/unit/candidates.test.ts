@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { describe, expect, test } from "vitest";
-import { Candidate, candidatesAt, findCandidates, iou, pickNext } from "@/lib/image/candidates";
+import { Candidate, DEFAULT_OPTIONS, candidatesAt, findCandidates, iou, pickNext } from "@/lib/image/candidates";
 import { RawImage, createRawImage } from "@/lib/image/raw-image";
 import { decodePng } from "./png";
 import { setPixel } from "./helpers";
@@ -62,6 +62,16 @@ describe("findCandidates on a flat capture", () => {
   });
 });
 
+describe("accuracy on the synthetic capture (printed for the report)", () => {
+  const { img, rects } = synthetic();
+  const list = findCandidates(img);
+  test("measurement table", () => {
+    const rows = Object.entries(rects).map(([name, r]) => ({ element: name, "best IoU": Number(best(list, r).toFixed(3)), found: best(list, r) >= 0.85 }));
+    console.log(`candidates found: ${list.length} in a ${img.width}x${img.height} synthetic capture with ${rows.length} known elements (+3 specks that must not be found)`);
+    console.table(rows);
+    expect(rows.every((r) => r.found)).toBe(true);
+  });
+});
 describe("tolerance and what a region may be", () => {
   test("a card on a soft gradient page is still found (the gradient joins the page, not the card)", () => {
     const img = createRawImage(300, 200);
@@ -146,6 +156,28 @@ describe("accuracy on a capture that looks like a real app (tests/fixtures/reali
   });
 });
 
+describe("a picture that is too busy", () => {
+  const noise = (w: number, h: number) => {
+    const img = createRawImage(w, h);
+    let seed = 7;
+    for (let i = 0; i < w * h; i++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      img.data.set([seed & 255, (seed >> 8) & 255, (seed >> 16) & 255, 255], i * 4);
+    }
+    return img;
+  };
+  test("noise makes one run per pixel; past the limit the search stops with a message instead of eating memory", () => {
+    expect(() => findCandidates(noise(200, 200), { maxRuns: 10_000 })).toThrow(/복잡한 화면/);
+  });
+  test("under the limit nothing changes; a flat screenshot has very few runs and is far from it", () => {
+    expect(() => findCandidates(noise(50, 50), { maxRuns: 10_000 })).not.toThrow();
+    expect(() => findCandidates(synthetic().img, { maxRuns: 2_000 })).not.toThrow();
+  });
+  test("the default limit is generous for real screenshots and still stops a full-size photo (12 million pixels)", () => {
+    expect(DEFAULT_OPTIONS.maxRuns).toBeGreaterThanOrEqual(1_000_000);
+    expect(DEFAULT_OPTIONS.maxRuns).toBeLessThan(12_000_000);
+  });
+});
 describe("speed", () => {
   test("a 4000 × 3000 capture with fifty cards is analysed in a few seconds (measurement)", () => {
     const img = createRawImage(4000, 3000, PAGE);

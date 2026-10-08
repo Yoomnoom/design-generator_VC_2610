@@ -78,6 +78,17 @@ export function useShortcuts() {
         case "tool-eyedropper":
           st.setTool("eyedropper");
           break;
+        case "tool-auto":
+          st.setTool("auto");
+          break;
+        case "candidate-extract":
+          if (!st.candidatePick) return; // Enter means nothing here otherwise
+          st.extractCandidatePick();
+          break;
+        case "candidate-clear":
+          if (!st.candidatePick) return;
+          st.clearCandidatePick();
+          break;
         case "tool-memo":
           st.setTool("memo");
           break;
