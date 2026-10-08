@@ -20,6 +20,7 @@ import { ZOOM_STEP, fitView, panBy, zoomAt } from "@/lib/geometry/view-transform
 import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { rawToCanvas } from "./raw-canvas";
+import TextEditor from "./TextEditor";
 import VectorShape from "./VectorShape";
 
 const ACCENT = "#5b5ce2";
@@ -156,6 +157,12 @@ export default function CanvasViewport() {
       brushPoints.current = [{ x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100 }];
       gesture.current = { kind: "brush", points: brushPoints.current };
       setBrushTick((t) => t + 1);
+    } else if (e.button === 0 && activeTool === "text") {
+      // a click while a box is open is the user leaving it (the box commits on blur); the next click makes the next box
+      if (editorStore.getState().textEditing) return;
+      editorStore.getState().beginTextEdit(roundPoint(toImage(e, v)));
+      e.preventDefault();
+      return;
     } else if (e.button === 0 && activeTool === "eyedropper") {
       pickColorAt(toImage(e, v));
       return;
@@ -230,6 +237,8 @@ export default function CanvasViewport() {
     const tr = transformerRef.current;
     if (!tr) return;
     const node = showHandles ? layerRef.current?.findOne(`.layer-${selectedId}`) : null;
+    // a text box is resized by its width only (its letters keep their size), so it has just the side handles
+    tr.enabledAnchors(selected?.content?.kind === "text" ? ["middle-left", "middle-right"] : ["top-left", "top-center", "top-right", "middle-right", "middle-left", "bottom-left", "bottom-center", "bottom-right"]);
     tr.nodes(node ? [node] : []);
     tr.getLayer()?.batchDraw();
   });
@@ -242,7 +251,7 @@ export default function CanvasViewport() {
   const tagAt = marqueeRect ? imageToClient({ x: marqueeRect.x, y: marqueeRect.y }, { x: 0, y: 0 }, view, frameOrigin) : null;
 
   const zoomBy = (factor: number) => editorStore.getState().setView(zoomAt(view, view.zoom * factor, { x: size.width / 2, y: size.height / 2 }));
-  const cursor = tool === "hand" ? "grab" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
+  const cursor = tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
 
   return (
     <div
@@ -295,6 +304,8 @@ export default function CanvasViewport() {
                     listening: movable && layer.visible && !comparing,
                     onMouseDown: () => editorStore.getState().selectLayer(layer.id),
                     onTouchStart: () => editorStore.getState().selectLayer(layer.id),
+                    onDblClick: () => layer.content?.kind === "text" && editorStore.getState().activeTool === "select" && editorStore.getState().beginTextEdit({ layerId: layer.id }),
+                    onDblTap: () => layer.content?.kind === "text" && editorStore.getState().activeTool === "select" && editorStore.getState().beginTextEdit({ layerId: layer.id }),
                     onDragMove: (e: KonvaEventObject<DragEvent>) => editorStore.getState().previewLayerDrag(layer.id, e.target.x() - screen.x, e.target.y() - screen.y),
                     onDragEnd: () => editorStore.getState().commitLayerDrag(), // one history step, on release
                     onTransformEnd: (e: KonvaEventObject<Event>) => {
@@ -418,8 +429,9 @@ export default function CanvasViewport() {
         </div>
       )}
 
+      <TextEditor />
       {screen && (
-        <div className="absolute right-4 top-3 flex gap-1.5 rounded-[10px] border border-[var(--line)] bg-white/90 p-1.5 shadow-sm" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="absolute right-4 top-3 flex gap-1.5 rounded-[10px] border border-[var(--line)] bg-white/90 p-1.5 shadow-sm" onPointerDown={(e) => e.stopPropagation()}>
           <button className="btn mini" aria-label="축소" onClick={() => zoomBy(1 / ZOOM_STEP)}>−</button>
           <button className="btn mini min-w-14" data-testid="zoom-readout" aria-label="100%로 되돌리기" onClick={() => zoomBy(1 / view.zoom)}>{Math.round(view.zoom * 100)}%</button>
           <button className="btn mini" aria-label="확대" onClick={() => zoomBy(ZOOM_STEP)}>＋</button>

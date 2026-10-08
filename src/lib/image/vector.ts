@@ -1,5 +1,6 @@
 import { LayerTransform, layerPointToFrame } from "../geometry/layer-transform";
-import { LayerContent, Rect } from "../project/schema";
+import { LayerContent, Rect, TextContent } from "../project/schema";
+import { fontOf, layoutText, lineHeightOf } from "./text-layout";
 
 /* Vector layers: a description (LayerContent) and one function that draws it. The canvas on screen and the PNG export both call
  * drawContent, so what you see and what you save cannot drift apart; only the pixel grid they are drawn onto differs. */
@@ -19,6 +20,11 @@ export type DrawCtx = {
   lineWidth: number;
   lineCap: CanvasLineCap;
   lineJoin: CanvasLineJoin;
+  font: string;
+  textAlign: CanvasTextAlign;
+  textBaseline: CanvasTextBaseline;
+  fillText(text: string, x: number, y: number): void;
+  measureText(text: string): { width: number };
 };
 
 export const MIN_VECTOR_SIDE = 1;
@@ -26,7 +32,7 @@ export const MAX_STROKE_WIDTH = 200;
 
 export const contentSize = (c: LayerContent) => ({ width: c.width, height: c.height });
 export const contentStroke = (c: LayerContent): string | null => c.stroke;
-export const contentFill = (c: LayerContent): string | null => (c.kind === "line" ? null : c.fill);
+export const contentFill = (c: LayerContent): string | null => (c.kind === "line" || c.kind === "text" ? null : c.fill);
 
 /** how far the stroke reaches outside the box (a stroke is centred on the edge) */
 export const strokeOverhang = (c: LayerContent) => (c.stroke && c.strokeWidth > 0 ? c.strokeWidth / 2 : 0);
@@ -55,7 +61,20 @@ export function vectorFrameBounds(c: LayerContent, t: LayerTransform): Rect {
 }
 
 /** Draws the layer's content with its top-left at the context's current origin. */
+/** The words of a text box, line by line, from the top-left of the box. Measuring goes through the same context that draws, so the
+ *  canvas on screen and the PNG export break the lines in the same places. */
+export function drawText(ctx: DrawCtx, c: TextContent): void {
+  ctx.font = fontOf(c.fontSize);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = c.color;
+  const lh = lineHeightOf(c.fontSize);
+  const { lines } = layoutText(c, (t) => ctx.measureText(t).width);
+  for (const line of lines) if (line.text !== "") ctx.fillText(line.text, line.x, line.y + (lh - c.fontSize) / 2);
+}
+
 export function drawContent(ctx: DrawCtx, c: LayerContent): void {
+  if (c.kind === "text") return drawText(ctx, c);
   ctx.lineJoin = "miter";
   ctx.beginPath();
   if (c.kind === "line") {
@@ -91,7 +110,7 @@ const clampSide = (v: number) => Math.max(MIN_VECTOR_SIDE, Math.round(v * 100) /
 export const withSize = (c: LayerContent, width: number, height: number): LayerContent => ({ ...c, width: clampSide(width), height: clampSide(height) });
 
 /** the content a fresh drag from (x0, y0) to (x1, y1) describes, and where its top-left sits; null when it is too small to be one */
-export function shapeFromDrag(kind: LayerContent["kind"], a: { x: number; y: number }, b: { x: number; y: number }, style: { stroke: string; fill: string | null; strokeWidth: number }): { content: LayerContent; x: number; y: number } | null {
+export function shapeFromDrag(kind: Exclude<LayerContent["kind"], "text">, a: { x: number; y: number }, b: { x: number; y: number }, style: { stroke: string; fill: string | null; strokeWidth: number }): { content: LayerContent; x: number; y: number } | null {
   const x = Math.min(a.x, b.x);
   const y = Math.min(a.y, b.y);
   const width = Math.abs(a.x - b.x);
@@ -105,4 +124,4 @@ export function shapeFromDrag(kind: LayerContent["kind"], a: { x: number; y: num
   return { x, y, content: { kind, width, height, stroke: style.strokeWidth > 0 ? style.stroke : null, strokeWidth: style.strokeWidth, fill: style.fill } as LayerContent };
 }
 
-export const SHAPE_LABEL: Record<LayerContent["kind"], string> = { rect: "사각형", ellipse: "원", line: "선" };
+export const SHAPE_LABEL: Record<LayerContent["kind"], string> = { rect: "사각형", ellipse: "원", line: "선", text: "텍스트" };

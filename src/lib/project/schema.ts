@@ -2,8 +2,9 @@
 
 /** 1: layers fixed at scale 1 and rotation 0 (Phase 1). 2: scale and rotation are free (Phase 1.5).
  *  3: vector layers (`content`: line, rectangle, ellipse) (Phase 2).
- *  4: `drawn` marks a bitmap layer made with the brush (Phase 2). */
-export const CURRENT_VERSION = 4 as const;
+ *  4: `drawn` marks a bitmap layer made with the brush (Phase 2).
+ *  5: text layers (`content.kind` "text") (Phase 2). */
+export const CURRENT_VERSION = 5 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -17,7 +18,11 @@ export type BackgroundPatch = {
  *  width/height (its transform scale stays 1), so strokes keep their thickness. Drawn only when needed: the project stores
  *  this description, and the PNG export rasterises it. */
 export type ShapeStyle = { stroke: string | null; strokeWidth: number; fill: string | null };
+/** A text box: the words, their size, colour and alignment, wrapped inside `width`. `height` is whatever the wrapped lines need (kept
+ *  in step with them by the editor), so the box always holds its text. Text has no outline, so stroke is always null. */
+export type TextContent = { kind: "text"; width: number; height: number; text: string; fontSize: number; color: string; align: "left" | "center" | "right"; stroke: null; strokeWidth: 0 };
 export type LayerContent =
+  | TextContent
   | ({ kind: "rect" | "ellipse"; width: number; height: number } & ShapeStyle)
   /** a segment across the box: "down" runs top-left → bottom-right, "up" runs bottom-left → top-right */
   | { kind: "line"; width: number; height: number; direction: "down" | "up"; stroke: string; strokeWidth: number };

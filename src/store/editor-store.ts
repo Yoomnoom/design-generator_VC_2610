@@ -3,6 +3,8 @@ import { addOnTop, moveLayer, removeLayer, sortByZ } from "@/features/layer-tran
 import { View } from "@/lib/geometry/coords";
 import { isInside } from "@/lib/geometry/rect";
 import { MAX_STROKE_WIDTH, SHAPE_LABEL, withSize } from "@/lib/image/vector";
+import { MAX_FONT_SIZE, MIN_FONT_SIZE, MIN_TEXT_WIDTH, TextAlign } from "@/lib/image/text-layout";
+import { MeasureFor, canvasMeasureFor, fitHeight } from "@/lib/image/text-measure";
 import { contentError } from "@/lib/project/parse";
 import { LayerTransform, isOnlyMoved, sanitizeTransform } from "@/lib/geometry/layer-transform";
 import { clampZoom } from "@/lib/geometry/view-transform";
@@ -27,14 +29,23 @@ export type LayerClipboard = { layer: BitmapLayer; pastes: number; /** hash of t
  *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
 export type CompareMode = "off" | "original" | "split";
 
-export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser";
+export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text";
 
 /** the tools that drag out a new vector layer, and what each makes */
-export const SHAPE_TOOLS: Partial<Record<Tool, LayerContent["kind"]>> = { line: "line", box: "rect", ellipse: "ellipse" };
+export const SHAPE_TOOLS: Partial<Record<Tool, Exclude<LayerContent["kind"], "text">>> = { line: "line", box: "rect", ellipse: "ellipse" };
 
 /** What a new shape looks like. Not part of the project and not undoable. The eyedropper sets the colour named by `pickTarget`. */
 export type DrawStyle = { stroke: string; fill: string | null; strokeWidth: number; pickTarget: "stroke" | "fill" };
 export const DEFAULT_DRAW_STYLE: DrawStyle = { stroke: "#e5322d", fill: null, strokeWidth: 3, pickTarget: "stroke" };
+
+/** What a new text box looks like (an existing one is changed in the property panel). */
+export type TextStyle = { fontSize: number; color: string; align: TextAlign };
+export const DEFAULT_TEXT_STYLE: TextStyle = { fontSize: 32, color: "#222222", align: "left" };
+/** the width a new text box starts with, in image pixels */
+export const DEFAULT_TEXT_WIDTH = 240;
+
+/** the text box being typed into: an existing layer, or (layerId null) a new one that exists only once there are words in it */
+export type TextEditing = { layerId: string | null; x: number; y: number };
 
 /** an extraction waiting for the user to pick a background colour; it owns no layer, patch or history entry */
 export type PendingExtraction = { rect: Rect; suggestedHex: string | null };
@@ -60,6 +71,8 @@ type EditorState = {
   notice: string | null;
   compareMode: CompareMode;
   drawStyle: DrawStyle;
+  textStyle: TextStyle;
+  textEditing: TextEditing | null;
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
 };
@@ -105,6 +118,16 @@ type EditorActions = {
   /** change a vector layer's look (colours, stroke width); one undo step, refused on a locked layer */
   setLayerContent(layerId: string, change: Partial<{ stroke: string | null; fill: string | null; strokeWidth: number }>): boolean;
   setDrawStyle(change: Partial<DrawStyle>): void;
+  setTextStyle(change: Partial<TextStyle>): void;
+  /** a new text box with its top-left at (x, y), in the current text style; one undo step. Empty text makes nothing. */
+  addTextLayer(text: string, x: number, y: number, width?: number): string | null;
+  /** change a text box (words, size, colour, alignment); its height follows its lines. One undo step; refused on a locked layer. */
+  setTextContent(layerId: string, change: Partial<{ text: string; fontSize: number; color: string; align: TextAlign }>): boolean;
+  /** start typing: into an existing text layer, or into a new box at (x, y). Refused while comparing and for a locked layer. */
+  beginTextEdit(target: { layerId: string } | { x: number; y: number }): boolean;
+  /** finish typing. A new box with no words is dropped, an existing one keeps its old words if emptied; nothing else changes on a no-op. */
+  commitTextEdit(text: string): boolean;
+  cancelTextEdit(): void;
 
   undo(): void;
   redo(): void;
@@ -118,7 +141,7 @@ type EditorActions = {
 
 export type EditorStore = EditorState & EditorActions;
 export type EditorStoreApi = StoreApi<EditorStore>;
-export type EditorStoreOptions = { genId?: () => string; /** the clock, so tests can say how much time passed between two key presses */ now?: () => number };
+export type EditorStoreOptions = { genId?: () => string; /** how wide a string is at a font size; the canvas's own measure in the browser */ measure?: MeasureFor; /** the clock, so tests can say how much time passed between two key presses */ now?: () => number };
 
 /** key presses on the same layer closer together than this are one undo step */
 export const NUDGE_MERGE_MS = 600;
@@ -151,7 +174,7 @@ const nextNumberFor = (layers: readonly BitmapLayer[], prefix: string) =>
 
 const drawOrder = (layers: readonly BitmapLayer[]) => sortByZ(layers).map((l) => l.id).join("\n");
 
-export function createEditorStore({ genId = () => crypto.randomUUID(), now = () => Date.now() }: EditorStoreOptions = {}): EditorStoreApi {
+export function createEditorStore({ genId = () => crypto.randomUUID(), now = () => Date.now(), measure = canvasMeasureFor }: EditorStoreOptions = {}): EditorStoreApi {
   /** the last keyboard move: which layer, when, and the undo entry it made, so the next press can fold into it */
   let lastNudge: { layerId: string; at: number; entry: unknown; dx: number; dy: number } | null = null;
   return createStore<EditorStore>()((set, get) => {
@@ -259,6 +282,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       notice: null,
       compareMode: "off",
       drawStyle: DEFAULT_DRAW_STYLE,
+      textStyle: DEFAULT_TEXT_STYLE,
+      textEditing: null,
       dragPreview: null,
 
       newProject({ fileName, raw, blob, name }) {
@@ -426,9 +451,15 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
           l.transform.rotation = next.rotation;
           if (l.content) {
             // a vector layer is resized through its box, never through scale: the stroke keeps its thickness
-            const box = withSize(l.content as LayerContent, l.content.width * Math.abs(next.scaleX), l.content.height * Math.abs(next.scaleY));
-            l.content.width = box.width;
-            l.content.height = box.height;
+            if (l.content.kind === "text") {
+              // a text box is resized by its width; its height is whatever its lines then need, and the letters keep their size
+              l.content.width = Math.max(MIN_TEXT_WIDTH, Math.round(l.content.width * Math.abs(next.scaleX) * 100) / 100);
+              l.content.height = fitHeight(l.content, measure);
+            } else {
+              const box = withSize(l.content as LayerContent, l.content.width * Math.abs(next.scaleX), l.content.height * Math.abs(next.scaleY));
+              l.content.width = box.width;
+              l.content.height = box.height;
+            }
             l.transform.scaleX = 1;
             l.transform.scaleY = 1;
           } else {
@@ -565,6 +596,62 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       },
 
       setDrawStyle: (change) => set({ drawStyle: { ...get().drawStyle, ...change } }),
+
+      setTextStyle(change) {
+        const next = { ...get().textStyle, ...change };
+        if (!Number.isFinite(next.fontSize)) return;
+        next.fontSize = Math.min(Math.max(Math.round(next.fontSize * 100) / 100, MIN_FONT_SIZE), MAX_FONT_SIZE);
+        set({ textStyle: next });
+      },
+
+      addTextLayer(text, x, y, width = DEFAULT_TEXT_WIDTH) {
+        if (text.trim() === "") return null;
+        const { fontSize, color, align } = get().textStyle;
+        const w = Math.max(MIN_TEXT_WIDTH, width);
+        const content: LayerContent = { kind: "text", width: w, height: 1, text, fontSize, color, align, stroke: null, strokeWidth: 0 };
+        content.height = fitHeight(content, measure);
+        return get().addVectorLayer(content, x, y);
+      },
+
+      setTextContent(layerId, change) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        const c = layer?.content;
+        if (!layer || c?.kind !== "text" || layer.locked || frozen()) return false;
+        const merged = { ...c, ...change };
+        merged.fontSize = Math.min(Math.max(Math.round(merged.fontSize * 100) / 100, MIN_FONT_SIZE), MAX_FONT_SIZE);
+        merged.height = fitHeight(merged, measure);
+        if (contentError(merged)) return false;
+        return editLayer(layerId, "텍스트 변경", (l) => {
+          if (l.content?.kind !== "text") return;
+          const target = l.content as Record<string, unknown>;
+          const wanted = merged as Record<string, unknown>;
+          for (const key of ["text", "fontSize", "color", "align", "height"]) if (target[key] !== wanted[key]) target[key] = wanted[key];
+        });
+      },
+
+      beginTextEdit(target) {
+        const screen = screenOf();
+        if (frozen() || !screen) return false;
+        if ("layerId" in target) {
+          const layer = screen.layers.find((l) => l.id === target.layerId);
+          if (!layer || layer.content?.kind !== "text" || layer.locked) return false;
+          set({ textEditing: { layerId: layer.id, x: layer.transform.x, y: layer.transform.y }, selectedLayerIds: [layer.id], selectedPatchId: null });
+          return true;
+        }
+        if (![target.x, target.y].every(Number.isFinite)) return false;
+        set({ textEditing: { layerId: null, x: target.x, y: target.y } });
+        return true;
+      },
+
+      commitTextEdit(text) {
+        const editing = get().textEditing;
+        if (!editing) return false;
+        set({ textEditing: null });
+        if (editing.layerId === null) return get().addTextLayer(text, editing.x, editing.y) !== null;
+        return get().setTextContent(editing.layerId, { text });
+      },
+
+      cancelTextEdit: () => set({ textEditing: null }),
 
       setPatchColor(patchId, hex) {
         const { history } = get();

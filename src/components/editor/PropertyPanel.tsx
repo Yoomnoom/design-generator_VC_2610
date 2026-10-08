@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { isOnlyMoved, scaledSize } from "@/lib/geometry/layer-transform";
 import { MAX_LAYER_NAME, selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
-import { LayerContent } from "@/lib/project/schema";
+import { LayerContent, TextContent } from "@/lib/project/schema";
+import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE } from "@/lib/image/text-layout";
 import { SHAPE_LABEL } from "@/lib/image/vector";
 import { ColorField, WidthField } from "./StyleFields";
 
@@ -60,7 +61,63 @@ function NameField({ id, name, disabled }: { id: string; name: string; disabled:
 }
 
 /** Colours and stroke width of a vector layer. Each commit is one undo step; a line has no fill and always has an outline. */
-function VectorSection({ id, content, disabled }: { id: string; content: LayerContent; disabled: boolean }) {
+/** The words of a text box: typing changes nothing until the field is left (one edit, however long the typing), Escape puts the old words back. */
+function TextBody({ id, text, disabled }: { id: string; text: string; disabled: boolean }) {
+  const [draft, setDraft] = useState(text);
+  const cancelled = useRef(false);
+  useEffect(() => setDraft(text), [text]); // follows undo/redo and editing on the canvas
+  return (
+    <textarea
+      data-testid="text-content"
+      aria-label="글자 내용"
+      rows={3}
+      maxLength={MAX_TEXT_LENGTH}
+      disabled={disabled}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (cancelled.current) {
+          cancelled.current = false;
+          return;
+        }
+        if (draft === text) return;
+        if (!editorStore.getState().setTextContent(id, { text: draft })) setDraft(text); // empty or refused: the old words stay
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          cancelled.current = true;
+          setDraft(text);
+          e.currentTarget.blur();
+        }
+      }}
+      className="w-full resize-y rounded border border-[var(--line)] bg-white p-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-45"
+    />
+  );
+}
+
+function TextSection({ id, content, disabled }: { id: string; content: TextContent; disabled: boolean }) {
+  const set = (change: Partial<{ text: string; fontSize: number; color: string; align: TextContent["align"] }>) => editorStore.getState().setTextContent(id, change);
+  const aligns: [TextContent["align"], string][] = [["left", "왼쪽"], ["center", "가운데"], ["right", "오른쪽"]];
+  return (
+    <div className="mt-3 grid gap-2 border-t border-[var(--line)] pt-3" data-testid="text-section">
+      <div className="text-xs font-bold">텍스트</div>
+      <TextBody id={id} text={content.text} disabled={disabled} />
+      <WidthField label="크기" min={MIN_FONT_SIZE} max={MAX_FONT_SIZE} value={content.fontSize} disabled={disabled} testId="text-size" onCommit={(fontSize) => set({ fontSize })} />
+      <ColorField label="색" value={content.color} disabled={disabled} testId="text-color" onCommit={(color) => set({ color })} />
+      <div className="flex items-center gap-2 text-xs">
+        <span className="w-12 shrink-0 font-bold">정렬</span>
+        {aligns.map(([align, label]) => (
+          <button key={align} type="button" data-testid={`text-align-${align}`} aria-pressed={content.align === align} disabled={disabled} className="btn mini px-2 aria-pressed:bg-[var(--accent)] aria-pressed:text-white" onClick={() => set({ align })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="m-0 text-[11px] text-[var(--muted)]">캔버스에서 두 번 클릭해도 고칠 수 있습니다. 모서리 점은 상자의 너비를 바꾸고, 글자 크기는 그대로입니다.</p>
+    </div>
+  );
+}
+
+function VectorSection({ id, content, disabled }: { id: string; content: Exclude<LayerContent, TextContent>; disabled: boolean }) {
   const set = (change: Partial<{ stroke: string | null; fill: string | null; strokeWidth: number }>) => editorStore.getState().setLayerContent(id, change);
   const isLine = content.kind === "line";
   const fill = isLine ? null : content.fill;
@@ -121,7 +178,8 @@ export default function PropertyPanel() {
             <Field label="크기 배율" value={`${fmt(layer.transform.scaleX * 100)}% × ${fmt(layer.transform.scaleY * 100)}%`} id="prop-scale" />
           </div>
         </dl>
-        {layer.content && <VectorSection id={layer.id} content={layer.content} disabled={layer.locked || comparing} />}
+        {layer.content?.kind === "text" && <TextSection id={layer.id} content={layer.content} disabled={layer.locked || comparing} />}
+        {layer.content && layer.content.kind !== "text" && <VectorSection id={layer.id} content={layer.content} disabled={layer.locked || comparing} />}
         <p className="mt-2 text-[11px] text-[var(--muted)]">{layer.locked ? "잠긴 레이어는 크기와 회전을 바꿀 수 없습니다." : "선택한 레이어의 모서리 점으로 크기를, 위쪽 둥근 점으로 회전을 바꿉니다."}</p>
         <button className="btn mini mt-2 w-full" disabled={isOnlyMoved(layer.transform) || layer.locked || comparing} onClick={() => editorStore.getState().resetLayerTransform(layer.id)}>
           크기·회전 초기화

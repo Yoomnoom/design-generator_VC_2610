@@ -27,7 +27,7 @@ export function ColorField({ label, value, disabled, testId, onCommit }: { label
 }
 
 /** Stroke width. Typing changes nothing; Enter or leaving the field commits (so typing "12" is not an edit to "1" and then "12"). */
-export function WidthField({ label = "굵기", value, disabled, testId, onCommit }: { label?: string; value: number; disabled?: boolean; testId: string; onCommit: (width: number) => void }) {
+export function WidthField({ label = "굵기", value, min = 0, max = MAX_STROKE_WIDTH, disabled, testId, onCommit }: { min?: number; max?: number; label?: string; value: number; disabled?: boolean; testId: string; onCommit: (width: number) => void }) {
   const [draft, setDraft] = useState(String(value));
   const cancelled = useRef(false);
   useEffect(() => setDraft(String(value)), [value]);
@@ -38,7 +38,7 @@ export function WidthField({ label = "굵기", value, disabled, testId, onCommit
     }
     const n = Number(draft);
     if (draft.trim() === "" || !Number.isFinite(n)) return setDraft(String(value));
-    onCommit(Math.min(Math.max(n, 0), MAX_STROKE_WIDTH));
+    onCommit(Math.min(Math.max(n, min), max));
   };
   return (
     <label className="flex items-center gap-2 text-xs">
@@ -46,8 +46,8 @@ export function WidthField({ label = "굵기", value, disabled, testId, onCommit
       <input
         data-testid={testId}
         type="number"
-        min={0}
-        max={MAX_STROKE_WIDTH}
+        min={min}
+        max={max}
         step={1}
         disabled={disabled}
         value={draft}

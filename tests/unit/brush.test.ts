@@ -314,7 +314,7 @@ describe("the file format (version 4)", () => {
     const codec = { encode: async () => new Blob(), decode: async (blob: Blob) => (await import("./png")).decodePng(Buffer.from(await blob.arrayBuffer())) };
     const r = await loadProjectText(v3, { blobs: await openBlobStore("v3", new IDBFactory()), codec });
     if (!r.ok) throw new Error(r.error);
-    expect(r.project.version).toBe(4);
+    expect(r.project.version).toBe(5);
     expect(r.project.screens[0].layers).toEqual(before.screens[0].layers);
     expect(r.project.screens[0].backgroundPatches).toEqual(before.screens[0].backgroundPatches);
   });
@@ -322,7 +322,7 @@ describe("the file format (version 4)", () => {
   test("migrate takes version 3 to the current version without touching anything else", () => {
     const doc = JSON.parse(v3).project;
     const r = migrate(doc);
-    expect(r.ok && r.doc.version).toBe(4);
+    expect(r.ok && r.doc.version).toBe(5);
     expect(r.ok && (r.doc.screens as unknown[])).toEqual(doc.screens);
   });
 

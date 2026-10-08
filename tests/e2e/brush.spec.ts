@@ -224,7 +224,7 @@ test.describe("with the rest of the app", () => {
     const before = await exportPngBytes(page);
     const text = await saveProjectFile(page);
     const file = JSON.parse(text);
-    expect(file.project.version).toBe(4);
+    expect(file.project.version).toBe(5);
     expect(file.project.screens[0].layers[0]).toMatchObject({ drawn: true, name: "브러시 1" });
     expect(Object.keys(file.images)).toHaveLength(2); // the capture and the layer's CURRENT bitmap, not the one before the second stroke
     await reloadAndDiscard(page);
@@ -281,7 +281,7 @@ test.describe("with the rest of the app", () => {
     await zoomTo(page, 1, 630, 450);
     await drawStroke(page, "브러시", [{ x: 400, y: 600 }, { x: 600, y: 620 }]);
     expect((await editor(page)).layers).toHaveLength(layers + 1);
-    expect(JSON.parse(await saveProjectFile(page)).project.version).toBe(4);
+    expect(JSON.parse(await saveProjectFile(page)).project.version).toBe(5);
   });
 });
 

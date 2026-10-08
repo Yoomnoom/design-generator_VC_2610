@@ -28,6 +28,8 @@ const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
   2: (doc) => doc,
   /** 3 → 4: `drawn` is new and optional (a layer without it was not made with the brush), so every version 3 file is already valid. */
   3: (doc) => doc,
+  /** 4 -> 5: text layers are new and optional, so every version 4 file is already a valid version 5 file. */
+  4: (doc) => doc,
 };
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };

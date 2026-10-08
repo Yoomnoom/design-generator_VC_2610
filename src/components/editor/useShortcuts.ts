@@ -73,6 +73,9 @@ export function useShortcuts() {
         case "tool-eyedropper":
           st.setTool("eyedropper");
           break;
+        case "tool-text":
+          st.setTool("text");
+          break;
         case "tool-brush":
           st.setTool("brush");
           break;

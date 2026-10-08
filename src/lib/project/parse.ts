@@ -1,6 +1,7 @@
 import { migrate } from "./migrate";
 import { BitmapLayer, Project, Rect } from "./schema";
 import { hexToRgb } from "../image/color";
+import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE, MIN_TEXT_WIDTH } from "../image/text-layout";
 
 export type ParseResult = { ok: true; project: Project } | { ok: false; error: string };
 
@@ -15,12 +16,23 @@ const isImageId = (v: unknown): v is string => isId(v) && !/^(blob|data):/i.test
 const MAX_ABS_SCALE = 1000;
 const isColor = (v: unknown): v is string => isStr(v) && !!hexToRgb(v);
 const MAX_SIDE = 100000;
-/** a vector layer's content: kinds, positive sizes, colours, stroke widths */
+function textError(c: Rec): string | null {
+  if (!isStr(c.text) || c.text.trim() === "" || c.text.length > MAX_TEXT_LENGTH) return "content.text가 올바르지 않습니다";
+  if (!isNum(c.fontSize) || c.fontSize < MIN_FONT_SIZE || c.fontSize > MAX_FONT_SIZE) return "content.fontSize가 올바르지 않습니다";
+  if (!isColor(c.color)) return "content.color가 색상이 아닙니다";
+  if (c.align !== "left" && c.align !== "center" && c.align !== "right") return "content.align이 올바르지 않습니다";
+  if (c.stroke !== null || c.strokeWidth !== 0) return "텍스트에는 테두리가 없습니다";
+  if ((c.width as number) < MIN_TEXT_WIDTH) return "content.width가 너무 작습니다";
+  return null;
+}
+
+/** a vector layer's content: kinds, positive sizes, colours, stroke widths (and, for a text box, its words and font) */
 export function contentError(c: unknown): string | null {
   if (!isRec(c)) return "content가 객체가 아닙니다";
-  if (c.kind !== "rect" && c.kind !== "ellipse" && c.kind !== "line") return "content.kind가 올바르지 않습니다";
+  if (c.kind !== "rect" && c.kind !== "ellipse" && c.kind !== "line" && c.kind !== "text") return "content.kind가 올바르지 않습니다";
   if (!isNum(c.width) || !isNum(c.height) || c.width <= 0 || c.height <= 0 || c.width > MAX_SIDE || c.height > MAX_SIDE) return "content의 width/height가 올바르지 않습니다";
   if (!isNum(c.strokeWidth) || c.strokeWidth < 0 || c.strokeWidth > 1000) return "content.strokeWidth가 올바르지 않습니다";
+  if (c.kind === "text") return textError(c);
   if (c.kind === "line") {
     if (c.direction !== "down" && c.direction !== "up") return "content.direction이 올바르지 않습니다";
     if (c.strokeWidth <= 0) return "선의 굵기는 0보다 커야 합니다"; // a line of no width would be invisible

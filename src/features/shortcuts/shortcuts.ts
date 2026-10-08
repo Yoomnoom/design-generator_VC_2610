@@ -1,4 +1,4 @@
-export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "nudge-left" | "nudge-right" | "nudge-up" | "nudge-down";
+export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "nudge-left" | "nudge-right" | "nudge-up" | "nudge-down";
 
 export type KeyInfo = { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat?: boolean };
 
@@ -27,6 +27,7 @@ export function resolveShortcut(e: KeyInfo): ShortcutAction | null {
     else if (key === "o") action = "tool-ellipse";
     else if (key === "i") action = "tool-eyedropper";
     else if (key === "b") action = "tool-brush";
+    else if (key === "t") action = "tool-text";
     else if (key === "e") action = "tool-eraser";
   }
   // holding a key must not delete, copy or duplicate over and over

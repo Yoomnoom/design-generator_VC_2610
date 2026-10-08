@@ -18,6 +18,7 @@ import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { downloadBlob, safeName } from "./download";
 import { AutosaveBanners, AutosaveFooter } from "./AutosaveStatus";
 import DrawStylePanel from "./DrawStylePanel";
+import TextStylePanel from "./TextStylePanel";
 import ExportDialog from "./ExportDialog";
 import FillColorDialog from "./FillColorDialog";
 import LayerPanel from "./LayerPanel";
@@ -209,6 +210,7 @@ export default function EditorShell() {
         </section>
         <aside aria-label="레이어와 속성" className="min-h-0 overflow-auto border-l border-[var(--line)] bg-[var(--panel)]">
           <DrawStylePanel />
+          <TextStylePanel />
           <LayerPanel />
           <PropertyPanel />
         </aside>
