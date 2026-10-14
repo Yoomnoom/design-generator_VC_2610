@@ -100,8 +100,8 @@ const parts: BuiltinAsset[] = [
 
 const icons: BuiltinAsset[] = [
   { id: "icon-plus", group: "icon", label: "더하기", build: () => bundle("아이콘 · 더하기", [rect("가로", 0, 7, 16, 2, { fill: "#111827" }), rect("세로", 7, 0, 2, 16, { fill: "#111827" })]) },
-  { id: "icon-close", group: "icon", label: "닫기", build: () => bundle("아이콘 · 닫기", [line("대각선 1", 0, 0, 16, 16, "down", "#111827", 2), line("대각선 2", 0, 0, 16, 16, "up", "#111827", 2)]) },
-  { id: "icon-check", group: "icon", label: "확인", build: () => bundle("아이콘 · 확인", [line("짧은 획", 0, 6, 6, 6, "down", "#16a34a", 2.5), line("긴 획", 6, 0, 12, 12, "up", "#16a34a", 2.5)]) },
+  { id: "icon-close", group: "icon", label: "엑스", build: () => bundle("아이콘 · 엑스", [line("대각선 1", 0, 0, 16, 16, "down", "#111827", 2), line("대각선 2", 0, 0, 16, 16, "up", "#111827", 2)]) },
+  { id: "icon-check", group: "icon", label: "체크", build: () => bundle("아이콘 · 체크", [line("짧은 획", 0, 6, 6, 6, "down", "#16a34a", 2.5), line("긴 획", 6, 0, 12, 12, "up", "#16a34a", 2.5)]) },
   { id: "icon-arrow", group: "icon", label: "화살표", build: () => bundle("아이콘 · 화살표", [rect("몸통", 0, 9, 20, 2, { fill: "#111827" }), line("머리 위", 12, 2, 8, 8, "down", "#111827", 2), line("머리 아래", 12, 10, 8, 8, "up", "#111827", 2)]) },
   { id: "icon-dot", group: "icon", label: "점", build: () => bundle("아이콘 · 점", [ellipse("점", 0, 0, 12, 12, { fill: "#4f46e5" })]) },
 ];

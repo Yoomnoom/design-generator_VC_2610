@@ -32,12 +32,17 @@ import SourcePanel from "./SourcePanel";
 import ToolRail from "./ToolRail";
 import Notices from "./Notices";
 import TopBar from "./TopBar";
+import StartChoices, { CanvasSpec, NewCanvasDialog, StartDialog } from "./StartChoices";
+import { TemplateId, TEMPLATES, buildTemplate } from "@/features/assets/templates";
+import { canvasMeasureFor } from "@/lib/image/text-measure";
 import { useShortcuts } from "./useShortcuts";
 
 // Konva touches `window`, so the canvas is never rendered on the server
 const CanvasViewport = dynamic(() => import("./CanvasViewport"), { ssr: false, loading: () => <div className="h-full w-full" /> });
 
-type Incoming = { kind: "image" | "project"; file: File };
+type Incoming = { kind: "image" | "project"; file: File } | { kind: "blank"; spec: CanvasSpec } | { kind: "template"; id: TemplateId };
+/** what the "discard current work?" question names */
+const incomingLabel = (i: Incoming) => (i.kind === "blank" ? "빈 캔버스" : i.kind === "template" ? TEMPLATES.find((t) => t.id === i.id)!.label : i.file.name);
 
 export default function EditorShell() {
   const project = useEditorStore(selectProject);
@@ -68,6 +73,8 @@ export default function EditorShell() {
   const [incoming, setIncoming] = useState<Incoming | null>(null); // waiting for "discard current work?" to be answered
   const [exporting, setExporting] = useState(false);
   const [dropping, setDropping] = useState(false);
+  const [startOpen, setStartOpen] = useState(false); // the top bar's "new project" window
+  const [canvasOpen, setCanvasOpen] = useState(false); // the blank-canvas size window
 
   const loadImage = async (file: File) => {
     setBusy(true);
@@ -121,14 +128,27 @@ export default function EditorShell() {
   /** a picture arriving from outside: a new layer when a project is open, otherwise a new project (like an upload) */
   const receiveImage = (file: File) => (editorStore.getState().history ? addAsLayer(file) : request({ kind: "image", file }));
 
-  const run = (next: Incoming) => (next.kind === "image" ? loadImage(next.file) : openProject(next.file));
+  const run = async (next: Incoming) => {
+    if ("file" in next) return next.kind === "image" ? loadImage(next.file) : openProject(next.file);
+    if (next.kind === "blank") {
+      const why = editorStore.getState().newBlankProject({ ...next.spec });
+      if (why) return setError(why);
+    } else {
+      const { project, images } = buildTemplate(next.id, canvasMeasureFor);
+      editorStore.getState().loadProject(project, images);
+      editorStore.setState({ needsFit: true });
+    }
+    savedHistory.current = null;
+  };
 
   /** replacing a project that has unsaved edits asks first */
   const request = async (next: Incoming) => {
     setError(null);
     setIncoming(null);
     // a file that cannot be opened is refused straight away; no point asking whether to discard work for it
-    if (next.kind === "image") {
+    if (next.kind === "blank" || next.kind === "template") {
+      // nothing to read: a size and colour, or a built-in template
+    } else if (next.kind === "image") {
       const typeError = checkImageFile(next.file);
       if (typeError) return setError(typeError);
     } else {
@@ -166,7 +186,7 @@ export default function EditorShell() {
     return () => document.removeEventListener("paste", onPaste);
   }, []);
 
-  const pickFrom = (kind: Incoming["kind"]) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const pickFrom = (kind: "image" | "project") => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // choosing the same file again must still fire
     if (file) void request({ kind, file });
@@ -182,6 +202,7 @@ export default function EditorShell() {
         onOpenProject={() => projectInput.current?.click()}
         onSaveProject={() => void saveProject()}
         onExport={() => setExporting(true)}
+        onNew={() => setStartOpen(true)}
       />
       <Notices extra={<AutosaveBanners />} />
       <input ref={imageInput} data-testid="file-input" type="file" accept="image/png,image/jpeg" className="hidden" onChange={pickFrom("image")} />
@@ -193,7 +214,7 @@ export default function EditorShell() {
           screen={screen}
           busy={busy}
           error={error}
-          replaceName={incoming?.file.name ?? null}
+          replaceName={incoming ? incomingLabel(incoming) : null}
           onPickFile={() => imageInput.current?.click()}
           onConfirmReplace={() => incoming && void run(incoming).then(() => setIncoming(null))}
           onCancelReplace={() => setIncoming(null)}
@@ -217,18 +238,12 @@ export default function EditorShell() {
           <CanvasViewport />
           {!project && (
             <div className="absolute inset-0 grid place-items-center">
-              <div className="w-80 text-center">
-                <div className="mx-auto mb-4 grid h-[74px] w-[74px] place-items-center rounded-[18px] bg-[var(--soft)] text-3xl text-[var(--accent)]" aria-hidden>
-                  ⇧
-                </div>
-                <h2 className="m-0 mb-2 text-xl font-bold">화면 캡처를 올려주세요</h2>
-                <p className="mb-4 text-[var(--muted)]">캡처 속 카드·버튼·텍스트를 사각형으로 골라 이미지 레이어로 분리합니다.</p>
-                <button className="btn primary" onClick={() => imageInput.current?.click()}>
-                  이미지 선택
-                </button>
+              <div className="max-h-full w-full max-w-[760px] overflow-auto p-6">
+                <h2 className="m-0 mb-1 text-center text-xl font-bold">무엇으로 시작할까요?</h2>
+                <p className="mb-4 text-center text-[var(--muted)]">캡처를 올리거나, 빈 캔버스나 템플릿에서 시작할 수 있습니다.</p>
+                <StartChoices onUpload={() => imageInput.current?.click()} onBlank={() => setCanvasOpen(true)} onTemplate={(id) => void request({ kind: "template", id })} />
               </div>
-            </div>
-          )}
+            </div>          )}
           {dropping && <div className="pointer-events-none absolute inset-2 rounded-xl border-2 border-dashed border-[var(--accent)] bg-[var(--soft)]/60" />}
         </section>
         <aside aria-label="레이어와 속성" className="min-h-0 overflow-auto border-l border-[var(--line)] bg-[var(--panel)]">
@@ -250,6 +265,15 @@ export default function EditorShell() {
         <span>{screen ? `화면 1 · 레이어 ${screen.layers.length} · ${Math.round(zoom * 100)}%` : "화면 없음"}</span>
       </footer>
 
+      {startOpen && (
+        <StartDialog
+          onClose={() => setStartOpen(false)}
+          onUpload={() => { setStartOpen(false); imageInput.current?.click(); }}
+          onBlank={() => { setStartOpen(false); setCanvasOpen(true); }}
+          onTemplate={(id) => { setStartOpen(false); void request({ kind: "template", id }); }}
+        />
+      )}
+      {canvasOpen && <NewCanvasDialog onClose={() => setCanvasOpen(false)} onCreate={(spec) => { setCanvasOpen(false); void request({ kind: "blank", spec }); }} />}
       <RestorePrompt />
       <FillColorDialog />
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}

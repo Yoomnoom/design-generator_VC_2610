@@ -68,7 +68,7 @@ function Builtin({ canInsert, onInsert }: { canInsert: boolean; onInsert: (b: As
   const card = (id: string, label: string, w: number, h: number, caption?: string) => {
     const a = byId(id);
     return (
-      <button key={id} data-testid={`asset-${id}`} className="flex min-w-0 flex-col items-center gap-1 rounded border border-transparent p-1 enabled:hover:border-[var(--accent)] disabled:opacity-50" disabled={!canInsert} title={`${label} — 클릭하면 화면 가운데에 새 레이어로 들어갑니다`} onClick={() => onInsert(a.build())}>
+      <button key={id} data-testid={`asset-${id}`} className="flex min-w-0 flex-col items-center gap-1 rounded border border-transparent p-1 enabled:hover:border-[var(--accent)] disabled:opacity-50" disabled={!canInsert} aria-label={`소스 삽입 · ${label}`} title={`${label} — 클릭하면 화면 가운데에 새 레이어로 들어갑니다`} onClick={() => onInsert(a.build())}>
         <AssetThumb cacheKey={`builtin:${id}`} build={a.build} width={w} height={h} label={label} />
         <span className="w-full truncate text-center text-[11px]">{caption ?? label}</span>
       </button>

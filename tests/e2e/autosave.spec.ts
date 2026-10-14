@@ -228,7 +228,7 @@ test.describe("discarding", () => {
     await autosaveReady(page);
     await page.getByRole("button", { name: "버리기" }).click();
     await expect(page.getByTestId("restore-dialog")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "화면 캡처를 올려주세요" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "무엇으로 시작할까요?" })).toBeVisible();
     expect((await editor(page)).screen).toBeNull();
     expect(await idbRecord(page)).toBeUndefined();
     expect(await idbKeys(page)).toEqual([]);
@@ -256,7 +256,7 @@ test.describe("a damaged stored copy", () => {
     await autosaveReady(page);
     await expect(page.getByTestId("restore-dialog")).toHaveCount(0);
     await expect(page.getByTestId("notice")).toContainText("손상");
-    await expect(page.getByRole("heading", { name: "화면 캡처를 올려주세요" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "무엇으로 시작할까요?" })).toBeVisible();
     expect((await editor(page)).screen).toBeNull();
     expect(await idbRecord(page)).toBeUndefined(); // the damaged copy is gone
     await page.reload();

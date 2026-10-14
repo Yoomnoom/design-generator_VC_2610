@@ -90,7 +90,7 @@ test("handoff v0.2 E2E, steps 1–9", async ({ page }) => {
     expect(Object.keys(file.images)).toHaveLength(3); // the capture + two layer bitmaps
 
     await reloadAndDiscard(page); // everything in memory is gone
-    await expect(page.getByRole("heading", { name: "화면 캡처를 올려주세요" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "무엇으로 시작할까요?" })).toBeVisible();
     expect(await page.evaluate(() => (window as any).__slc.getState().history)).toBeNull();
 
     await openProjectFile(page, savedText);

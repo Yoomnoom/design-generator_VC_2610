@@ -2,6 +2,7 @@ import { createRawImage, RawImage } from "@/lib/image/raw-image";
 import { MeasureFor, estimateMeasure, fitHeight } from "@/lib/image/text-measure";
 import { BitmapLayer, CURRENT_VERSION, Project } from "@/lib/project/schema";
 import { hexToRgb } from "@/lib/image/color";
+import { templateFile } from "@/lib/project/blank";
 import { ImageCache } from "@/store/images";
 import { assetEllipse, assetRect, assetText, buttonBundle } from "./builtin";
 import { AssetBundle, AssetLayer } from "./types";
@@ -95,7 +96,7 @@ export function buildTemplate(id: TemplateId, measure: MeasureFor = estimateMeas
     name: label,
     version: CURRENT_VERSION,
     canvas: { zoom: 1, panX: 0, panY: 0 },
-    screens: [{ id: crypto.randomUUID(), name: "화면 1", x: 0, y: 0, width: W, height: H, source: { imageId: sourceId, fileName: `${id}-template.png` }, backgroundPatches: [], layers }],
+    screens: [{ id: crypto.randomUUID(), name: "화면 1", x: 0, y: 0, width: W, height: H, source: { imageId: sourceId, fileName: templateFile(id) }, backgroundPatches: [], layers }],
   };
   return { project, images: new Map([[sourceId, { raw: source }]]) };
 }

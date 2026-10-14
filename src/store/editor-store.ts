@@ -15,9 +15,11 @@ import { trimImageVersions } from "./image-retention";
 import { layerBox } from "@/features/snap/layer-box";
 import type { AssetBundle } from "@/features/assets/types";
 import { MESH_DEFAULT, MESH_MAX, MESH_MIN, identityQuad, isIdentityWarp, resizeMesh, roundWarp, toQuad, warpError } from "@/lib/image/warp";
-import { normalizeHex } from "@/lib/image/color";
+import { hexToRgb, normalizeHex } from "@/lib/image/color";
 import { RawImage } from "@/lib/image/raw-image";
 import { sampleBackground } from "@/lib/image/sample-background";
+import { BLANK_FILE, checkCanvasSize, isGeneratedPage } from "@/lib/project/blank";
+import { createRawImage } from "@/lib/image/raw-image";
 import { BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
@@ -124,6 +126,8 @@ type EditorState = {
 
 type EditorActions = {
   newProject(input: { fileName: string; raw: RawImage; blob?: Blob; name?: string }): void;
+  /** a project with no screenshot: a plain page of the chosen size and colour. Returns an error text, or null when it was made. */
+  newBlankProject(input: { width: number; height: number; color: string; name?: string }): string | null;
   loadProject(project: Project, images: ImageCache): void;
   snapshotProject(): Project | null;
 
@@ -442,6 +446,41 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
           new Map([[imageId, { raw, blob }]]),
         );
         set({ needsFit: true });
+      },
+
+      newBlankProject({ width, height, color, name }) {
+        const size = checkCanvasSize(width, height);
+        if (!size.ok) return size.error;
+        const hex = normalizeHex(color);
+        const rgb = hex && hexToRgb(hex);
+        if (!hex || !rgb) return "배경색은 #rrggbb 형식이어야 합니다.";
+        const imageId = genId();
+        // the page is the source picture (its colour never changes) plus one patch over the whole frame: the patch is what "change the
+        // background colour" edits later, with the same fill tool as any other patch
+        reset(
+          {
+            id: genId(),
+            name: name?.trim() || "빈 캔버스",
+            version: CURRENT_VERSION,
+            canvas: { zoom: 1, panX: 0, panY: 0 },
+            screens: [
+              {
+                id: genId(),
+                name: "화면 1",
+                x: 0,
+                y: 0,
+                width: size.width,
+                height: size.height,
+                source: { imageId, fileName: BLANK_FILE },
+                backgroundPatches: [{ id: genId(), rect: { x: 0, y: 0, width: size.width, height: size.height }, fill: hex }],
+                layers: [],
+              },
+            ],
+          },
+          new Map([[imageId, { raw: createRawImage(size.width, size.height, [rgb.r, rgb.g, rgb.b, 255]) }]]),
+        );
+        set({ needsFit: true });
+        return null;
       },
 
       loadProject: (project, images) => reset(project, images),
@@ -1129,6 +1168,9 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       // a gesture or question that was under way is dropped, so nothing half-done lingers behind the comparison
       setCompareMode: (compareMode) => set({ compareMode, dragPreview: null, pendingExtraction: null }),
       setTool(activeTool) {
+        if ((activeTool === "rect" || activeTool === "auto") && isGeneratedPage(screenOf()?.source.fileName ?? "")) {
+          return set({ notice: "빈 캔버스·템플릿 화면에는 추출할 스크린샷이 없습니다. 영역 추출과 자동 후보는 캡처를 올렸을 때 쓸 수 있습니다." });
+        }
         if (activeTool === "warp") {
           // the warp tool works on exactly one bitmap layer that can be changed; say why when it cannot start
           const ids = get().selectedLayerIds;

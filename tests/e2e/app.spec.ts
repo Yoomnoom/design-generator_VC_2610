@@ -34,7 +34,7 @@ const pngPixel = (page: Page, png: Buffer, x: number, y: number) =>
 test.describe("upload and frame", () => {
   test("shows the empty state, then a frame at the uploaded image's own size", async ({ page }, info) => {
     await openApp(page);
-    await expect(page.getByRole("heading", { name: "화면 캡처를 올려주세요" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "무엇으로 시작할까요?" })).toBeVisible();
     await expect(page.getByRole("button", { name: "PNG 내보내기" })).toBeDisabled();
 
     await uploadPng(page, pageWithCard());
@@ -70,7 +70,7 @@ test.describe("upload and frame", () => {
       t.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], "dropped.png", { type: "image/png" }));
       return t;
     }, data);
-    await page.locator("section").dispatchEvent("drop", { dataTransfer: dt });
+    await page.locator("main > section").dispatchEvent("drop", { dataTransfer: dt });
     await expect(page.getByTestId("screen-label")).toContainText(`${PAGE.width} × ${PAGE.height}`);
     await expect(page.getByTestId("source-name")).toHaveText("dropped.png");
   });

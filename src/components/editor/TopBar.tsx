@@ -11,6 +11,7 @@ type Props = {
   onOpenProject: () => void;
   onSaveProject: () => void;
   onExport: () => void;
+  onNew: () => void;
 };
 
 const COMPARE: { mode: CompareMode; label: string; title: string }[] = [
@@ -19,7 +20,7 @@ const COMPARE: { mode: CompareMode; label: string; title: string }[] = [
   { mode: "split", label: "나란히", title: "원본과 수정본을 나란히 봅니다 (편집 불가)" },
 ];
 
-export default function TopBar({ projectName, canExport, busy, onPickImage, onOpenProject, onSaveProject, onExport }: Props) {
+export default function TopBar({ projectName, canExport, busy, onPickImage, onOpenProject, onSaveProject, onExport, onNew }: Props) {
   const canUndo = useEditorStore(selectCanUndo);
   const canRedo = useEditorStore(selectCanRedo);
   const undoLabel = useEditorStore((s) => s.history?.past.at(-1)?.label);
@@ -50,6 +51,9 @@ export default function TopBar({ projectName, canExport, busy, onPickImage, onOp
         ↷ 다시 실행
       </button>
       <span className="h-5 border-l border-[#3c4048]" />
+      <button className="btn ghost" data-testid="new-project" title="캡처 올리기 · 빈 캔버스 · 템플릿 중에서 새 프로젝트를 시작합니다" onClick={onNew}>
+        새 프로젝트
+      </button>
       <button className="btn ghost" onClick={onPickImage}>
         이미지 업로드
       </button>

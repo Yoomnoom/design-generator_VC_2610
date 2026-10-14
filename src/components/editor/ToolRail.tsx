@@ -1,7 +1,13 @@
 "use client";
 
 import { Tool } from "@/store/editor-store";
+import { isGeneratedPage } from "@/lib/project/blank";
+import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
+
+/** tools that cut from the screenshot: with no screenshot (a blank canvas, a template) there is nothing to cut from */
+const NEEDS_SCREENSHOT: Tool[] = ["rect", "auto"];
+const NO_SCREENSHOT = "스크린샷이 없는 화면(빈 캔버스·템플릿)이라 쓸 수 없습니다. 캡처를 올리면 쓸 수 있습니다.";
 
 const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
   { id: "select", icon: "↖", label: "선택", title: "레이어를 선택하고 드래그해서 옮깁니다 (V)" },
@@ -23,10 +29,11 @@ const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
 
 export default function ToolRail({ enabled }: { enabled: boolean }) {
   const active = useEditorStore((s) => s.activeTool);
+  const plain = useEditorStore((s) => isGeneratedPage(selectScreen(s)?.source.fileName ?? ""));
   return (
     <nav aria-label="도구" className="overflow-auto border-r border-[var(--line)] bg-[var(--panel)] px-2 py-2.5">
       {TOOLS.map((t) => (
-        <button key={t.id} className="tool" aria-pressed={active === t.id} disabled={!enabled} title={t.title} onClick={() => editorStore.getState().setTool(t.id)}>
+        <button key={t.id} className="tool" aria-pressed={active === t.id} disabled={!enabled || (plain && NEEDS_SCREENSHOT.includes(t.id))} title={plain && NEEDS_SCREENSHOT.includes(t.id) ? `${t.label}: ${NO_SCREENSHOT}` : t.title} onClick={() => editorStore.getState().setTool(t.id)}>
           <b aria-hidden>{t.icon}</b>
           <span>{t.label}</span>
         </button>

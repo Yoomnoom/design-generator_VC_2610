@@ -1,5 +1,6 @@
 "use client";
 
+import { isGeneratedPage } from "@/lib/project/blank";
 import { ScreenNode } from "@/lib/project/schema";
 
 type Props = {
@@ -54,7 +55,7 @@ export default function SourcePanel({ screen, busy, error, replaceName, onPickFi
           <div className="panel-title">현재 화면</div>
           <div className="card text-xs">
             <p data-testid="source-name" className="selectable truncate font-bold" title={screen.source.fileName}>
-              {screen.source.fileName}
+              {isGeneratedPage(screen.source.fileName) ? "스크린샷 없음 (빈 캔버스·템플릿)" : screen.source.fileName}
             </p>
             <p className="mt-1 text-[var(--muted)]">
               원본 크기 {screen.width} × {screen.height} px · 레이어 {screen.layers.length}

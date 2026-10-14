@@ -92,10 +92,16 @@ test.describe("source previews", () => {
     await openApp(page); // no project: templates still show
     await tab(page, "template");
     for (const id of ["login", "cards", "settings"]) {
-      const t = page.getByTestId(`template-${id}-thumb`);
+      // the start screen shows the same thumbnails, so look inside the panel
+      const t = page.getByTestId("asset-panel").getByTestId(`template-${id}-thumb`);
       await t.scrollIntoViewIfNeeded(); // drawn when it comes into view
       await expect(t).toHaveAttribute("data-state", "ready");
-      const { ink, width, height } = await inkOf(page, `template-${id}-thumb`);
+      const { ink, width, height } = await t.locator("canvas").first().evaluate((c: HTMLCanvasElement) => {
+        const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (!((d[i] === 255 && d[i + 1] === 255 && d[i + 2] === 255) || (d[i] === 229 && d[i + 1] === 231 && d[i + 2] === 235))) n++;
+        return { ink: n, width: c.width, height: c.height };
+      });
       expect(ink).toBeGreaterThan(100);
       expect(Math.abs(width / height - 390 / 844)).toBeLessThan(0.03);
     }
