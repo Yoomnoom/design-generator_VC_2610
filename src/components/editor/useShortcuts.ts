@@ -120,6 +120,9 @@ export function useShortcuts() {
         case "tool-warp":
           st.setTool("warp");
           break;
+        case "tool-finger":
+          st.setTool("finger");
+          break;
       }
       e.preventDefault();
     };

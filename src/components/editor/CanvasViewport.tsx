@@ -12,6 +12,7 @@ import { rgbToHex } from "@/lib/image/color";
 import { DrawCtx, drawContent, shapeFromDrag } from "@/lib/image/vector";
 import { SHAPE_TOOLS } from "@/store/editor-store";
 import { applyStroke } from "@/features/brush/brush";
+import { FingerStroke, startFingerStroke } from "@/features/smudge/finger";
 import { MAX_STROKE_POINTS } from "@/lib/image/brush-raster";
 import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
@@ -43,6 +44,7 @@ type Gesture =
   | { kind: "rect"; a: Point }
   | { kind: "shape"; a: Point }
   | { kind: "brush"; points: Point[] }
+  | { kind: "finger"; stroke: FingerStroke; imageData: ImageData; context: CanvasRenderingContext2D }
   | { kind: "pan"; startX: number; startY: number; panX: number; panY: number };
 
 /** The working canvas. Konva only draws. Every pointer position goes through lib/geometry/coords,
@@ -56,6 +58,8 @@ export default function CanvasViewport() {
   const [, setBrushTick] = useState(0);
   const drawStyle = useEditorStore((s) => s.drawStyle);
   const gesture = useRef<Gesture | null>(null);
+  /** the finger stroke being made: its working picture (the canvas the layer shows meanwhile) and a counter that tells a warped layer to redraw */
+  const [finger, setFinger] = useState<{ layerId: string; canvas: HTMLCanvasElement; raw: { width: number; height: number; data: Uint8ClampedArray }; rev: number } | null>(null);
 
   const screen = useEditorStore(selectScreen);
   const images = useEditorStore((s) => s.images);
@@ -174,6 +178,24 @@ export default function CanvasViewport() {
       brushPoints.current = [{ x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100 }];
       gesture.current = { kind: "brush", points: brushPoints.current };
       setBrushTick((t) => t + 1);
+    } else if (e.button === 0 && activeTool === "finger") {
+      const st = editorStore.getState();
+      const target = st.selectedLayerIds.length === 1 ? st.selectedLayerIds[0] : undefined;
+      const started = startFingerStroke(editorStore, target ?? "");
+      if (!started.ok) {
+        st.setNotice(target ? started.reason : "손가락 도구는 이미지 레이어를 하나 선택한 뒤 쓸 수 있습니다. 원본 스크린샷은 바꿀 수 없습니다.");
+        return;
+      }
+      const { raw } = started.stroke;
+      const canvas = document.createElement("canvas");
+      canvas.width = raw.width;
+      canvas.height = raw.height;
+      const context = canvas.getContext("2d")!;
+      const imageData = new ImageData(raw.data as Uint8ClampedArray<ArrayBuffer>, raw.width, raw.height); // shares the working picture: no copy per move
+      context.putImageData(imageData, 0, 0);
+      setFinger({ layerId: started.stroke.layerId, canvas, raw, rev: 0 });
+      gesture.current = { kind: "finger", stroke: started.stroke, imageData, context };
+      started.stroke.move(toImage(e, v));
     } else if (e.button === 0 && activeTool === "text") {
       // a click while a box is open is the user leaving it (the box commits on blur); the next click makes the next box
       if (editorStore.getState().textEditing) return;
@@ -211,6 +233,14 @@ export default function CanvasViewport() {
         g.points.push({ x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100 });
         setBrushTick((t) => t + 1);
       }
+    } else if (g.kind === "finger") {
+      const box = g.stroke.move(toImage(e));
+      if (box) {
+        // only the pixels this move wrote are copied to the canvas the layer shows; the layer itself is not re-encoded
+        g.context.putImageData(g.imageData, 0, 0, box.x, box.y, box.width, box.height);
+        if (screen.layers.find((l) => l.id === g.stroke.layerId)?.warp) setFinger((f) => f && { ...f, rev: f.rev + 1 });
+        else layerRef.current?.batchDraw();
+      }
     } else if (g.kind === "shape") setShapeDrag({ a: g.a, b: roundPoint(toImage(e)) });
     else setMarquee({ a: g.a, b: toImage(e) });
   };
@@ -219,6 +249,11 @@ export default function CanvasViewport() {
     const g = gesture.current;
     gesture.current = null;
     if (!g || !screen) return;
+    if (g.kind === "finger") {
+      setFinger(null);
+      if (commit) g.stroke.finish(); // one stroke is one undo step, and a new picture; a stroke that did not move records nothing
+      return;
+    }
     if (g.kind === "brush") {
       const tool = editorStore.getState().activeTool;
       brushPoints.current = null;
@@ -330,7 +365,7 @@ export default function CanvasViewport() {
   const tagAt = marqueeRect ? imageToClient({ x: marqueeRect.x, y: marqueeRect.y }, { x: 0, y: 0 }, view, frameOrigin) : null;
 
   const zoomBy = (factor: number) => editorStore.getState().setView(zoomAt(view, view.zoom * factor, { x: size.width / 2, y: size.height / 2 }));
-  const cursor = tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "memo" || tool === "auto" ? "crosshair" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
+  const cursor = tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "memo" || tool === "auto" || tool === "finger" ? "crosshair" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
 
   return (
     <div
@@ -408,9 +443,9 @@ export default function CanvasViewport() {
                   if (content) return <VectorShape key={layer.id} content={content} {...shared} />;
                   if (warp) {
                     // warped: drawn by the shared rasteriser, placed on a whole pixel, scale and rotation already baked in
-                    return <WarpedShape key={layer.id} image={image!} warp={warp} placement={layer.transform} frame={{ x: -Math.round(at.x), y: -Math.round(at.y), width: screen.width, height: screen.height }} dragging={warpPreview?.layerId === layer.id} {...shared} x={screen.x + Math.round(at.x)} y={screen.y + Math.round(at.y)} />;
+                    return <WarpedShape key={layer.id} image={finger?.layerId === layer.id ? finger.raw : image!} rev={finger?.layerId === layer.id ? finger.rev : 0} warp={warp} placement={layer.transform} frame={{ x: -Math.round(at.x), y: -Math.round(at.y), width: screen.width, height: screen.height }} dragging={warpPreview?.layerId === layer.id || finger?.layerId === layer.id} {...shared} x={screen.x + Math.round(at.x)} y={screen.y + Math.round(at.y)} />;
                   }
-                  return <KImage key={layer.id} image={rawToCanvas(image!)} width={image!.width} height={image!.height} {...shared} />;
+                  return <KImage key={layer.id} image={finger?.layerId === layer.id ? finger.canvas : rawToCanvas(image!)} width={image!.width} height={image!.height} {...shared} />;
                 })}
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;

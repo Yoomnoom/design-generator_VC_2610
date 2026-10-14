@@ -20,6 +20,7 @@ import { AutosaveBanners, AutosaveFooter } from "./AutosaveStatus";
 import DrawStylePanel from "./DrawStylePanel";
 import MemoPanel from "./MemoPanel";
 import TextStylePanel from "./TextStylePanel";
+import FingerPanel from "./FingerPanel";
 import WarpPanel from "./WarpPanel";
 import ExportDialog from "./ExportDialog";
 import FillColorDialog from "./FillColorDialog";
@@ -231,6 +232,7 @@ export default function EditorShell() {
           <DrawStylePanel />
           <TextStylePanel />
           <WarpPanel />
+          <FingerPanel />
           <LayerPanel />
           <PropertyPanel />
           <MemoPanel />

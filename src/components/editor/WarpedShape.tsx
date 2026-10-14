@@ -16,6 +16,8 @@ type Props = {
   placement: WarpPlacement;
   /** the frame, relative to the layer's origin: a raster that would be enormous is cut down to this */
   frame: { x: number; y: number; width: number; height: number };
+  /** changes when the picture was painted on (a finger stroke) without being replaced, so the raster is made again */
+  rev?: number;
   /** true while a warp drag is going on: the picture is drawn at a lower resolution to keep the drag smooth */
   dragging: boolean;
 } & Omit<ComponentProps<typeof Shape>, "sceneFunc" | "hitFunc" | "width" | "height" | "fill" | "stroke" | "strokeEnabled" | "scaleX" | "scaleY" | "rotation">;
@@ -30,7 +32,7 @@ const UNCLIPPED_PIXELS = 16_000_000;
 /** A warped bitmap layer on the canvas. Its pixels come from rasterizeWarped, the very function the PNG export uses, so the screen and the
  *  file agree. The node sits at the layer's origin with no scale or rotation of its own (those are baked into the raster); its hit area is
  *  the warped outline, so clicks follow the bent shape. */
-export default function WarpedShape({ image, warp, placement, frame, dragging, ...rest }: Props) {
+export default function WarpedShape({ image, warp, placement, frame, dragging, rev = 0, ...rest }: Props) {
   const { scaleX, scaleY, rotation } = placement;
   const raster = useMemo(() => {
     const t = { scaleX, scaleY, rotation };
@@ -42,7 +44,7 @@ export default function WarpedShape({ image, warp, placement, frame, dragging, .
     return { r: rasterizeWarped(image, t, warp, { step, clip }), outline };
     // the frame only matters for a raster too big to keep whole, which is the only case it is part of the key
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [image, warp, scaleX, scaleY, rotation, dragging, frame.x, frame.y, frame.width, frame.height]);
+  }, [image, rev, warp, scaleX, scaleY, rotation, dragging, frame.x, frame.y, frame.width, frame.height]);
   const { r, outline } = raster;
   return (
     <Shape

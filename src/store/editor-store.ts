@@ -11,6 +11,7 @@ import { contentError } from "@/lib/project/parse";
 import { LayerTransform, isOnlyMoved, sanitizeTransform } from "@/lib/geometry/layer-transform";
 import { clampZoom } from "@/lib/geometry/view-transform";
 import { cropRaw } from "@/lib/image/crop-bitmap";
+import { trimImageVersions } from "./image-retention";
 import { MESH_DEFAULT, MESH_MAX, MESH_MIN, identityQuad, isIdentityWarp, resizeMesh, roundWarp, toQuad, warpError } from "@/lib/image/warp";
 import { normalizeHex } from "@/lib/image/color";
 import { RawImage } from "@/lib/image/raw-image";
@@ -32,7 +33,16 @@ export type LayerClipboard = { layer: BitmapLayer; pastes: number; /** hash of t
  *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
 export type CompareMode = "off" | "original" | "split";
 
-export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text" | "memo" | "auto" | "warp";
+export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text" | "memo" | "auto" | "warp" | "finger";
+
+/** The finger (smudge) tool's brush. Size is in the layer's own pixels; strength and softness are 0..100 (percent). Not part of the project. */
+export type FingerStyle = { size: number; strength: number; softness: number };
+export const DEFAULT_FINGER_STYLE: FingerStyle = { size: 30, strength: 60, softness: 50 };
+
+/** The finger tool writes a whole new bitmap per stroke, and every undo step keeps the one it replaced alive. The versions that are no
+ *  longer the present one may take at most this many bytes; past that, the oldest undo steps are dropped (and the pictures only they
+ *  needed are freed). A small layer keeps all 100 steps (600 × 400 is under 1 MB a step); a 4000 × 3000 one keeps about five. */
+export const IMAGE_VERSION_BUDGET = 256 * 1024 * 1024;
 
 /** the warp tool: which kind of handles the selected bitmap layer shows (corner points, or a grid of control points) and how fine the grid is.
  *  Not part of the project. */
@@ -103,6 +113,7 @@ type EditorState = {
   snapGuides: Guide[];
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
+  fingerStyle: FingerStyle;
   warpUi: WarpUi;
   warpSession: WarpSession | null;
   /** a warp drag in progress: shown live, recorded only by commitWarpPreview */
@@ -176,6 +187,11 @@ type EditorActions = {
   setWarpUi(change: Partial<WarpUi>): void;
   /** leave the warp tool: confirmed keeps what was done; cancelled takes every step made since the tool started back */
   finishWarp(confirm: boolean): void;
+  setFingerStyle(change: Partial<FingerStyle>): void;
+  /** Puts the result of a finger stroke on a bitmap layer: `raw` (same size as the layer's bitmap) becomes the layer's picture under a NEW
+   *  imageId, and the old picture stays for undo; the history holds only the imageId change. One undo step. Refused (false) for a locked or
+   *  vector layer, while comparing, or when the size differs. Old versions are released by the memory budget (IMAGE_VERSION_BUDGET). */
+  commitSmudge(layerId: string, raw: RawImage): boolean;
   setDrawStyle(change: Partial<DrawStyle>): void;
   setTextStyle(change: Partial<TextStyle>): void;
   /** a new text box with its top-left at (x, y), in the current text style; one undo step. Empty text makes nothing. */
@@ -217,7 +233,7 @@ type EditorActions = {
 
 export type EditorStore = EditorState & EditorActions;
 export type EditorStoreApi = StoreApi<EditorStore>;
-export type EditorStoreOptions = { genId?: () => string; /** how wide a string is at a font size; the canvas's own measure in the browser */ measure?: MeasureFor; /** the clock, so tests can say how much time passed between two key presses */ now?: () => number };
+export type EditorStoreOptions = { /** bytes the replaced bitmaps may take (see IMAGE_VERSION_BUDGET) */ imageBudget?: number; genId?: () => string; /** how wide a string is at a font size; the canvas's own measure in the browser */ measure?: MeasureFor; /** the clock, so tests can say how much time passed between two key presses */ now?: () => number };
 
 /** key presses on the same layer closer together than this are one undo step */
 export const NUDGE_MERGE_MS = 600;
@@ -256,7 +272,7 @@ const clampToFrame = (screen: { width: number; height: number }, x: number, y: n
 
 const drawOrder = (layers: readonly BitmapLayer[]) => sortByZ(layers).map((l) => l.id).join("\n");
 
-export function createEditorStore({ genId = () => crypto.randomUUID(), now = () => Date.now(), measure = canvasMeasureFor }: EditorStoreOptions = {}): EditorStoreApi {
+export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = () => crypto.randomUUID(), now = () => Date.now(), measure = canvasMeasureFor }: EditorStoreOptions = {}): EditorStoreApi {
   /** the last keyboard move: which layer, when, and the undo entry it made, so the next press can fold into it */
   /** how many outside pictures were added since the project was opened, for the staggering of repeated pastes */
   let externalPastes = 0;
@@ -389,6 +405,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       textEditing: null,
       selectedMemoId: null,
       dragPreview: null,
+      fingerStyle: DEFAULT_FINGER_STYLE,
       warpUi: DEFAULT_WARP_UI,
       warpSession: null,
       warpPreview: null,
@@ -844,6 +861,27 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         if (h) reconcile(h);
       },
 
+      setFingerStyle(change) {
+        const next = { ...get().fingerStyle, ...change };
+        const clamp = (v: number, lo: number, hi: number, fallback: number) => (Number.isFinite(v) ? Math.min(Math.max(Math.round(v), lo), hi) : fallback);
+        set({ fingerStyle: { size: clamp(next.size, 2, 300, DEFAULT_FINGER_STYLE.size), strength: clamp(next.strength, 1, 100, DEFAULT_FINGER_STYLE.strength), softness: clamp(next.softness, 0, 100, DEFAULT_FINGER_STYLE.softness) } });
+      },
+
+      commitSmudge(layerId, raw) {
+        const { history, images } = get();
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        const old = layer?.imageId ? images.get(layer.imageId)?.raw : undefined;
+        if (frozen() || !history || !layer || layer.content || layer.locked || !old || old.width !== raw.width || old.height !== raw.height) return false;
+        const imageId = genId();
+        const next = commit(history, "손가락 번짐", (draft) => {
+          const l = draft.screens[0].layers.find((d) => d.id === layerId);
+          if (l) l.imageId = imageId; // only the id changes: the history never holds pixels
+        });
+        const kept = trimImageVersions(next, new Map(images).set(imageId, { raw }), get().layerClipboard, imageBudget);
+        set({ history: kept.history, images: kept.images, selectedLayerIds: [layerId], selectedPatchId: null });
+        return true;
+      },
+
       setDrawStyle: (change) => set({ drawStyle: { ...get().drawStyle, ...change } }),
 
       setTextStyle(change) {
@@ -1046,4 +1084,3 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
     };
   });
 }
-

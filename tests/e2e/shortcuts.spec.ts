@@ -218,7 +218,10 @@ test.describe("copy and paste a layer (Ctrl+C / Ctrl+V)", () => {
 
   test("Ctrl+V with nothing copied does nothing", async ({ page }) => {
     await withLayer(page);
+    // the system clipboard outlives a test: leave only text on it, so there is no picture to paste
+    await page.evaluate(() => navigator.clipboard.writeText("no picture"));
     await page.keyboard.press("Control+v");
+    await page.waitForTimeout(300);
     expect((await editor(page)).layers).toHaveLength(1);
   });
 });
@@ -325,6 +328,8 @@ test.describe("when the browser will not let the app copy", () => {
       await expect(notice).toContainText("복사"); // it says what failed, not just why
       // no copy is remembered, so a paste has nothing to match and does nothing
       expect(await page.evaluate(() => (window as any).__slc.getState().layerClipboard)).toBeNull();
+      // the system clipboard is shared by every test of the run: a picture an earlier test left there would now be added as a layer, so put plain text on it
+      await page.evaluate(async () => { try { await navigator.clipboard.writeText("no picture"); } catch { /* no clipboard API in this case */ } });
       await page.keyboard.press("Control+v");
       await page.waitForTimeout(300);
       expect((await editor(page)).layers).toHaveLength(1);
