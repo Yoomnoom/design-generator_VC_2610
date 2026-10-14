@@ -307,11 +307,11 @@ export default function CanvasViewport() {
     const st = editorStore.getState();
     if (additive && addOnly) {
       // Shift+click adds (a layer already in the selection stays in it and can be dragged with the rest)
-      if (!st.selectedLayerIds.includes(id)) st.toggleLayerSelection(id, true);
+      if (!st.selectedLayerIds.includes(id)) st.toggleLayerSelection(id); // this layer only, not its group
       return;
     }
     if (additive) {
-      st.toggleLayerSelection(id, true); // a layer in a group stands for the whole group
+      st.toggleLayerSelection(id); // Ctrl+click: this one layer, even inside a group
       if (!editorStore.getState().selectedLayerIds.includes(id)) node.stopDrag();
       return;
     }

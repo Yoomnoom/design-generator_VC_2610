@@ -29,7 +29,7 @@ export function wholeGroupOf(layers: readonly BitmapLayer[], ids: readonly strin
   return members.length === ids.length && members.every((m) => ids.includes(m.id)) ? first : null;
 }
 
-export type PanelRow = { kind: "group"; group: LayerGroup; members: BitmapLayer[] } | { kind: "layer"; layer: BitmapLayer; inGroup: boolean };
+export type PanelRow = { kind: "group"; group: LayerGroup; members: BitmapLayer[]; folded: boolean } | { kind: "layer"; layer: BitmapLayer; inGroup: boolean };
 
 /** The layer panel's rows, front to back. A group's header sits where its front-most member is and lists all its members under it
  *  (even if other layers lie between them in the stacking), so each layer appears once. A folded group lists no members. */
@@ -47,23 +47,29 @@ export function panelRows(layers: readonly BitmapLayer[], groups: readonly Layer
     if (done.has(g.id)) continue;
     done.add(g.id);
     const members = front.filter((m) => m.groupId === g.id);
-    rows.push({ kind: "group", group: g, members });
+    rows.push({ kind: "group", group: g, members, folded: collapsed.has(g.id) });
     if (!collapsed.has(g.id)) for (const m of members) rows.push({ kind: "layer", layer: m, inGroup: true });
   }
   return rows;
 }
 
-/** the layer ids a row stands for: a layer is itself, a group header is all its members */
-export const rowIds = (row: PanelRow): string[] => (row.kind === "layer" ? [row.layer.id] : row.members.map((m) => m.id));
+/** the layer ids a row stands for: a layer is itself; a FOLDED group header is all its members (its layers are not listed); an open group's
+ *  header stands for nothing by itself, its members are rows of their own */
+export const rowIds = (row: PanelRow): string[] => (row.kind === "layer" ? [row.layer.id] : row.folded ? row.members.map((m) => m.id) : []);
 
 /** Shift+click: every row from the anchor to the target in the panel's order (both ends included), as layer ids. Hidden and locked layers
  *  are included (selecting is not editing: moving and deleting still skip locked ones). Unknown ids give just the target. */
 export function rangeSelect(rows: readonly PanelRow[], anchorId: string | null, targetId: string): string[] {
-  const index = (id: string) => rows.findIndex((r) => (r.kind === "layer" ? r.layer.id === id : r.members.some((m) => m.id === id)));
+  // a layer is found at its own row; inside a folded group it is found at the group's header; an open group's header is where its first member is
+  const index = (id: string) => {
+    const own = rows.findIndex((r) => r.kind === "layer" && r.layer.id === id);
+    if (own >= 0) return own;
+    return rows.findIndex((r) => r.kind === "group" && r.members.some((m) => m.id === id));
+  };
   const a = anchorId ? index(anchorId) : -1;
   const b = index(targetId);
   if (b < 0) return [targetId];
-  if (a < 0) return rowIds(rows[b]);
+  if (a < 0) return rowIds(rows[b]).length ? rowIds(rows[b]) : [targetId];
   const [from, to] = a < b ? [a, b] : [b, a];
   const out: string[] = [];
   for (const r of rows.slice(from, to + 1)) for (const id of rowIds(r)) if (!out.includes(id)) out.push(id);

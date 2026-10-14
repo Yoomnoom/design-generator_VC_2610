@@ -184,6 +184,10 @@ type EditorActions = {
   deselectAll(): void;
   /** Ctrl+G: the selected layers (two or more) become one group, as one undo step; the group's id */
   groupSelected(): string | null;
+  /** put layers into an existing group (one undo step); false with a notice when locked, nested or comparing. The stacking order is not changed. */
+  addToGroup(groupId: string, layerIds: readonly string[]): boolean;
+  /** take layers out of their groups (one undo step); how many. A group left with fewer than two layers is dissolved. */
+  removeFromGroup(layerIds: readonly string[]): number;
   /** Ctrl+Shift+G: every group that has a selected layer is dissolved (layers stay), one undo step; how many */
   ungroupSelected(): number;
   renameGroup(groupId: string, name: string): boolean;
@@ -826,6 +830,17 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
           set({ notice: "그룹으로 만들려면 레이어를 두 개 이상 선택하세요." });
           return null;
         }
+        // which groups are selected WHOLE (all their layers), and which layers are loose (in no group)
+        const wholeGroups = (screen.groups ?? []).filter((g) => screen.layers.filter((l) => l.groupId === g.id).every((l) => ids.includes(l.id)));
+        const loose = ids.filter((id) => !screen.layers.find((l) => l.id === id)?.groupId);
+        if (wholeGroups.length >= 2) {
+          set({ notice: "그룹 안에 다른 그룹을 넣을 수 없습니다. 그룹은 한 단계만 만들 수 있습니다." });
+          return null;
+        }
+        if (wholeGroups.length === 1 && loose.length > 0 && ids.length === loose.length + screen.layers.filter((l) => l.groupId === wholeGroups[0].id).length) {
+          // one group and some loose layers: the layers join that group
+          return get().addToGroup(wholeGroups[0].id, loose) ? wholeGroups[0].id : null;
+        }
         if ((screen.groups?.length ?? 0) >= MAX_GROUPS && !ids.some((id) => screen.layers.find((l) => l.id === id)?.groupId)) {
           set({ notice: `그룹은 ${MAX_GROUPS}개까지 만들 수 있습니다.` });
           return null;
@@ -843,6 +858,65 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         return gid;
       },
 
+      addToGroup(groupId, layerIds) {
+        const { history } = get();
+        const screen = screenOf();
+        if (frozen() || !history || !screen) return false;
+        const group = screen.groups?.find((g) => g.id === groupId);
+        const layers = screen.layers.filter((l) => layerIds.includes(l.id));
+        if (!group || layers.length === 0) return false;
+        const members = screen.layers.filter((l) => l.groupId === groupId);
+        // a whole group cannot go into another group (one level only)
+        const groupsOfMovers = new Set(layers.map((l) => l.groupId).filter((g): g is string => !!g && g !== groupId));
+        for (const gid of groupsOfMovers) {
+          const all = screen.layers.filter((l) => l.groupId === gid);
+          if (all.every((l) => layerIds.includes(l.id))) {
+            set({ notice: "그룹 안에 다른 그룹을 넣을 수 없습니다. 그룹은 한 단계만 만들 수 있습니다." });
+            return false;
+          }
+        }
+        if (layers.some((l) => l.locked) || members.some((l) => l.locked)) {
+          set({ notice: "잠긴 레이어가 있어 그룹을 바꿀 수 없습니다. 잠금을 풀고 다시 시도하세요." });
+          return false;
+        }
+        const moving = layers.filter((l) => l.groupId !== groupId);
+        if (moving.length === 0) return false;
+        const movingIds = moving.map((l) => l.id);
+        set({
+          history: commit(history, "그룹에 넣기", (draft) => {
+            const s = draft.screens[0];
+            for (const l of s.layers) if (movingIds.includes(l.id)) l.groupId = groupId; // the stacking order (zIndex) is not touched
+            pruneGroups(s); // a group that lost layers to this one and is left with one is dissolved
+          }),
+          selectedLayerIds: [...new Set([...members.map((m) => m.id), ...movingIds])],
+        });
+        return true;
+      },
+
+      removeFromGroup(layerIds) {
+        const { history } = get();
+        const screen = screenOf();
+        if (frozen() || !history || !screen) return 0;
+        const layers = screen.layers.filter((l) => layerIds.includes(l.id) && l.groupId);
+        if (layers.length === 0) {
+          set({ notice: "선택한 레이어 중에 그룹에 속한 것이 없습니다." });
+          return 0;
+        }
+        const gids = new Set(layers.map((l) => l.groupId!));
+        if (layers.some((l) => l.locked) || screen.layers.some((l) => l.locked && l.groupId && gids.has(l.groupId))) {
+          set({ notice: "잠긴 레이어가 있는 그룹은 바꿀 수 없습니다. 잠금을 풀고 다시 시도하세요." });
+          return 0;
+        }
+        const ids = layers.map((l) => l.id);
+        set({
+          history: commit(history, "그룹에서 빼기", (draft) => {
+            const s = draft.screens[0];
+            for (const l of s.layers) if (ids.includes(l.id)) delete l.groupId;
+            pruneGroups(s); // with one layer left a group is dissolved (the simplest rule: a group needs two)
+          }),
+        });
+        return ids.length;
+      },
       ungroupSelected() {
         const { history } = get();
         const screen = screenOf();
@@ -1087,6 +1161,10 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         const nextImages = new Map(images);
         const idOfKey = new Map<string, string>();
         const groupIdOfKey = new Map<string, string>(); // the groups the source brings are new groups, with new ids
+        // a source of several layers that brings no groups of its own goes in as ONE group named like the source (the built-ins, and my
+        // sources made of loose layers); a template keeps its own component groups
+        const wrap = mode === "center" && bundle.layers.length >= 2 && !bundle.layers.some((a) => a.groupKey);
+        const groupKeyOf = (a: { groupKey?: string }) => a.groupKey ?? (wrap ? "__source" : undefined);
         const made: BitmapLayer[] = [];
         for (const a of bundle.layers) {
           let imageId: string | undefined;
@@ -1112,7 +1190,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
             ...(content ? { content } : {}),
             ...(a.drawn ? { drawn: true } : {}),
             ...(a.warp ? { warp: JSON.parse(JSON.stringify(a.warp)) } : {}),
-            ...(a.groupKey ? { groupId: groupIdOfKey.get(a.groupKey) ?? (groupIdOfKey.set(a.groupKey, genId()), groupIdOfKey.get(a.groupKey)!) } : {}),
+            ...(groupKeyOf(a) ? { groupId: groupIdOfKey.get(groupKeyOf(a)!) ?? (groupIdOfKey.set(groupKeyOf(a)!, genId()), groupIdOfKey.get(groupKeyOf(a)!)!) } : {}),
             transform: { ...a.transform },
             zIndex: 0,
             opacity: a.opacity,
@@ -1134,7 +1212,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         let list: readonly BitmapLayer[] = screen.layers;
         for (const l of made) list = addOnTop(list, l);
         set({ images: nextImages });
-        const newGroups = [...groupIdOfKey].map(([key, id]) => ({ id, name: (bundle.layers.find((a) => a.groupKey === key)?.groupName ?? "그룹").trim().slice(0, MAX_GROUP_NAME) || "그룹" })).slice(0, Math.max(0, MAX_GROUPS - (screen.groups?.length ?? 0))); // over the limit the extra groups just do not form
+        const newGroups = [...groupIdOfKey].map(([key, id]) => ({ id, name: (key === "__source" ? bundle.name : (bundle.layers.find((a) => a.groupKey === key)?.groupName ?? "그룹")).trim().slice(0, MAX_GROUP_NAME) || "그룹" })).slice(0, Math.max(0, MAX_GROUPS - (screen.groups?.length ?? 0))); // over the limit the extra groups just do not form
         set({
           history: commit(history, `소스 삽입: ${bundle.name}`, (draft) => {
             const s = draft.screens[0];

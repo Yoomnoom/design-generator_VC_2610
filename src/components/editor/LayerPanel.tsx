@@ -96,12 +96,30 @@ export default function LayerPanel() {
   const collapsed = useEditorStore((s) => s.collapsedGroups);
   const bindings = useBindings();
   const key = (a: keyof typeof bindings) => formatBinding(bindings[a]);
+  const dragIds = useRef<string[]>([]); // the layers being dragged in the list (HTML drag and drop)
   const [renamingGroup, setRenamingGroup] = useState<{ id: string; text: string } | null>(null);
   if (!screen) return null;
 
   const front = sortByZ(screen.layers).reverse(); // the layer on top of the canvas is first in the list
   const rows = panelRows(screen.layers, screen.groups ?? [], new Set(collapsed));
   const whole = wholeGroupOf(screen.layers, selectedIds); // the selection is exactly one group
+  const startDrag = (ids: string[]) => (e: React.DragEvent) => {
+    dragIds.current = ids;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", ids.join(","));
+  };
+  const allowDrop = (e: React.DragEvent) => {
+    if (dragIds.current.length > 0 && !comparing) e.preventDefault();
+  };
+  /** dropped on a group header or between its layers: the layers join that group; dropped on a layer that is in no group: they leave their groups */
+  const dropOn = (groupId: string | undefined) => (e: React.DragEvent) => {
+    e.preventDefault();
+    const ids = dragIds.current;
+    dragIds.current = [];
+    if (ids.length === 0) return;
+    if (groupId) act.addToGroup(groupId, ids);
+    else if (ids.some((id) => screen.layers.find((l) => l.id === id)?.groupId)) act.removeFromGroup(ids);
+  };
   const anyGrouped = front.some((l) => l.groupId && selectedIds.includes(l.id));
   const index = front.findIndex((l) => l.id === selectedId);
   const selected = front[index];
@@ -121,9 +139,10 @@ export default function LayerPanel() {
         <button className="btn mini px-0" disabled={!has || (multi && !whole) || comparing} title={multi && !whole ? "여러 레이어는 복제할 수 없습니다. 하나만 선택하거나 그룹 전체를 선택하세요" : `복제 (${key("duplicate")})`} onClick={() => (whole ? act.duplicateGroup(whole) : act.duplicateLayer(selectedId))}>복제</button>
         <button className="btn mini px-0" disabled={!has || (multi ? unlockedSelected === 0 : selected?.locked) || comparing} title={multi ? `선택한 레이어를 모두 삭제합니다 (잠긴 것은 제외, ${key("delete")})` : selected?.locked ? "잠긴 레이어는 삭제할 수 없습니다" : `삭제 (${key("delete")})`} onClick={() => (multi ? act.deleteSelectedLayers() : act.deleteLayer(selectedId))}>삭제</button>
       </div>
-      <div className="mb-2.5 grid grid-cols-2 gap-1.5">
-        <button data-testid="group-make" className="btn mini px-0" disabled={comparing || selectedIds.length < 2} title={`선택한 레이어를 하나의 그룹으로 묶습니다 (${key("group")})`} onClick={() => act.groupSelected()}>그룹 만들기</button>
-        <button data-testid="group-release" className="btn mini px-0" disabled={comparing || !anyGrouped} title={`선택한 레이어가 속한 그룹을 풉니다. 레이어는 그대로 남습니다 (${key("ungroup")})`} onClick={() => act.ungroupSelected()}>그룹 해제</button>
+      <div className="mb-2.5 grid grid-cols-3 gap-1.5">
+        <button data-testid="group-make" className="btn mini px-0" disabled={comparing || selectedIds.length < 2} title={`선택한 레이어를 하나의 그룹으로 묶습니다 (${key("group")})`} onClick={() => act.groupSelected()}>그룹</button>
+        <button data-testid="group-remove" className="btn mini px-0" disabled={comparing || !anyGrouped} title="선택한 레이어를 그룹에서 뺍니다(그룹은 남습니다; 남은 레이어가 하나뿐이면 그룹이 풀립니다)" onClick={() => act.removeFromGroup(selectedIds)}>빼기</button>
+        <button data-testid="group-release" className="btn mini px-0" disabled={comparing || !anyGrouped} title={`선택한 레이어가 속한 그룹을 풉니다. 레이어는 그대로 남습니다 (${key("ungroup")})`} onClick={() => act.ungroupSelected()}>해제</button>
       </div>
       {multi && (
         <p data-testid="multi-note" className="mb-2 text-xs text-[var(--accent)]">
@@ -141,7 +160,7 @@ export default function LayerPanel() {
               const active = ids.every((id) => selectedIds.includes(id));
               const folded = collapsed.includes(g.id);
               return (
-                <li key={`group-${g.id}`} data-testid="group-row" data-group-id={g.id} data-folded={folded ? "true" : undefined} className={`mb-0.5 mt-1 flex items-center rounded-[7px] ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "bg-[#f5f5f2]"}`}>
+                <li key={`group-${g.id}`} draggable={!comparing} onDragStart={startDrag(ids)} onDragOver={allowDrop} onDrop={dropOn(g.id)} data-testid="group-row" data-group-id={g.id} data-folded={folded ? "true" : undefined} className={`mb-0.5 mt-1 flex items-center rounded-[7px] ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "bg-[#f5f5f2]"}`}>
                   <button type="button" data-testid="group-toggle" aria-expanded={!folded} aria-label={`${g.name} ${folded ? "펼치기" : "접기"}`} title={folded ? "펼치기" : "접기"} className={iconButton} onClick={() => act.toggleGroupCollapsed(g.id)}>
                     {folded ? "▸" : "▾"}
                   </button>
@@ -178,7 +197,7 @@ export default function LayerPanel() {
             const raw = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
             const active = selectedIds.includes(layer.id);
             return (
-              <li key={layer.id} data-hidden={layer.visible ? undefined : "true"} data-locked={layer.locked ? "true" : undefined} data-in-group={row.inGroup ? "true" : undefined} className={`mb-0.5 flex items-center rounded-[7px] ${row.inGroup ? "ml-5" : ""} ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "hover:bg-[#f5f5f2]"}`}>
+              <li key={layer.id} draggable={!comparing} onDragStart={startDrag(active ? selectedIds : [layer.id])} onDragOver={allowDrop} onDrop={dropOn(layer.groupId)} data-hidden={layer.visible ? undefined : "true"} data-locked={layer.locked ? "true" : undefined} data-in-group={row.inGroup ? "true" : undefined} className={`mb-0.5 flex items-center rounded-[7px] ${row.inGroup ? "ml-5" : ""} ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "hover:bg-[#f5f5f2]"}`}>
                 <button
                   type="button"
                   data-testid="layer-item"
