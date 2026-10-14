@@ -4,7 +4,7 @@ import { ACTION_INFO } from "@/features/shortcuts/shortcuts";
 import { Tool } from "@/store/editor-store";
 
 /** every tool of the tool rail (the Tool type's members) */
-const ALL_TOOLS: Tool[] = ["select", "hand", "rect", "fill", "line", "box", "ellipse", "eyedropper", "brush", "eraser", "text", "memo", "auto", "warp", "finger"];
+const ALL_TOOLS: Tool[] = ["select", "hand", "rect", "fill", "line", "box", "ellipse", "eyedropper", "brush", "eraser", "text", "memo", "auto", "warp", "finger", "liquify"];
 
 describe("help content", () => {
   test("every tool, the free-transform button and the source panel have help with a summary, when to use it and an example", () => {
