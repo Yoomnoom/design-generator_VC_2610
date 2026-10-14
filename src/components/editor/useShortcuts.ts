@@ -90,10 +90,18 @@ export function useShortcuts() {
           st.setTool("auto");
           break;
         case "candidate-extract":
+          if (st.activeTool === "warp") {
+            st.finishWarp(true); // Enter: keep the warp
+            break;
+          }
           if (!st.candidatePick) return; // Enter means nothing here otherwise
           st.extractCandidatePick();
           break;
         case "candidate-clear":
+          if (st.activeTool === "warp") {
+            st.finishWarp(false); // Esc: take back everything done with the warp tool
+            break;
+          }
           if (!st.candidatePick) return;
           st.clearCandidatePick();
           break;
@@ -108,6 +116,9 @@ export function useShortcuts() {
           break;
         case "tool-eraser":
           st.setTool("eraser");
+          break;
+        case "tool-warp":
+          st.setTool("warp");
           break;
       }
       e.preventDefault();

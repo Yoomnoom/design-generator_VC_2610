@@ -28,6 +28,11 @@ import CandidateOverlay from "./CandidateOverlay";
 import MemoLayer from "./MemoLayer";
 import TextEditor from "./TextEditor";
 import VectorShape from "./VectorShape";
+import WarpHandles from "./WarpHandles";
+import WarpedShape from "./WarpedShape";
+import { effectiveWarp } from "@/lib/image/warp";
+import { warpOutline } from "@/lib/image/warp";
+import { layerPointToFrame } from "@/lib/geometry/layer-transform";
 
 const ACCENT = "#5b5ce2";
 /** the space between the original and the edited frame in the side-by-side view, in image pixels */
@@ -65,6 +70,9 @@ export default function CanvasViewport() {
   const compare = useEditorStore((s) => s.compareMode);
   const comparing = compare !== "off";
   const preview = useEditorStore((s) => s.dragPreview);
+  const warpPreview = useEditorStore((s) => s.warpPreview);
+  const warpUi = useEditorStore((s) => s.warpUi);
+  const warpSession = useEditorStore((s) => s.warpSession);
 
   useEffect(() => {
     const el = containerRef.current!;
@@ -301,7 +309,9 @@ export default function CanvasViewport() {
   const layerRef = useRef<Konva.Layer>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const selected = layers.find((l) => l.id === selectedId);
-  const showHandles = tool === "select" && !comparing && selectedIds.length === 1 && !!selected && selected.visible && !selected.locked;
+  // a warped layer has no resize/rotate frame (its shape is not a rectangle); its panel fields and the warp tool change it
+  const showHandles = tool === "select" && !comparing && selectedIds.length === 1 && !!selected && selected.visible && !selected.locked && !selected.warp;
+  const warpTarget = tool === "warp" && !comparing && warpSession && selectedIds.length === 1 && selectedId === warpSession.layerId ? layers.find((l) => l.id === warpSession.layerId) : undefined;
   useEffect(() => {
     const tr = transformerRef.current;
     if (!tr) return;
@@ -360,6 +370,7 @@ export default function CanvasViewport() {
                   const content = layer.content;
                   if (!image && !content) return null;
                   const at = placedAt(layer);
+                  const warp = image ? effectiveWarp(warpPreview?.layerId === layer.id ? warpPreview.warp : layer.warp, image.width, image.height) : undefined;
                   const movable = tool === "select";
                   const shared = {
                     name: `layer-${layer.id}`,
@@ -395,15 +406,28 @@ export default function CanvasViewport() {
                     onMouseLeave: (e: KonvaEventObject<MouseEvent>) => (e.target.getStage()!.container().style.cursor = ""),
                   };
                   if (content) return <VectorShape key={layer.id} content={content} {...shared} />;
+                  if (warp) {
+                    // warped: drawn by the shared rasteriser, placed on a whole pixel, scale and rotation already baked in
+                    return <WarpedShape key={layer.id} image={image!} warp={warp} placement={layer.transform} frame={{ x: -Math.round(at.x), y: -Math.round(at.y), width: screen.width, height: screen.height }} dragging={warpPreview?.layerId === layer.id} {...shared} x={screen.x + Math.round(at.x)} y={screen.y + Math.round(at.y)} />;
+                  }
                   return <KImage key={layer.id} image={rawToCanvas(image!)} width={image!.width} height={image!.height} {...shared} />;
                 })}
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
                   const box = layer.content ? { width: layer.content.width, height: layer.content.height } : image;
-                  if (!box || !selectedIds.includes(layer.id) || !layer.visible || showHandles || comparing) return null; // with handles, their frame is the outline
+                  if (!box || !selectedIds.includes(layer.id) || !layer.visible || showHandles || comparing || layer.id === warpTarget?.id) return null; // with handles, their frame is the outline (the warp tool draws its own)
                   const at = placedAt(layer);
+                  if (layer.warp && image && tool !== "warp") {
+                    // the outline follows the bent shape
+                    const t = { ...layer.transform, x: Math.round(at.x), y: Math.round(at.y) };
+                    const pts = warpOutline(layer.warp).flatMap((p) => { const f = layerPointToFrame(t, p); return [screen.x + f.x, screen.y + f.y]; });
+                    return <Line key={`sel-${layer.id}`} points={pts} closed stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={layer.locked ? [6, 4] : undefined} listening={false} />;
+                  }
                   return <Rect key={`sel-${layer.id}`} x={screen.x + at.x} y={screen.y + at.y} scaleX={layer.transform.scaleX} scaleY={layer.transform.scaleY} rotation={layer.transform.rotation} width={box.width} height={box.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={layer.locked ? [6, 4] : undefined} listening={false} />;
                 })}
+                {warpTarget && warpTarget.imageId && images.get(warpTarget.imageId) && (
+                  <WarpHandles layer={warpTarget} image={images.get(warpTarget.imageId)!.raw} origin={{ x: screen.x, y: screen.y }} zoom={view.zoom} warp={warpPreview?.layerId === warpTarget.id ? warpPreview.warp : warpTarget.warp ?? null} mode={warpUi.mode} cols={warpUi.cols} rows={warpUi.rows} />
+                )}
                 {groupBox && screen && <Rect x={screen.x + groupBox.x} y={screen.y + groupBox.y} width={groupBox.width} height={groupBox.height} stroke={ACCENT} strokeWidth={1} strokeScaleEnabled={false} dash={[6, 4]} listening={false} />}
                 {snapGuides.map((g, i) => (
                   <Line key={`guide-${i}`} points={[screen.x + g.x1, screen.y + g.y1, screen.x + g.x2, screen.y + g.y2]} stroke="#ff3d81" strokeWidth={1} strokeScaleEnabled={false} listening={false} />

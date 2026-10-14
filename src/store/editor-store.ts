@@ -11,10 +11,11 @@ import { contentError } from "@/lib/project/parse";
 import { LayerTransform, isOnlyMoved, sanitizeTransform } from "@/lib/geometry/layer-transform";
 import { clampZoom } from "@/lib/geometry/view-transform";
 import { cropRaw } from "@/lib/image/crop-bitmap";
+import { MESH_DEFAULT, MESH_MAX, MESH_MIN, identityQuad, isIdentityWarp, resizeMesh, roundWarp, toQuad, warpError } from "@/lib/image/warp";
 import { normalizeHex } from "@/lib/image/color";
 import { RawImage } from "@/lib/image/raw-image";
 import { sampleBackground } from "@/lib/image/sample-background";
-import { BitmapLayer, CURRENT_VERSION, LayerContent, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode } from "@/lib/project/schema";
+import { BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
 
@@ -31,7 +32,15 @@ export type LayerClipboard = { layer: BitmapLayer; pastes: number; /** hash of t
  *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
 export type CompareMode = "off" | "original" | "split";
 
-export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text" | "memo" | "auto";
+export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text" | "memo" | "auto" | "warp";
+
+/** the warp tool: which kind of handles the selected bitmap layer shows (corner points, or a grid of control points) and how fine the grid is.
+ *  Not part of the project. */
+export type WarpUi = { mode: "quad" | "mesh"; cols: number; rows: number };
+export const DEFAULT_WARP_UI: WarpUi = { mode: "quad", cols: MESH_DEFAULT, rows: MESH_DEFAULT };
+
+/** the warp tool is working on one layer; `base` is how many undo steps existed when it started, so Esc can take them all back */
+export type WarpSession = { layerId: string; base: number };
 
 /** the tools that drag out a new vector layer, and what each makes */
 export const SHAPE_TOOLS: Partial<Record<Tool, Exclude<LayerContent["kind"], "text">>> = { line: "line", box: "rect", ellipse: "ellipse" };
@@ -94,6 +103,10 @@ type EditorState = {
   snapGuides: Guide[];
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
+  warpUi: WarpUi;
+  warpSession: WarpSession | null;
+  /** a warp drag in progress: shown live, recorded only by commitWarpPreview */
+  warpPreview: { layerId: string; warp: LayerWarp } | null;
 };
 
 type EditorActions = {
@@ -151,6 +164,18 @@ type EditorActions = {
   addVectorLayer(content: LayerContent, x: number, y: number): string | null;
   /** change a vector layer's look (colours, stroke width); one undo step, refused on a locked layer */
   setLayerContent(layerId: string, change: Partial<{ stroke: string | null; fill: string | null; strokeWidth: number }>): boolean;
+  /** Warps a bitmap layer (skew, perspective, distortion, mesh) without touching its pixels, or removes the warp (null, or one that changes
+   *  nothing). One undo step. Refused for a locked layer, a vector layer, an unacceptable shape, and while comparing. */
+  setLayerWarp(layerId: string, warp: LayerWarp | null): boolean;
+  /** show a warp while the pointer is still down; nothing is recorded until commitWarpPreview */
+  previewWarp(layerId: string, warp: LayerWarp): void;
+  commitWarpPreview(): boolean;
+  cancelWarpPreview(): void;
+  /** switch the layer between corner handles (quad) and a control-point grid (mesh), or change the grid's size, keeping the present shape. One undo step. */
+  convertWarp(layerId: string, target: WarpUi): boolean;
+  setWarpUi(change: Partial<WarpUi>): void;
+  /** leave the warp tool: confirmed keeps what was done; cancelled takes every step made since the tool started back */
+  finishWarp(confirm: boolean): void;
   setDrawStyle(change: Partial<DrawStyle>): void;
   setTextStyle(change: Partial<TextStyle>): void;
   /** a new text box with its top-left at (x, y), in the current text style; one undo step. Empty text makes nothing. */
@@ -335,6 +360,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         layerClipboard: null, // it points at bitmaps of the project that was just replaced
         compareMode: "off",
         dragPreview: null,
+        warpPreview: null,
+        warpSession: null,
       });
     };
 
@@ -362,6 +389,9 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       textEditing: null,
       selectedMemoId: null,
       dragPreview: null,
+      warpUi: DEFAULT_WARP_UI,
+      warpSession: null,
+      warpPreview: null,
 
       newProject({ fileName, raw, blob, name }) {
         if (raw.width < 1 || raw.height < 1) throw new RangeError("image has no pixels");
@@ -682,6 +712,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         const { history, images } = get();
         const screen = screenOf();
         if (frozen() || !history || !screen || raw.width < 1 || raw.height < 1 || ![x, y].every(Number.isFinite)) return null;
+        if (layerId && screen.layers.find((l) => l.id === layerId)?.warp) return null; // a warped layer is edited after its warp is reset
         const imageId = genId();
         const nextImages = new Map(images).set(imageId, { raw });
         const crop = { x: 0, y: 0, width: raw.width, height: raw.height };
@@ -752,6 +783,65 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
           const wanted = merged as Record<string, unknown>;
           for (const key of ["stroke", "fill", "strokeWidth"]) if (key in wanted && target[key] !== wanted[key]) target[key] = wanted[key];
         });
+      },
+
+      setLayerWarp(layerId, warp) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer || layer.content || !layer.imageId || layer.locked || frozen()) return false;
+        const raw = get().images.get(layer.imageId)?.raw;
+        const w = raw?.width ?? layer.crop.width, h = raw?.height ?? layer.crop.height;
+        const next = warp && !isIdentityWarp(warp, w, h) ? roundWarp(warp) : null;
+        if (next && warpError(next, w, h)) return false;
+        if (!next && !layer.warp) return false;
+        return editLayer(layerId, next ? "레이어 변형" : "변형 초기화", (l) => {
+          if (next) l.warp = next;
+          else delete l.warp;
+        });
+      },
+
+      previewWarp(layerId, warp) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer || layer.content || layer.locked || frozen()) return;
+        const raw = layer.imageId ? get().images.get(layer.imageId)?.raw : undefined;
+        if (!raw || warpError(warp, raw.width, raw.height)) return; // a shape that cannot be kept is not shown either
+        set({ warpPreview: { layerId, warp } });
+      },
+
+      commitWarpPreview() {
+        const preview = get().warpPreview;
+        set({ warpPreview: null });
+        return !!preview && get().setLayerWarp(preview.layerId, preview.warp);
+      },
+
+      cancelWarpPreview: () => set({ warpPreview: null }),
+
+      convertWarp(layerId, target) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        const raw = layer?.imageId ? get().images.get(layer.imageId)?.raw : undefined;
+        if (!layer || !raw) return false;
+        const current: LayerWarp = layer.warp ?? identityQuad(raw.width, raw.height);
+        const cols = Math.min(Math.max(Math.round(target.cols), MESH_MIN), MESH_MAX);
+        const rows = Math.min(Math.max(Math.round(target.rows), MESH_MIN), MESH_MAX);
+        const next: LayerWarp = target.mode === "quad" ? toQuad(current) : current.kind === "mesh" && current.cols === cols && current.rows === rows ? current : resizeMesh(current, cols, rows, raw.width, raw.height);
+        set({ warpUi: { mode: target.mode, cols, rows } });
+        // a bitmap with no warp yet only has its handles switched; nothing is stored until it is actually bent
+        return next === current || isIdentityWarp(next, raw.width, raw.height) ? false : get().setLayerWarp(layerId, next);
+      },
+
+      setWarpUi(change) {
+        const next = { ...get().warpUi, ...change };
+        next.cols = Math.min(Math.max(Math.round(next.cols) || MESH_DEFAULT, MESH_MIN), MESH_MAX);
+        next.rows = Math.min(Math.max(Math.round(next.rows) || MESH_DEFAULT, MESH_MIN), MESH_MAX);
+        set({ warpUi: next });
+      },
+
+      finishWarp(confirm) {
+        const session = get().warpSession;
+        set({ activeTool: "select", warpSession: null, warpPreview: null });
+        if (confirm || !session) return;
+        let h = get().history;
+        while (h && h.past.length > session.base) h = undo(h);
+        if (h) reconcile(h);
       },
 
       setDrawStyle: (change) => set({ drawStyle: { ...get().drawStyle, ...change } }),
@@ -936,7 +1026,18 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       markFitted: () => set({ needsFit: false }),
       // a gesture or question that was under way is dropped, so nothing half-done lingers behind the comparison
       setCompareMode: (compareMode) => set({ compareMode, dragPreview: null, pendingExtraction: null }),
-      setTool: (activeTool) => set(activeTool === "auto" ? { activeTool } : { activeTool, candidatePick: null, candidateHover: null }),
+      setTool(activeTool) {
+        if (activeTool === "warp") {
+          // the warp tool works on exactly one bitmap layer that can be changed; say why when it cannot start
+          const ids = get().selectedLayerIds;
+          const layer = ids.length === 1 ? screenOf()?.layers.find((l) => l.id === ids[0]) : undefined;
+          const why = frozen() ? "비교 보기 중에는 변형할 수 없습니다. 비교를 끄고 다시 시도해 주세요." : !layer ? "변형할 레이어를 하나만 선택해 주세요." : layer.content || !layer.imageId ? "변형은 이미지(비트맵) 레이어에만 쓸 수 있습니다. 도형·텍스트 레이어는 대상이 아닙니다." : layer.locked ? "잠긴 레이어는 변형할 수 없습니다." : null;
+          if (why || !layer) return set({ notice: why });
+          const mode = layer.warp ? layer.warp.kind : get().warpUi.mode;
+          return set({ activeTool, candidatePick: null, candidateHover: null, warpPreview: null, warpSession: { layerId: layer.id, base: get().history!.past.length }, warpUi: layer.warp?.kind === "mesh" ? { mode, cols: layer.warp.cols, rows: layer.warp.rows } : { ...get().warpUi, mode } });
+        }
+        set(activeTool === "auto" ? { activeTool, warpSession: null, warpPreview: null } : { activeTool, candidatePick: null, candidateHover: null, warpSession: null, warpPreview: null });
+      },
       selectLayer: (layerId) => set({ selectedMemoId: null, selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [], selectedPatchId: null }),
       selectPatch: (patchId) => {
         const known = patchId && screenOf()?.backgroundPatches.some((p) => p.id === patchId);

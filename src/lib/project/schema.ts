@@ -4,8 +4,9 @@
  *  3: vector layers (`content`: line, rectangle, ellipse) (Phase 2).
  *  4: `drawn` marks a bitmap layer made with the brush (Phase 2).
  *  5: text layers (`content.kind` "text") (Phase 2).
- *  6: `memos` on a screen: notes pinned to points of the picture (Phase 2). */
-export const CURRENT_VERSION = 6 as const;
+ *  6: `memos` on a screen: notes pinned to points of the picture (Phase 2).
+ *  7: `warp` on a bitmap layer: skew, perspective, distortion and mesh warping, stored as control points (Phase 2). */
+export const CURRENT_VERSION = 7 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -28,6 +29,16 @@ export type LayerContent =
   /** a segment across the box: "down" runs top-left → bottom-right, "up" runs bottom-left → top-right */
   | { kind: "line"; width: number; height: number; direction: "down" | "up"; stroke: string; strokeWidth: number };
 
+/** Non-destructive warping of a bitmap layer: where the bitmap's corners (or grid points) go. Positions are in the bitmap's own pixels,
+ *  BEFORE scale, rotation and position are applied, so a bitmap pixel p lands at  T · R · S · warp(p). The bitmap itself is never changed.
+ *  quad: the new places of the bitmap's top-left, top-right, bottom-right and bottom-left corners, joined by a projective (homography) map.
+ *  mesh: a (cols+1) × (rows+1) grid of control points, row by row; point (i, j) starts at (i·width/cols, j·height/rows); the bitmap is bent
+ *  between them cell by cell. */
+export type WarpPoint = { x: number; y: number };
+export type WarpQuad = { kind: "quad"; points: [WarpPoint, WarpPoint, WarpPoint, WarpPoint] };
+export type WarpMesh = { kind: "mesh"; cols: number; rows: number; points: WarpPoint[] };
+export type LayerWarp = WarpQuad | WarpMesh;
+
 export type BitmapLayer = {
   id: string;
   name: string;
@@ -37,6 +48,8 @@ export type BitmapLayer = {
   content?: LayerContent;
   /** true on a bitmap layer made with the brush; only such a layer takes more brush strokes and the eraser */
   drawn?: boolean;
+  /** absent = not warped (and in every file before version 7). Only a bitmap layer has one. */
+  warp?: LayerWarp;
   /** Where the bitmap is placed. A bitmap pixel p lands at  T(x, y) · R(rotation) · S(scaleX, scaleY) · p,
    *  in frame pixels (original-image pixels, y down). So (x, y) is where the bitmap's top-left corner goes and is the
    *  centre of rotation; rotation is in degrees, clockwise on screen. */

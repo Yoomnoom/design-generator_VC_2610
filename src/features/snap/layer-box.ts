@@ -1,6 +1,7 @@
 import { layerPointToFrame } from "@/lib/geometry/layer-transform";
 import { vectorFrameBounds } from "@/lib/image/vector";
 import { BitmapLayer } from "@/lib/project/schema";
+import { effectiveWarp, warpOutline } from "@/lib/image/warp";
 import { Box } from "./snap";
 
 /** The upright box a placed layer covers in the frame, after any resizing and turning (a turned layer's box is the one around it).
@@ -8,7 +9,10 @@ import { Box } from "./snap";
 export function layerBox(layer: BitmapLayer, image: { width: number; height: number } | undefined): Box | null {
   if (layer.content) return vectorFrameBounds(layer.content, layer.transform);
   if (!image) return null;
-  const corners = [
+  // a warped layer: the box around its bent outline (a warped layer sits on a whole pixel)
+  const warp = effectiveWarp(layer.warp, image.width, image.height);
+  const t = warp ? { ...layer.transform, x: Math.round(layer.transform.x), y: Math.round(layer.transform.y) } : layer.transform;
+  const corners = warp ? warpOutline(warp).map((p) => layerPointToFrame(t, p)) : [
     { x: 0, y: 0 },
     { x: image.width, y: 0 },
     { x: image.width, y: image.height },

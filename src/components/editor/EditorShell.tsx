@@ -20,6 +20,7 @@ import { AutosaveBanners, AutosaveFooter } from "./AutosaveStatus";
 import DrawStylePanel from "./DrawStylePanel";
 import MemoPanel from "./MemoPanel";
 import TextStylePanel from "./TextStylePanel";
+import WarpPanel from "./WarpPanel";
 import ExportDialog from "./ExportDialog";
 import FillColorDialog from "./FillColorDialog";
 import LayerPanel from "./LayerPanel";
@@ -229,6 +230,7 @@ export default function EditorShell() {
         <aside aria-label="레이어와 속성" className="min-h-0 overflow-auto border-l border-[var(--line)] bg-[var(--panel)]">
           <DrawStylePanel />
           <TextStylePanel />
+          <WarpPanel />
           <LayerPanel />
           <PropertyPanel />
           <MemoPanel />

@@ -1,7 +1,9 @@
 import { LayerTransform, cosSin, isOnlyMoved, layerBounds } from "../geometry/layer-transform";
-import { BackgroundPatch } from "../project/schema";
+import { BackgroundPatch, LayerWarp } from "../project/schema";
 import { hexToRgb } from "./color";
 import { RawImage, createRawImage } from "./raw-image";
+import { isIdentityWarp } from "./warp";
+import { rasterizeWarped } from "./warp-raster";
 
 export type RenderLayer = {
   image: RawImage;
@@ -11,6 +13,8 @@ export type RenderLayer = {
   scaleX?: number;
   scaleY?: number;
   rotation?: number;
+  /** the layer's warp (skew, perspective, distortion, mesh): applied before scale and rotation. A warp that changes nothing is the same as none. */
+  warp?: LayerWarp;
   zIndex: number;
   opacity: number;
   visible: boolean;
@@ -47,10 +51,19 @@ export function renderComposite({ width, height, source, patches, layers }: Rend
     .sort((a, b) => a.layer.zIndex - b.layer.zIndex || a.i - b.i);
   for (const { layer } of ordered) {
     const t: LayerTransform = { x: layer.x, y: layer.y, scaleX: layer.scaleX ?? 1, scaleY: layer.scaleY ?? 1, rotation: layer.rotation ?? 0 };
-    if (isOnlyMoved(t)) drawMoved(out, layer);
+    if (layer.warp && !isIdentityWarp(layer.warp, layer.image.width, layer.image.height)) drawWarped(out, layer, t, layer.warp);
+    else if (isOnlyMoved(t)) drawMoved(out, layer);
     else drawTransformed(out, layer, t);
   }
   return out;
+}
+
+/** A warped layer: its pixels come from rasterizeWarped (the same function the screen uses), laid on whole pixels like a moved layer.
+ *  Warp, then scale, then rotation, then position: the position is rounded to a whole pixel, as for a layer that is only moved. */
+function drawWarped(out: RawImage, layer: RenderLayer, t: LayerTransform, warp: LayerWarp) {
+  const ox = Math.round(layer.x), oy = Math.round(layer.y);
+  const r = rasterizeWarped(layer.image, t, warp, { clip: { x: -ox, y: -oy, width: out.width, height: out.height } }); // only what shows in the frame
+  if (r) drawMoved(out, { ...layer, image: r.image, x: ox + r.x, y: oy + r.y });
 }
 
 /** A layer that is only moved: each of its pixels is copied to one pixel, so nothing is blurred. */

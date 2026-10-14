@@ -1,6 +1,7 @@
 import { migrate } from "./migrate";
 import { BitmapLayer, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect } from "./schema";
 import { hexToRgb } from "../image/color";
+import { warpError } from "../image/warp";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE, MIN_TEXT_WIDTH } from "../image/text-layout";
 
 export type ParseResult = { ok: true; project: Project } | { ok: false; error: string };
@@ -58,6 +59,11 @@ function layerError(l: unknown, i: number): string | null {
     if (l.imageId !== undefined) return `${at}: 벡터 레이어에는 imageId가 없어야 합니다`;
   }
   if (l.imageId !== undefined && !isImageId(l.imageId)) return `${at}.imageId가 올바르지 않습니다`;
+  if (l.warp !== undefined) {
+    if (l.content !== undefined || l.imageId === undefined) return `${at}: 변형(warp)은 비트맵 레이어에만 있을 수 있습니다`;
+    const e = warpError(l.warp, (l.crop as Rect).width, (l.crop as Rect).height);
+    if (e) return `${at}.${e}`;
+  }
   const t = l.transform;
   if (!isRec(t) || !isNum(t.x) || !isNum(t.y)) return `${at}.transform이 올바르지 않습니다`;
   if (!isNum(t.scaleX) || !isNum(t.scaleY) || t.scaleX === 0 || t.scaleY === 0 || Math.abs(t.scaleX) > MAX_ABS_SCALE || Math.abs(t.scaleY) > MAX_ABS_SCALE) return `${at}.transform의 scale이 올바르지 않습니다`;

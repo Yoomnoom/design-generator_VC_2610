@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { isOnlyMoved, scaledSize } from "@/lib/geometry/layer-transform";
 import { MAX_LAYER_NAME, selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
-import { LayerContent, TextContent } from "@/lib/project/schema";
+import { BitmapLayer, LayerContent, TextContent } from "@/lib/project/schema";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE } from "@/lib/image/text-layout";
 import { SHAPE_LABEL } from "@/lib/image/vector";
 import { ColorField, WidthField } from "./StyleFields";
@@ -196,9 +196,15 @@ export default function PropertyPanel() {
         {layer.content?.kind === "text" && <TextSection id={layer.id} content={layer.content} disabled={layer.locked || comparing} />}
         {layer.content && layer.content.kind !== "text" && <VectorSection id={layer.id} content={layer.content} disabled={layer.locked || comparing} />}
         <p className="mt-2 text-[11px] text-[var(--muted)]">{layer.locked ? "잠긴 레이어는 크기와 회전을 바꿀 수 없습니다." : "선택한 레이어의 모서리 점으로 크기를, 위쪽 둥근 점으로 회전을 바꿉니다."}</p>
+        {layer.warp && <WarpedFields layer={layer} disabled={layer.locked || comparing} />}
         <button className="btn mini mt-2 w-full" disabled={isOnlyMoved(layer.transform) || layer.locked || comparing} onClick={() => editorStore.getState().resetLayerTransform(layer.id)}>
           크기·회전 초기화
         </button>
+        {layer.warp && (
+          <button data-testid="prop-warp-reset" className="btn mini mt-2 w-full" disabled={layer.locked || comparing} onClick={() => editorStore.getState().setLayerWarp(layer.id, null)}>
+            변형 초기화
+          </button>
+        )}
       </section>
     );
   }
@@ -209,6 +215,35 @@ export default function PropertyPanel() {
     <section aria-label="속성" className="px-3.5 py-3 text-xs text-[var(--muted)]">
       레이어를 선택하면 위치와 크기가, 배경 채움 도구로 패치를 클릭하면 배경색이 여기에 나옵니다.
     </section>
+  );
+}
+
+/** A warped layer has no resize/rotate frame on the canvas (its shape is not a rectangle), so its size (a percentage, same both ways) and turn are typed here. */
+function WarpedFields({ layer, disabled }: { layer: BitmapLayer; disabled: boolean }) {
+  const t = layer.transform;
+  const apply = (change: Partial<typeof t>) => editorStore.getState().transformLayer(layer.id, { ...t, ...change });
+  const input = (testId: string, label: string, value: number, onCommit: (v: number) => void) => (
+    <label className="flex items-center gap-2 text-xs">
+      <span className="w-16 shrink-0 font-bold">{label}</span>
+      <input
+        key={value}
+        data-testid={testId}
+        type="number"
+        step="any"
+        defaultValue={fmt(value)}
+        disabled={disabled}
+        onBlur={(e) => Number.isFinite(e.currentTarget.valueAsNumber) && e.currentTarget.valueAsNumber !== Number(fmt(value)) && onCommit(e.currentTarget.valueAsNumber)}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        className="w-20 rounded border border-[var(--line)] bg-white px-1.5 py-0.5 text-xs"
+      />
+    </label>
+  );
+  return (
+    <div data-testid="warped-fields" className="mt-3 grid gap-2 border-t border-[var(--line)] pt-3">
+      <div className="text-xs font-bold">변형한 레이어</div>
+      {input("warped-scale", "크기 (%)", Math.abs(t.scaleX) * 100, (v) => apply({ scaleX: v / 100, scaleY: v / 100 }))}
+      {input("warped-rotation", "회전 (°)", t.rotation, (v) => apply({ rotation: v }))}
+    </div>
   );
 }
 

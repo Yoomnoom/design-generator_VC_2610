@@ -32,6 +32,8 @@ const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
   4: (doc) => doc,
   /** 5 -> 6: `memos` is new and optional (a screen without it has none), so every version 5 file is already a valid version 6 file. */
   5: (doc) => doc,
+  /** 6 -> 7: `warp` is new and optional (a layer without it is not warped), so every version 6 file is already a valid version 7 file. */
+  6: (doc) => doc,
 };
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };

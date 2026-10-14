@@ -10,6 +10,7 @@ export function strokeTargetProblem(layer: BitmapLayer | undefined): string | nu
   if (!layer || !layer.drawn || !layer.imageId) return "브러시로 직접 그린 레이어를 먼저 선택하세요.";
   if (layer.locked) return "잠긴 레이어에는 그릴 수 없습니다. 잠금을 풀어 주세요.";
   if (!layer.visible) return "숨긴 레이어에는 그릴 수 없습니다. 먼저 보이게 해 주세요.";
+  if (layer.warp) return "변형한 레이어에는 그릴 수 없습니다. '변형 초기화'를 먼저 눌러 주세요.";
   if (!isOnlyMoved(layer.transform)) return "크기나 회전을 바꾼 레이어에는 그릴 수 없습니다. '크기·회전 초기화'를 먼저 눌러 주세요.";
   return null;
 }
