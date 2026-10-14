@@ -3,6 +3,7 @@
 import { Tool } from "@/store/editor-store";
 import { formatBinding, ConfigurableAction } from "@/features/shortcuts/shortcuts";
 import { useBindings } from "@/features/shortcuts/shortcut-store";
+import { TOOL_HELP, toolTooltip } from "@/features/help/help-content";
 import { toolHint } from "@/features/tool-hints/tool-hints";
 import { isGeneratedPage } from "@/lib/project/blank";
 import { selectScreen } from "@/store/editor-store";
@@ -33,13 +34,12 @@ const ACTION_OF: Partial<Record<Tool, ConfigurableAction>> = { select: "tool-sel
 /** the tool's tooltip with the key the user has set (the texts above end in the default key, which is replaced) */
 const titleWith = (t: { id: Tool; title: string }, bindings: ReturnType<typeof useBindings>) => {
   const a = ACTION_OF[t.id];
-  if (!a) return t.title;
-  const base = t.title.replace(/\s*\((?:[A-Za-z]|[A-Za-z]\+[A-Za-z])\)$/, "");
-  const own = bindings[a];
-  if (own) return `${base} (${formatBinding(own)})`;
+  if (!(t.id in TOOL_HELP)) return t.title;
+  const own = a ? bindings[a] : null;
+  if (own) return toolTooltip(t.id, formatBinding(own));
   // a tool with no key of its own: the shape tools share one cycle key
-  if ((t.id === "line" || t.id === "box" || t.id === "ellipse") && bindings["tool-shape"]) return `${base} (${formatBinding(bindings["tool-shape"])}를 반복해서 누르면 선 → 사각형 → 원)`;
-  return `${base} (단축키 없음: 도구 막대에서 선택)`;
+  if ((t.id === "line" || t.id === "box" || t.id === "ellipse") && bindings["tool-shape"]) return toolTooltip(t.id, `${formatBinding(bindings["tool-shape"])}를 반복해서 누르면 선 → 사각형 → 원`);
+  return toolTooltip(t.id, a ? "단축키 없음: 도구 막대에서 선택" : null);
 };
 
 export default function ToolRail({ enabled }: { enabled: boolean }) {
@@ -54,12 +54,12 @@ export default function ToolRail({ enabled }: { enabled: boolean }) {
   return (
     <nav aria-label="도구" className="overflow-auto border-r border-[var(--line)] bg-[var(--panel)] px-2 py-2.5">
       {TOOLS.map((t) => (
-        <button key={t.id} className="tool" aria-pressed={active === t.id} disabled={!enabled || (plain && NEEDS_SCREENSHOT.includes(t.id))} data-unusable={enabled && !toolHint(t.id, hintState).usable ? "true" : undefined} title={enabled && !toolHint(t.id, hintState).usable ? `${t.label} (지금은 쓸 수 없음): ${toolHint(t.id, hintState).text}` : titleWith(t, bindings)} onClick={() => editorStore.getState().setTool(t.id)}>
+        <button key={t.id} className="tool" aria-pressed={active === t.id} disabled={!enabled || (plain && NEEDS_SCREENSHOT.includes(t.id))} data-unusable={enabled && !toolHint(t.id, hintState).usable ? "true" : undefined} title={enabled && !toolHint(t.id, hintState).usable ? `${titleWith(t, bindings)} — 지금은 쓸 수 없음: ${toolHint(t.id, hintState).text}` : titleWith(t, bindings)} onClick={() => editorStore.getState().setTool(t.id)}>
           <b aria-hidden>{t.icon}</b>
           <span>{t.label}</span>
         </button>
       ))}
-      <button className="tool" data-testid="rail-free-transform" aria-pressed={freeTransform} disabled={!enabled} title={`자유 변형: 선택한 레이어 전체를 감싸는 상자로 크기·회전을 한꺼번에 바꿉니다 (${formatBinding(bindings["free-transform"])})`} onClick={() => editorStore.getState().setFreeTransform(!freeTransform)}>
+      <button className="tool" data-testid="rail-free-transform" aria-pressed={freeTransform} disabled={!enabled} title={toolTooltip("free-transform", formatBinding(bindings["free-transform"]))} onClick={() => editorStore.getState().setFreeTransform(!freeTransform)}>
         <b aria-hidden>⤢</b>
         <span>자유 변형</span>
       </button>

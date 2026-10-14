@@ -33,6 +33,7 @@ import ToolRail from "./ToolRail";
 import Notices from "./Notices";
 import TopBar from "./TopBar";
 import ShortcutSettings from "./ShortcutSettings";
+import HelpPanel, { OnboardingGuide, useFirstUse } from "./HelpPanel";
 import StartChoices, { CanvasSpec, NewCanvasDialog, StartDialog } from "./StartChoices";
 import { TemplateId, TEMPLATES, buildTemplate } from "@/features/assets/templates";
 import { canvasMeasureFor } from "@/lib/image/text-measure";
@@ -81,6 +82,9 @@ export default function EditorShell() {
   const [dropping, setDropping] = useState(false);
   const [startOpen, setStartOpen] = useState(false); // the top bar's "new project" window
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false); // the guide as a window, opened from the help
+  const [firstUse, endFirstUse] = useFirstUse();
   const [canvasOpen, setCanvasOpen] = useState(false); // the blank-canvas size window
 
   const loadImage = async (file: File) => {
@@ -234,6 +238,7 @@ export default function EditorShell() {
         onExport={() => setExporting(true)}
         onNew={() => setStartOpen(true)}
         onShortcuts={() => setShortcutsOpen(true)}
+        onHelp={() => setHelpOpen(true)}
       />
       <Notices extra={<AutosaveBanners />} />
       <input ref={imageInput} data-testid="file-input" type="file" accept="image/png,image/jpeg" className="hidden" onChange={pickFrom("image")} />
@@ -272,6 +277,11 @@ export default function EditorShell() {
               <div className="max-h-full w-full max-w-[760px] overflow-auto p-6">
                 <h2 className="m-0 mb-1 text-center text-xl font-bold">무엇으로 시작할까요?</h2>
                 <p className="mb-4 text-center text-[var(--muted)]">캡처를 올리거나, 빈 캔버스나 템플릿에서 시작할 수 있습니다.</p>
+                {firstUse && (
+                  <div className="mb-4">
+                    <OnboardingGuide variant="card" onDone={endFirstUse} />
+                  </div>
+                )}
                 <StartChoices onUpload={() => imageInput.current?.click()} onBlank={() => setCanvasOpen(true)} onTemplate={(id) => void request({ kind: "template", id })} />
               </div>
             </div>          )}
@@ -307,6 +317,8 @@ export default function EditorShell() {
         />
       )}
       {canvasOpen && <NewCanvasDialog onClose={() => setCanvasOpen(false)} onCreate={(spec) => { setCanvasOpen(false); void request({ kind: "blank", spec }); }} />}
+      {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} onShowGuide={() => { setHelpOpen(false); setGuideOpen(true); }} />}
+      {guideOpen && <OnboardingGuide variant="modal" onDone={() => { setGuideOpen(false); endFirstUse(); }} />}
       {shortcutsOpen && <ShortcutSettings onClose={() => setShortcutsOpen(false)} />}
       <RestorePrompt />
       <FillColorDialog />

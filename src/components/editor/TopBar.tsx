@@ -15,6 +15,7 @@ type Props = {
   onExport: () => void;
   onNew: () => void;
   onShortcuts: () => void;
+  onHelp: () => void;
 };
 
 const COMPARE: { mode: CompareMode; label: string; title: string }[] = [
@@ -23,7 +24,7 @@ const COMPARE: { mode: CompareMode; label: string; title: string }[] = [
   { mode: "split", label: "나란히", title: "원본과 수정본을 나란히 봅니다 (편집 불가)" },
 ];
 
-export default function TopBar({ projectName, canExport, busy, onPickImage, onOpenProject, onSaveProject, onExport, onNew, onShortcuts }: Props) {
+export default function TopBar({ projectName, canExport, busy, onPickImage, onOpenProject, onSaveProject, onExport, onNew, onShortcuts, onHelp }: Props) {
   const canUndo = useEditorStore(selectCanUndo);
   const canRedo = useEditorStore(selectCanRedo);
   const undoLabel = useEditorStore((s) => s.history?.past.at(-1)?.label);
@@ -31,18 +32,18 @@ export default function TopBar({ projectName, canExport, busy, onPickImage, onOp
   const redoLabel = useEditorStore((s) => s.history?.future[0]?.label);
   const bindings = useBindings();
   return (
-    <header className="flex h-[54px] shrink-0 items-center gap-2 border-b border-black bg-[#171a1f] px-3 text-white [&_.btn]:whitespace-nowrap [&_.btn]:px-2.5">
-      <div className="font-extrabold tracking-tight">
+    <header className="flex h-[54px] shrink-0 items-center gap-1.5 whitespace-nowrap border-b border-black bg-[#171a1f] px-3 text-white [&_.btn]:whitespace-nowrap [&_.btn]:px-2">
+      <div className="shrink-0 font-extrabold tracking-tight">
         <i className="mr-[9px] inline-block h-3 w-3 rotate-45 rounded-[3px] bg-[var(--accent2)]" />
         LayerCanvas
       </div>
-      <div className="border-l border-[#3c4048] pl-3 text-[#c7cad0]" data-testid="project-name">
+      <div className="min-w-0 max-w-[96px] truncate border-l border-[#3c4048] pl-2.5 text-[#c7cad0]" data-testid="project-name" title={projectName ?? "새 프로젝트"}>
         {projectName ?? "새 프로젝트"}
       </div>
       <div className="flex-1" />
-      <div role="group" aria-label="원본 비교" className="flex overflow-hidden rounded-lg border border-[#494e57]">
+      <div role="group" aria-label="원본 비교" className="flex shrink-0 overflow-hidden rounded-lg border border-[#494e57]">
         {COMPARE.map((c) => (
-          <button key={c.mode} aria-pressed={compare === c.mode} title={c.title} disabled={!canExport} onClick={() => editorStore.getState().setCompareMode(c.mode)} className={`h-8 cursor-pointer whitespace-nowrap border-0 px-2.5 text-[13px] disabled:cursor-not-allowed disabled:opacity-45 ${compare === c.mode ? "bg-[var(--accent)] font-bold text-white" : "bg-transparent text-[#dfe2e7] hover:bg-[#272b32]"}`}>
+          <button key={c.mode} aria-pressed={compare === c.mode} title={c.title} disabled={!canExport} onClick={() => editorStore.getState().setCompareMode(c.mode)} className={`h-8 cursor-pointer whitespace-nowrap border-0 px-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-45 ${compare === c.mode ? "bg-[var(--accent)] font-bold text-white" : "bg-transparent text-[#dfe2e7] hover:bg-[#272b32]"}`}>
             {c.label}
           </button>
         ))}
@@ -66,6 +67,9 @@ export default function TopBar({ projectName, canExport, busy, onPickImage, onOp
       </button>
       <button className="btn ghost" disabled={!canExport || busy} onClick={onSaveProject}>
         프로젝트 저장
+      </button>
+      <button className="btn ghost" data-testid="open-help" title="도구 설명, 사용 예, 자주 막히는 경우, 지금 단축키" onClick={onHelp}>
+        도움말
       </button>
       <button className="btn ghost" data-testid="open-shortcuts" title="단축키 보기와 바꾸기" onClick={onShortcuts}>
         단축키

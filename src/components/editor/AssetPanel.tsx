@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toolTooltip } from "@/features/help/help-content";
 import { BUILTIN_ASSETS, BUTTON_STATES, BUTTON_STYLES } from "@/features/assets/builtin";
 import { captureBundle } from "@/features/assets/capture";
 import { AssetLibrary, StoredAsset, openAssetLibrary } from "@/features/assets/library";
@@ -39,7 +40,7 @@ export default function AssetPanel() {
 
   return (
     <section aria-label="소스와 템플릿" data-testid="asset-panel">
-      <div className="panel-title">소스 · 템플릿</div>
+      <div className="panel-title" title={toolTooltip("sources", null)}>소스 · 템플릿</div>
       <div className="card text-xs">
         <div role="tablist" className="mb-2 flex gap-1">
           {TABS.map((t) => (
