@@ -73,6 +73,11 @@ export function templateBundle(id: TemplateId): AssetBundle {
   return { name: TEMPLATES.find((t) => t.id === id)!.label, layers: BUILDERS[id].layers(), images: {} };
 }
 
+/** a template's page: the frame size and colour, for drawing a preview of the whole screen */
+export function templateFrame(id: TemplateId): { width: number; height: number; background: [number, number, number] } {
+  const c = hexToRgb(BUILDERS[id].background)!;
+  return { width: W, height: H, background: [c.r, c.g, c.b] };
+}
 /** a template as a project of its own: a plain background picture and the layers */
 export function buildTemplate(id: TemplateId, measure: MeasureFor = estimateMeasure): { project: Project; images: ImageCache } {
   const b = BUILDERS[id];

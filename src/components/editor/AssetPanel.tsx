@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BUILTIN_ASSETS } from "@/features/assets/builtin";
+import { BUILTIN_ASSETS, BUTTON_STATES, BUTTON_STYLES } from "@/features/assets/builtin";
 import { captureBundle } from "@/features/assets/capture";
 import { AssetLibrary, StoredAsset, openAssetLibrary } from "@/features/assets/library";
-import { TEMPLATES, buildTemplate, templateBundle } from "@/features/assets/templates";
+import { previewCache } from "@/features/assets/preview";
+import { AssetBundle } from "@/features/assets/types";
+import { TEMPLATES, buildTemplate, templateBundle, templateFrame } from "@/features/assets/templates";
 import { canvasCodec } from "@/lib/image/canvas-codec";
 import { canvasMeasureFor } from "@/lib/image/text-measure";
 import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
+import AssetThumb from "./AssetThumb";
 import { downloadBlob } from "./download";
 
 type Tab = "builtin" | "mine" | "template";
@@ -18,7 +21,10 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "template", label: "템플릿" },
 ];
 
-/** Sources and templates: built-in parts, the user's own saved layers, and whole-screen templates. All made in code or saved locally. */
+type Insert = (bundle: AssetBundle, mode: "center" | "keep") => void;
+
+/** Sources and templates: built-in parts, the user's own saved layers, and whole-screen templates, each shown as a picture card.
+ *  All made in code or saved locally; the pictures are drawn by the same renderer as the PNG export. */
 export default function AssetPanel() {
   const [tab, setTab] = useState<Tab>("builtin");
   const screen = useEditorStore(selectScreen);
@@ -26,7 +32,7 @@ export default function AssetPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const canInsert = !!screen && !comparing;
 
-  const insert = (bundle: Parameters<ReturnType<typeof editorStore.getState>["insertAsset"]>[0], mode: "center" | "keep") => {
+  const insert: Insert = (bundle, mode) => {
     setMessage(null);
     if (!editorStore.getState().insertAsset(bundle, mode)) setMessage("넣지 못했습니다. 비교 보기를 끄고 다시 시도해 주세요.");
   };
@@ -56,31 +62,44 @@ export default function AssetPanel() {
   );
 }
 
-function Builtin({ canInsert, onInsert }: { canInsert: boolean; onInsert: (b: ReturnType<(typeof BUILTIN_ASSETS)[number]["build"]>) => void }) {
-  const groups = [
-    { id: "button", label: "버튼 (기본 · hover · 눌림)" },
-    { id: "part", label: "부품" },
-    { id: "icon", label: "기본 아이콘" },
-  ] as const;
+const byId = (id: string) => BUILTIN_ASSETS.find((a) => a.id === id)!;
+
+function Builtin({ canInsert, onInsert }: { canInsert: boolean; onInsert: (b: AssetBundle) => void }) {
+  const card = (id: string, label: string, w: number, h: number, caption?: string) => {
+    const a = byId(id);
+    return (
+      <button key={id} data-testid={`asset-${id}`} className="flex min-w-0 flex-col items-center gap-1 rounded border border-transparent p-1 enabled:hover:border-[var(--accent)] disabled:opacity-50" disabled={!canInsert} title={`${label} — 클릭하면 화면 가운데에 새 레이어로 들어갑니다`} onClick={() => onInsert(a.build())}>
+        <AssetThumb cacheKey={`builtin:${id}`} build={a.build} width={w} height={h} label={label} />
+        <span className="w-full truncate text-center text-[11px]">{caption ?? label}</span>
+      </button>
+    );
+  };
   return (
-    <div className="grid gap-2">
-      {groups.map((g) => (
-        <div key={g.id}>
-          <div className="mb-1 font-bold">{g.label}</div>
-          <div className="grid grid-cols-2 gap-1">
-            {BUILTIN_ASSETS.filter((a) => a.group === g.id).map((a) => (
-              <button key={a.id} data-testid={`asset-${a.id}`} className="btn mini truncate" disabled={!canInsert} title={`${a.label} — 클릭하면 화면 가운데에 새 레이어로 들어갑니다`} onClick={() => onInsert(a.build())}>
-                {a.label}
-              </button>
-            ))}
-          </div>
+    <div className="grid gap-3">
+      <div>
+        <div className="mb-1 font-bold">버튼 (기본 · hover · 눌림)</div>
+        <div className="grid gap-2">
+          {BUTTON_STYLES.map((s) => (
+            <div key={s.id} data-testid={`asset-button-group-${s.id}`} className="rounded border border-[var(--line)] bg-white p-1">
+              <div className="mb-0.5 text-[11px] font-bold">{s.label}</div>
+              <div className="grid grid-cols-3 gap-1">{BUTTON_STATES.map((st) => card(`button-${s.id}-${st.id}`, `${s.label} · ${st.label}`, 54, 36, st.label))}</div>
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
+      <div>
+        <div className="mb-1 font-bold">부품</div>
+        <div className="grid grid-cols-2 gap-1">{BUILTIN_ASSETS.filter((a) => a.group === "part").map((a) => card(a.id, a.label, 96, 52))}</div>
+      </div>
+      <div>
+        <div className="mb-1 font-bold">기본 아이콘</div>
+        <div className="grid grid-cols-3 gap-1">{BUILTIN_ASSETS.filter((a) => a.group === "icon").map((a) => card(a.id, a.label, 52, 40))}</div>
+      </div>
     </div>
   );
 }
 
-function Mine({ canInsert, onInsert, setMessage }: { canInsert: boolean; onInsert: (b: NonNullable<Awaited<ReturnType<AssetLibrary["load"]>>>) => void; setMessage: (m: string | null) => void }) {
+function Mine({ canInsert, onInsert, setMessage }: { canInsert: boolean; onInsert: (b: AssetBundle) => void; setMessage: (m: string | null) => void }) {
   const lib = useRef<AssetLibrary | null>(null);
   const [items, setItems] = useState<StoredAsset[]>([]);
   const [name, setName] = useState("");
@@ -134,32 +153,52 @@ function Mine({ canInsert, onInsert, setMessage }: { canInsert: boolean; onInser
           선택한 레이어 {selected.length > 0 ? `${selected.length}개 ` : ""}저장
         </button>
       </div>
-      {items.length === 0 && <p className="text-[var(--muted)]">저장한 소스가 없습니다.</p>}
+      {items.length === 0 && <p data-testid="asset-empty" className="text-[var(--muted)]">저장한 소스가 없습니다. 레이어를 선택하고 저장해 보세요.</p>}
       <ul className="m-0 grid list-none gap-1 p-0">
         {items.map((a) => (
-          <li key={a.id} data-testid="my-asset" className="rounded border border-[var(--line)] bg-white p-1.5">
-            {renaming?.id === a.id ? (
-              <form
-                className="flex gap-1"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void guard(async () => {
-                    await lib.current?.rename(a.id, renaming.text);
-                    setRenaming(null);
+          <li key={a.id} data-testid="my-asset" className="flex gap-1.5 rounded border border-[var(--line)] bg-white p-1.5">
+            <AssetThumb
+              testId="my-asset-thumb"
+              cacheKey={`mine:${a.id}:${a.savedAt}`}
+              build={async () => (await lib.current?.load(a.id)) ?? null}
+              width={64}
+              height={64}
+              label={a.name}
+            />
+            <div className="min-w-0 flex-1">
+              {renaming?.id === a.id ? (
+                <form
+                  className="flex gap-1"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void guard(async () => {
+                      await lib.current?.rename(a.id, renaming.text);
+                      setRenaming(null);
+                      await refresh();
+                    });
+                  }}
+                >
+                  <input data-testid="asset-rename-input" autoFocus value={renaming.text} maxLength={60} onChange={(e) => setRenaming({ id: a.id, text: e.target.value })} className="min-w-0 flex-1 rounded border border-[var(--line)] px-1" />
+                  <button className="btn mini" type="submit">확인</button>
+                </form>
+              ) : (
+                <div data-testid="my-asset-name" className="selectable truncate font-bold" title={a.name}>{a.name}</div>
+              )}
+              <div className="mt-1 flex flex-wrap gap-1">
+                <button className="btn mini" data-testid="asset-insert" disabled={!canInsert} onClick={() => guard(async () => { const b = await lib.current?.load(a.id); if (b) onInsert(b); })}>삽입</button>
+                <button className="btn mini" data-testid="asset-rename" onClick={() => setRenaming({ id: a.id, text: a.name })}>이름</button>
+                <button
+                  className="btn mini"
+                  data-testid="asset-delete"
+                  onClick={() => guard(async () => {
+                    await lib.current?.remove(a.id);
+                    previewCache.drop(`mine:${a.id}:`);
                     await refresh();
-                  });
-                }}
-              >
-                <input data-testid="asset-rename-input" autoFocus value={renaming.text} maxLength={60} onChange={(e) => setRenaming({ id: a.id, text: e.target.value })} className="min-w-0 flex-1 rounded border border-[var(--line)] px-1" />
-                <button className="btn mini" type="submit">확인</button>
-              </form>
-            ) : (
-              <div data-testid="my-asset-name" className="selectable truncate font-bold" title={a.name}>{a.name}</div>
-            )}
-            <div className="mt-1 flex gap-1">
-              <button className="btn mini" data-testid="asset-insert" disabled={!canInsert} onClick={() => guard(async () => { const b = await lib.current?.load(a.id); if (b) onInsert(b); })}>삽입</button>
-              <button className="btn mini" data-testid="asset-rename" onClick={() => setRenaming({ id: a.id, text: a.name })}>이름</button>
-              <button className="btn mini" data-testid="asset-delete" onClick={() => guard(async () => { await lib.current?.remove(a.id); await refresh(); })}>삭제</button>
+                  })}
+                >
+                  삭제
+                </button>
+              </div>
             </div>
           </li>
         ))}
@@ -199,7 +238,12 @@ function Mine({ canInsert, onInsert, setMessage }: { canInsert: boolean; onInser
   );
 }
 
-function Templates({ canInsert, onAdd }: { canInsert: boolean; onAdd: (b: ReturnType<typeof templateBundle>) => void }) {
+/** one template's picture: the whole screen, shrunk */
+export function TemplateThumb({ id, width, height, label }: { id: (typeof TEMPLATES)[number]["id"]; width: number; height: number; label: string }) {
+  return <AssetThumb testId={`template-${id}-thumb`} cacheKey={`template:${id}`} build={() => templateBundle(id)} options={{ frame: templateFrame(id), measure: canvasMeasureFor }} width={width} height={height} bigSide={520} label={label} />;
+}
+
+function Templates({ canInsert, onAdd }: { canInsert: boolean; onAdd: (b: AssetBundle) => void }) {
   const hasWork = useEditorStore((s) => (s.history?.past.length ?? 0) > 0);
   const [armed, setArmed] = useState<string | null>(null);
   const open = (id: (typeof TEMPLATES)[number]["id"]) => {
@@ -214,9 +258,14 @@ function Templates({ canInsert, onAdd }: { canInsert: boolean; onAdd: (b: Return
     <div className="grid gap-2">
       {TEMPLATES.map((t) => (
         <div key={t.id} data-testid={`template-${t.id}`} className="rounded border border-[var(--line)] bg-white p-1.5">
-          <div className="font-bold">{t.label}</div>
-          <div className="text-[11px] text-[var(--muted)]">{t.note}</div>
-          <div className="mt-1 flex gap-1">
+          <div className="flex gap-2">
+            <TemplateThumb id={t.id} width={70} height={152} label={t.label} />
+            <div className="min-w-0 flex-1">
+              <div className="font-bold">{t.label}</div>
+              <div className="text-[11px] text-[var(--muted)]">{t.note}</div>
+            </div>
+          </div>
+          <div className="mt-1.5 grid gap-1">
             <button className="btn mini" data-testid={`template-${t.id}-new`} onClick={() => open(t.id)}>
               {armed === t.id ? "작업이 사라집니다. 열기" : "새 프로젝트로 열기"}
             </button>
