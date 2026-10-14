@@ -12,6 +12,8 @@ import { LayerTransform, isOnlyMoved, sanitizeTransform } from "@/lib/geometry/l
 import { clampZoom } from "@/lib/geometry/view-transform";
 import { cropRaw } from "@/lib/image/crop-bitmap";
 import { trimImageVersions } from "./image-retention";
+import { layerBox } from "@/features/snap/layer-box";
+import type { AssetBundle } from "@/features/assets/types";
 import { MESH_DEFAULT, MESH_MAX, MESH_MIN, identityQuad, isIdentityWarp, resizeMesh, roundWarp, toQuad, warpError } from "@/lib/image/warp";
 import { normalizeHex } from "@/lib/image/color";
 import { RawImage } from "@/lib/image/raw-image";
@@ -187,6 +189,10 @@ type EditorActions = {
   setWarpUi(change: Partial<WarpUi>): void;
   /** leave the warp tool: confirmed keeps what was done; cancelled takes every step made since the tool started back */
   finishWarp(confirm: boolean): void;
+  /** Puts a source (a group of layers) into the screen as NEW layers on top, in one undo step, and selects them. "center": the group's box is
+   *  centred in the frame; "keep": its layers stay where the bundle puts them (a template's layers). Bitmap pictures get new imageIds.
+   *  Returns the new layer ids, or null when refused (comparing, no project, nothing to add, a layer that is not valid). */
+  insertAsset(bundle: AssetBundle, mode: "center" | "keep"): string[] | null;
   setFingerStyle(change: Partial<FingerStyle>): void;
   /** Puts the result of a finger stroke on a bitmap layer: `raw` (same size as the layer's bitmap) becomes the layer's picture under a NEW
    *  imageId, and the old picture stays for undo; the history holds only the imageId change. One undo step. Refused (false) for a locked or
@@ -859,6 +865,64 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         let h = get().history;
         while (h && h.past.length > session.base) h = undo(h);
         if (h) reconcile(h);
+      },
+
+      insertAsset(bundle, mode) {
+        const { history, images } = get();
+        const screen = screenOf();
+        if (frozen() || !history || !screen || bundle.layers.length === 0 || bundle.layers.length > 200) return null;
+        const nextImages = new Map(images);
+        const idOfKey = new Map<string, string>();
+        const made: BitmapLayer[] = [];
+        for (const a of bundle.layers) {
+          let imageId: string | undefined;
+          if (a.content) {
+            if (contentError(a.content)) return null;
+          } else {
+            const raw = a.imageKey ? bundle.images[a.imageKey] : undefined;
+            if (!a.imageKey || !raw || raw.width < 1 || raw.height < 1) return null;
+            imageId = idOfKey.get(a.imageKey);
+            if (!imageId) {
+              imageId = genId();
+              idOfKey.set(a.imageKey, imageId);
+              nextImages.set(imageId, { raw });
+            }
+          }
+          const content = a.content ? ({ ...a.content } as LayerContent) : undefined;
+          if (content?.kind === "text") content.height = fitHeight(content, measure); // this machine's fonts decide the lines
+          made.push({
+            id: genId(),
+            name: a.name.slice(0, MAX_LAYER_NAME) || "레이어",
+            crop: { ...a.crop },
+            ...(imageId ? { imageId } : {}),
+            ...(content ? { content } : {}),
+            ...(a.drawn ? { drawn: true } : {}),
+            ...(a.warp ? { warp: JSON.parse(JSON.stringify(a.warp)) } : {}),
+            transform: { ...a.transform },
+            zIndex: 0,
+            opacity: a.opacity,
+            visible: true,
+            locked: false,
+          });
+        }
+        if (mode === "center") {
+          const boxes = made.map((l) => layerBox(l, l.imageId ? nextImages.get(l.imageId)?.raw : undefined)).filter((b): b is NonNullable<typeof b> => !!b);
+          if (boxes.length === 0) return null;
+          const x0 = Math.min(...boxes.map((b) => b.x)), y0 = Math.min(...boxes.map((b) => b.y));
+          const x1 = Math.max(...boxes.map((b) => b.x + b.width)), y1 = Math.max(...boxes.map((b) => b.y + b.height));
+          const dx = Math.round(screen.width / 2 - (x0 + x1) / 2), dy = Math.round(screen.height / 2 - (y0 + y1) / 2);
+          for (const l of made) {
+            l.transform.x = Math.round((l.transform.x + dx) * 100) / 100;
+            l.transform.y = Math.round((l.transform.y + dy) * 100) / 100;
+          }
+        }
+        let list: readonly BitmapLayer[] = screen.layers;
+        for (const l of made) list = addOnTop(list, l);
+        set({ images: nextImages });
+        commitLayers(bundle.layers.length > 1 ? `소스 삽입: ${bundle.name}` : `소스 삽입: ${bundle.name}`, list);
+        const ids = made.map((l) => l.id);
+        set({ selectedLayerIds: ids, selectedPatchId: null, selectedMemoId: null, activeTool: "select" });
+        return ids;
       },
 
       setFingerStyle(change) {

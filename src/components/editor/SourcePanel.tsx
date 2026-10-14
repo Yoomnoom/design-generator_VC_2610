@@ -10,9 +10,10 @@ type Props = {
   onPickFile: () => void;
   onConfirmReplace: () => void;
   onCancelReplace: () => void;
+  children?: React.ReactNode;
 };
 
-export default function SourcePanel({ screen, busy, error, replaceName, onPickFile, onConfirmReplace, onCancelReplace }: Props) {
+export default function SourcePanel({ screen, busy, error, replaceName, onPickFile, onConfirmReplace, onCancelReplace, children }: Props) {
   return (
     <aside className="min-h-0 overflow-auto border-r border-[var(--line)] bg-[var(--panel)]">
       <div className="panel-title">소스 이미지</div>
@@ -61,6 +62,7 @@ export default function SourcePanel({ screen, busy, error, replaceName, onPickFi
           </div>
         </>
       )}
+      {children}
     </aside>
   );
 }

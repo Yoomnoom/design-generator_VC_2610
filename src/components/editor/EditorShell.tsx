@@ -20,6 +20,7 @@ import { AutosaveBanners, AutosaveFooter } from "./AutosaveStatus";
 import DrawStylePanel from "./DrawStylePanel";
 import MemoPanel from "./MemoPanel";
 import TextStylePanel from "./TextStylePanel";
+import AssetPanel from "./AssetPanel";
 import FingerPanel from "./FingerPanel";
 import WarpPanel from "./WarpPanel";
 import ExportDialog from "./ExportDialog";
@@ -196,7 +197,9 @@ export default function EditorShell() {
           onPickFile={() => imageInput.current?.click()}
           onConfirmReplace={() => incoming && void run(incoming).then(() => setIncoming(null))}
           onCancelReplace={() => setIncoming(null)}
-        />
+        >
+          <AssetPanel />
+        </SourcePanel>
         <section
           className="relative min-h-0 min-w-0"
           onDragOver={(e) => {
