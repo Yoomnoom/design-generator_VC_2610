@@ -221,9 +221,8 @@ describe("the eraser", () => {
   });
 
   test.each([
-    ["nothing is selected", () => { const c = painted(); c.get().selectLayer(null); return c; }, "브러시로 직접 그린 레이어"],
-    ["the layer is an extracted bitmap", () => { const c = storeWith(); committedId(c.get().beginExtraction(CARD)); return c; }, "브러시로 직접 그린 레이어"],
-    ["the layer is a vector shape", () => { const c = storeWith(); c.get().addVectorLayer({ kind: "rect", width: 10, height: 10, stroke: "#000000", strokeWidth: 1, fill: null }, 5, 5); return c; }, "브러시로 직접 그린 레이어"],
+    ["nothing is selected", () => { const c = painted(); c.get().selectLayer(null); return c; }, "이미지 레이어"],
+    ["the layer is a vector shape", () => { const c = storeWith(); c.get().addVectorLayer({ kind: "rect", width: 10, height: 10, stroke: "#000000", strokeWidth: 1, fill: null }, 5, 5); return c; }, "이미지 레이어"],
     ["the layer is locked", () => { const c = painted(); c.get().setLayerLocked(sel(c).id, true); return c; }, "잠긴"],
     ["the layer is hidden", () => { const c = painted(); c.get().setLayerVisible(sel(c).id, false); return c; }, "숨긴"],
     ["the layer was resized or turned", () => { const c = painted(); const l = sel(c); c.get().transformLayer(l.id, { x: l.transform.x, y: l.transform.y, scaleX: 1, scaleY: 1, rotation: 30 }); return c; }, "크기나 회전"],
@@ -236,6 +235,41 @@ describe("the eraser", () => {
     expect(ctx.get().notice).toContain(fragment);
     expect(ctx.get().history).toBe(history);
     expect(ctx.get().images).toBe(images);
+  });
+
+  test("it also works on an extracted bitmap layer: a NEW bitmap, one undo step, the old picture and the capture untouched", () => {
+    const ctx = storeWith();
+    committedId(ctx.get().beginExtraction(CARD));
+    const l0 = sel(ctx);
+    expect(l0.drawn).toBeUndefined();
+    const before = ctx.get().images.get(l0.imageId!)!.raw;
+    const sourceBefore = hash(ctx.get().images.get(ctx.get().history!.present.screens[0].source.imageId)!.raw);
+    const past = ctx.get().history!.past.length;
+    expect(stroke(ctx, "eraser", line(l0.transform.x + 3, l0.transform.y + 3, l0.transform.x + 8, l0.transform.y + 6)).status).toBe("painted");
+    const l1 = sel(ctx);
+    expect(l1.imageId).not.toBe(l0.imageId);
+    expect(l1.drawn).toBeUndefined(); // it is still an extracted layer, not a brush layer
+    expect(getPixel(ctx.get().images.get(l1.imageId!)!.raw, 3, 3)[3]).toBe(0);
+    expect(getPixel(before, 3, 3)[3]).toBe(255);
+    expect(ctx.get().history!.past).toHaveLength(past + 1);
+    expect(hash(ctx.get().images.get(ctx.get().history!.present.screens[0].source.imageId)!.raw)).toBe(sourceBefore);
+    ctx.get().undo();
+    expect(ctx.get().images.get(sel(ctx).imageId!)!.raw).toBe(before);
+  });
+
+  test("a warped, locked, hidden or turned extracted layer is refused as before", () => {
+    for (const make of [
+      (c: ReturnType<typeof storeWith>, id: string) => c.get().setLayerWarp(id, { kind: "quad", points: [{ x: 3, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }] }),
+      (c: ReturnType<typeof storeWith>, id: string) => c.get().setLayerLocked(id, true),
+      (c: ReturnType<typeof storeWith>, id: string) => c.get().setLayerVisible(id, false),
+    ]) {
+      const ctx = storeWith();
+      committedId(ctx.get().beginExtraction(CARD));
+      make(ctx, sel(ctx).id);
+      const history = ctx.get().history;
+      expect(stroke(ctx, "eraser", line(12, 12, 20, 14)).status).toBe("refused");
+      expect(ctx.get().history).toBe(history);
+    }
   });
 
   test("it never touches the capture: erasing over it with no brush layer selected changes nothing", () => {

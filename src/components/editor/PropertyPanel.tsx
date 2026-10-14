@@ -314,7 +314,7 @@ export default function PropertyPanel() {
       <section aria-label="선택 레이어" className="px-3.5 py-3">
         <h3 className="mb-2.5 text-[13px] font-bold">선택 레이어</h3>
         <div className="mb-2"><FreeTransformButton disabled={comparing || layer.locked} /></div>
-        <div className="mb-2 grid gap-2">
+        <div className="mb-2 grid grid-cols-[minmax(0,1fr)] gap-2">
           <OpacityField layer={layer} disabled={comparing || layer.locked} />
           <BlendSelect layer={layer} disabled={comparing || layer.locked} />
           <FlipButtons layer={layer} disabled={comparing || layer.locked} />

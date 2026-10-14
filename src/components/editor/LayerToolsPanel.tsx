@@ -78,7 +78,7 @@ export function AlignButtons({ disabled }: { disabled: boolean }) {
   const count = useEditorStore((s) => s.selectedLayerIds.length);
   const how = count > 1 ? "선택한 것끼리" : "화면(프레임) 기준";
   return (
-    <div data-testid="align-panel" className="grid gap-1.5 text-xs">
+    <div data-testid="align-panel" className="grid grid-cols-[minmax(0,1fr)] gap-1.5 text-xs">
       <div className="font-bold">정렬 <span className="font-normal text-[var(--muted)]">({how})</span></div>
       <div className="grid grid-cols-6 gap-1">
         {ALIGN.map((a) => (

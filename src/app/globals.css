@@ -122,3 +122,8 @@ textarea,
   padding: 12px;
   background: #fff;
 }
+
+.tool[data-unusable="true"] b,
+.tool[data-unusable="true"] span {
+  opacity: 0.5;
+}

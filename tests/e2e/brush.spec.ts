@@ -160,22 +160,26 @@ test.describe("the eraser", () => {
     const hash = await sourceHash(page);
     await pickTool(page, "지우개");
     await drawStroke(page, "지우개", [{ x: 400, y: 260 }, { x: 520, y: 300 }], { pick: false }); // right across the card in the capture
-    await expect(page.getByTestId("notice")).toContainText("브러시로 직접 그린 레이어");
+    await expect(page.getByTestId("notice")).toContainText("이미지 레이어");
     expect(await editor(page)).toMatchObject({ layers: [], past: 0 });
     expect(await sourceHash(page)).toBe(hash);
     await deselect(page);
     expect(diff(await screenPixel(page, 450, 280), [0, 0, 255, 255])).toBeLessThanOrEqual(3); // the card is still blue
   });
 
-  test("it does not erase an extracted layer either", async ({ page }) => {
+  test("it erases an extracted layer too: a new bitmap, one undo step, the capture itself untouched", async ({ page }) => {
     await setup(page, 1, { x: 630, y: 450 });
     await pickTool(page, "영역 추출");
     await dragImageRect(page, { x: CARD.x, y: CARD.y }, { x: CARD.x + CARD.width, y: CARD.y + CARD.height });
-    const layers = (await editor(page)).layers.length;
+    const hash = await sourceHash(page);
+    const before = (await editor(page)).layers[0].imageId;
     await drawStroke(page, "지우개", [{ x: 400, y: 260 }, { x: 520, y: 300 }]);
-    await expect(page.getByTestId("notice")).toBeVisible();
-    expect((await editor(page)).layers).toHaveLength(layers);
-    expect((await editor(page)).past).toBe(1); // just the extraction
+    await expect.poll(async () => (await editor(page)).layers[0].imageId).not.toBe(before);
+    expect((await editor(page)).layers).toHaveLength(1);
+    expect((await editor(page)).past).toBe(2); // the extraction, then the erasing
+    expect(await sourceHash(page)).toBe(hash);
+    await page.keyboard.press("Control+z");
+    await expect.poll(async () => (await editor(page)).layers[0].imageId).toBe(before);
   });
 
   test("it refuses a locked layer, naming the reason", async ({ page }) => {

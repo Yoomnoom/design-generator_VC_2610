@@ -3,13 +3,13 @@
 import { Tool } from "@/store/editor-store";
 import { formatBinding, ConfigurableAction } from "@/features/shortcuts/shortcuts";
 import { useBindings } from "@/features/shortcuts/shortcut-store";
+import { toolHint } from "@/features/tool-hints/tool-hints";
 import { isGeneratedPage } from "@/lib/project/blank";
 import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 
 /** tools that cut from the screenshot: with no screenshot (a blank canvas, a template) there is nothing to cut from */
 const NEEDS_SCREENSHOT: Tool[] = ["rect", "auto"];
-const NO_SCREENSHOT = "스크린샷이 없는 화면(빈 캔버스·템플릿)이라 쓸 수 없습니다. 캡처를 올리면 쓸 수 있습니다.";
 
 const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
   { id: "select", icon: "↖", label: "선택", title: "레이어를 선택하고 드래그해서 옮깁니다 (V)" },
@@ -40,11 +40,15 @@ export default function ToolRail({ enabled }: { enabled: boolean }) {
   const active = useEditorStore((s) => s.activeTool);
   const bindings = useBindings();
   const freeTransform = useEditorStore((s) => s.freeTransform);
+  const screen = useEditorStore(selectScreen);
+  const selectedIds = useEditorStore((s) => s.selectedLayerIds);
+  const comparing = useEditorStore((s) => s.compareMode !== "off");
+  const hintState = { screen, selected: screen ? screen.layers.filter((l) => selectedIds.includes(l.id)) : [], comparing };
   const plain = useEditorStore((s) => isGeneratedPage(selectScreen(s)?.source.fileName ?? ""));
   return (
     <nav aria-label="도구" className="overflow-auto border-r border-[var(--line)] bg-[var(--panel)] px-2 py-2.5">
       {TOOLS.map((t) => (
-        <button key={t.id} className="tool" aria-pressed={active === t.id} disabled={!enabled || (plain && NEEDS_SCREENSHOT.includes(t.id))} title={plain && NEEDS_SCREENSHOT.includes(t.id) ? `${t.label}: ${NO_SCREENSHOT}` : titleWith(t, bindings)} onClick={() => editorStore.getState().setTool(t.id)}>
+        <button key={t.id} className="tool" aria-pressed={active === t.id} disabled={!enabled || (plain && NEEDS_SCREENSHOT.includes(t.id))} data-unusable={enabled && !toolHint(t.id, hintState).usable ? "true" : undefined} title={enabled && !toolHint(t.id, hintState).usable ? `${t.label} (지금은 쓸 수 없음): ${toolHint(t.id, hintState).text}` : titleWith(t, bindings)} onClick={() => editorStore.getState().setTool(t.id)}>
           <b aria-hidden>{t.icon}</b>
           <span>{t.label}</span>
         </button>

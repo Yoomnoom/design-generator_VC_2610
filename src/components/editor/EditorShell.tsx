@@ -37,6 +37,7 @@ import StartChoices, { CanvasSpec, NewCanvasDialog, StartDialog } from "./StartC
 import { TemplateId, TEMPLATES, buildTemplate } from "@/features/assets/templates";
 import { canvasMeasureFor } from "@/lib/image/text-measure";
 import { useShortcuts } from "./useShortcuts";
+import { toolHint } from "@/features/tool-hints/tool-hints";
 
 // Konva touches `window`, so the canvas is never rendered on the server
 const CanvasViewport = dynamic(() => import("./CanvasViewport"), { ssr: false, loading: () => <div className="h-full w-full" /> });
@@ -51,6 +52,9 @@ export default function EditorShell() {
   const zoom = useEditorStore((s) => s.view.zoom);
   const tool = useEditorStore((s) => s.activeTool);
   const selectedCount = useEditorStore((s) => s.selectedLayerIds.length);
+  const hintSelected = useEditorStore((s) => s.selectedLayerIds);
+  const comparingNow = useEditorStore((s) => s.compareMode !== "off");
+  const hint = toolHint(tool, { screen, selected: screen ? screen.layers.filter((l) => hintSelected.includes(l.id)) : [], comparing: comparingNow });
 
   useShortcuts();
 
@@ -263,7 +267,9 @@ export default function EditorShell() {
 
       <footer className="flex h-7 shrink-0 items-center border-t border-[var(--line)] bg-white px-3 text-[11px] text-[#71767d]">
         <span>
-          {tool === "select" ? "선택 도구 · 드래그로 레이어 이동" : tool === "hand" ? "이동 도구 · 드래그로 화면 이동" : tool === "rect" ? "영역 추출 · 드래그로 사각형 지정" : "배경 채움 · 패치를 클릭해 색 변경"}
+          <span data-testid="tool-hint" data-usable={hint.usable ? "yes" : "no"} className={hint.usable ? "" : "font-bold text-[#8a5a12]"}>
+            {hint.text}
+          </span>
         </span>
         <AutosaveFooter />
         <span data-testid="footer-info">{screen ? `화면 1 · 레이어 ${screen.layers.length}${selectedCount > 0 ? ` · ${selectedCount}개 선택됨` : ""} · ${Math.round(zoom * 100)}%` : "화면 없음"}</span>

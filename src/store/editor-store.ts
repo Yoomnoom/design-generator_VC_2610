@@ -168,7 +168,7 @@ type EditorActions = {
   /** Puts a freshly painted bitmap on a brush layer (`layerId`), or makes a new brush layer when it is null. The bitmap gets a NEW
    *  imageId and the old one stays in the cache for undo, so the history holds only the layer's changed fields, never pixels.
    *  One undo step. Returns the layer id, or null when refused (comparing, locked, not a brush layer). */
-  commitBitmapEdit(edit: { layerId: string | null; raw: RawImage; x: number; y: number; label: string }): string | null;
+  commitBitmapEdit(edit: { layerId: string | null; raw: RawImage; x: number; y: number; label: string; /** the eraser may edit an extracted or pasted bitmap layer; the brush only its own */ erase?: boolean }): string | null;
   /** Moves a layer by (dx, dy) pixels, for the arrow keys. Presses on the same layer within NUDGE_MERGE_MS ms of each other are ONE undo step
    *  (holding a key is not fifty steps). Refused for a locked layer and while comparing. */
   nudgeLayer(layerId: string, dx: number, dy: number): boolean;
@@ -1238,7 +1238,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       setSnapEnabled: (snapEnabled) => set({ snapEnabled, snapGuides: snapEnabled ? get().snapGuides : [] }),
       setSnapGuides: (snapGuides) => set({ snapGuides }),
 
-      commitBitmapEdit({ layerId, raw, x, y, label }) {
+      commitBitmapEdit({ layerId, raw, x, y, label, erase }) {
         const { history, images } = get();
         const screen = screenOf();
         if (frozen() || !history || !screen || raw.width < 1 || raw.height < 1 || ![x, y].every(Number.isFinite)) return null;
@@ -1249,7 +1249,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         const at = { x: Math.round(x), y: Math.round(y) };
         if (layerId) {
           const target = screen.layers.find((l) => l.id === layerId);
-          if (!target || !target.drawn || target.locked) return null;
+          if (!target || (!target.drawn && !erase) || target.locked) return null; // only the eraser may work on an extracted or pasted layer
           const next = commit(history, label, (draft) => {
             const l = draft.screens[0].layers.find((d) => d.id === layerId);
             if (!l) return;
