@@ -128,7 +128,7 @@ test.describe("nothing can be edited while comparing", () => {
 
       // keys first, while the layer is still selected (a click on the canvas would deselect it and make these no-ops)
       await page.keyboard.press("Delete");
-      await page.keyboard.press("Control+d");
+      await page.keyboard.press("Control+j");
       await page.keyboard.press("Control+c");
       await page.keyboard.press("Control+v");
       expect((await editor(page)).layers).toHaveLength(1);

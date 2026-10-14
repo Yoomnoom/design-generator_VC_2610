@@ -179,7 +179,7 @@ test.describe("groups", () => {
     const ids = await scene(page);
     await groupAB(page, ids);
     await page.getByTestId("group-item").click();
-    await page.keyboard.press("Control+d");
+    await page.keyboard.press("Control+j");
     await expect.poll(async () => (await groups(page)).length).toBe(2);
     expect((await layers(page)).length).toBe(5);
     await page.keyboard.press("Control+z");

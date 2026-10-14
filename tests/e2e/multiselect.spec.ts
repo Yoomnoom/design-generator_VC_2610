@@ -138,7 +138,7 @@ test.describe("choosing several layers", () => {
     await expect(page.getByRole("button", { name: "뒤로" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "삭제" })).toBeEnabled();
     const before = (await editor(page)).past;
-    await page.keyboard.press("Control+d");
+    await page.keyboard.press("Control+j");
     await expect(page.getByTestId("notice")).toContainText("복제할 수 없습니다");
     await page.keyboard.press("Control+c");
     await expect(page.getByTestId("notice")).toContainText("복사할 수 없습니다");

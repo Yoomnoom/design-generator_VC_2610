@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { ACTION_INFO, Binding, DEFAULT_BINDINGS, RESERVED, bindingOf, checkBinding, formatBinding, resolveShortcut } from "@/features/shortcuts/shortcuts";
-import { SHORTCUTS_STORAGE_KEY, createShortcutStore, parseStoredBindings, serializeBindings } from "@/features/shortcuts/shortcut-store";
+import { ACTION_INFO, Binding, DEFAULT_BINDINGS, PRESETS, RESERVED, bindingOf, checkBinding, formatBinding, resolveShortcut as resolveWith } from "@/features/shortcuts/shortcuts";
+import { SHORTCUTS_STORAGE_KEY, createShortcutStore, liveAliases, parseStoredSetting, serializeSetting } from "@/features/shortcuts/shortcut-store";
+
+const resolveShortcut = (e: Parameters<typeof resolveWith>[0], b = DEFAULT_BINDINGS) => resolveWith(e, b);
+const parseStoredBindings = (text: string | null) => parseStoredSetting(text).bindings;
+const serializeBindings = (b: typeof DEFAULT_BINDINGS) => serializeSetting({ preset: "photoshop", bindings: b });
 
 const key = (k: string, o: Partial<{ ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean; repeat: boolean }> = {}) => ({ key: k, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...o });
 const bind = (k: string, o: { ctrl?: boolean; shift?: boolean; alt?: boolean } = {}): Binding => ({ key: k, ctrl: !!o.ctrl, shift: !!o.shift, alt: !!o.alt });
@@ -21,16 +25,19 @@ describe("defaults", () => {
   test("no two actions share a default key, and no default is a reserved key", () => {
     const seen = new Map<string, string>();
     for (const a of ACTION_INFO) {
-      const text = formatBinding(DEFAULT_BINDINGS[a.id]);
+      const bound = DEFAULT_BINDINGS[a.id];
+      if (!bound) continue; // a function with no key in this preset
+      const text = formatBinding(bound);
       expect(seen.has(text), `${a.id} vs ${seen.get(text)}`).toBe(false);
       seen.set(text, a.id);
-      expect(checkBinding(a.id, DEFAULT_BINDINGS[a.id], DEFAULT_BINDINGS).ok, a.id).toBe(true);
+      expect(checkBinding(a.id, bound, DEFAULT_BINDINGS).ok, a.id).toBe(true);
     }
   });
 
   test("Ctrl+Y still redoes while redo has its default key; it does not once redo is moved", () => {
     expect(resolveShortcut(key("y", { ctrlKey: true }))).toBe("redo");
-    expect(resolveShortcut(key("y", { ctrlKey: true }), { ...DEFAULT_BINDINGS, redo: bind("u", { ctrl: true, shift: true }) })).toBeNull();
+    const moved = { ...DEFAULT_BINDINGS, redo: bind("u", { ctrl: true, shift: true }) };
+    expect(resolveWith(key("y", { ctrlKey: true }), moved, liveAliases({ preset: "photoshop", bindings: moved }))).toBeNull(); // the store drops the alias with the key
   });
 });
 
@@ -48,7 +55,7 @@ describe("changing a key", () => {
     const r = checkBinding("tool-brush", bind("v"), DEFAULT_BINDINGS);
     expect(r).toMatchObject({ ok: false, conflict: "tool-select" });
     expect(!r.ok && r.reason).toContain("선택 도구");
-    expect(checkBinding("group", bind("d", { ctrl: true }), DEFAULT_BINDINGS)).toMatchObject({ ok: false, conflict: "duplicate" });
+    expect(checkBinding("group", bind("d", { ctrl: true }), DEFAULT_BINDINGS)).toMatchObject({ ok: false, conflict: "deselect" }); // Ctrl+D is "deselect" in the Photoshop preset
     const store = createShortcutStore(memory());
     expect(store.set("tool-brush", bind("v")).ok).toBe(false);
     expect(store.get()["tool-brush"]).toEqual(DEFAULT_BINDINGS["tool-brush"]);
@@ -119,12 +126,12 @@ describe("saving the setting (this browser only)", () => {
   test("a damaged, foreign or invalid entry is ignored key by key: defaults stay, nothing throws", () => {
     expect(parseStoredBindings("{not json")).toEqual(DEFAULT_BINDINGS);
     expect(parseStoredBindings(JSON.stringify({ format: 99, bindings: { "tool-brush": bind("q") } }))).toEqual(DEFAULT_BINDINGS);
-    expect(parseStoredBindings(JSON.stringify({ format: 1, bindings: "x" }))).toEqual(DEFAULT_BINDINGS);
-    const mixed = parseStoredBindings(JSON.stringify({ format: 1, bindings: { "tool-brush": bind("q"), "tool-text": { key: 5 }, group: bind("w", { ctrl: true }), nope: bind("z"), "tool-line": bind("v") } }));
+    expect(parseStoredBindings(JSON.stringify({ format: 2, bindings: "x" }))).toEqual(DEFAULT_BINDINGS);
+    const mixed = parseStoredBindings(JSON.stringify({ format: 2, bindings: { "tool-brush": bind("q"), "tool-text": { key: 5 }, group: bind("w", { ctrl: true }), nope: bind("z"), "tool-line": bind("v") } }));
     expect(mixed["tool-brush"]).toEqual(bind("q"));
     expect(mixed["tool-text"]).toEqual(DEFAULT_BINDINGS["tool-text"]); // not a binding
     expect(mixed.group).toEqual(DEFAULT_BINDINGS.group); // reserved
-    expect(mixed["tool-line"]).toEqual(DEFAULT_BINDINGS["tool-line"]); // collides with the selection tool
+    expect(mixed["tool-line"]).toEqual(DEFAULT_BINDINGS["tool-line"]); // collides with the selection tool (and the preset has no key for it)
     expect(parseStoredBindings(null)).toEqual(DEFAULT_BINDINGS);
   });
 
@@ -139,7 +146,7 @@ describe("saving the setting (this browser only)", () => {
   });
 
   test("it is a browser setting, not project data: nothing of it is in a project's text", () => {
-    expect(serializeBindings(DEFAULT_BINDINGS)).toBe(JSON.stringify({ format: 1, bindings: {} }));
+    expect(serializeBindings(DEFAULT_BINDINGS)).toBe(JSON.stringify({ format: 2, preset: "photoshop", bindings: {} }));
   });
 
   test("subscribers hear of a change and of a reset", () => {

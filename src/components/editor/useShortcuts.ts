@@ -18,10 +18,15 @@ export function useShortcuts() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isTypingTarget(e.target) || modalOpen()) return;
-      const action = resolveShortcut(e, shortcutStore.get());
+      const action = resolveShortcut(e, shortcutStore.get(), shortcutStore.aliases());
       const st = editorStore.getState();
       // Ctrl+G is "find next" in a browser: while the editor owns the keyboard it is always taken, project or not
-      if ((action === "group" || action === "ungroup") && !st.history) return void e.preventDefault();
+      if (action === "open-project") {
+        e.preventDefault(); // Ctrl+O works with or without a project open
+        window.dispatchEvent(new CustomEvent("slc-file", { detail: "open" }));
+        return;
+      }
+      if ((action === "group" || action === "ungroup" || action === "save") && !st.history) return void e.preventDefault();
       if (!action || !st.history) return;
       const layerId = st.selectedLayerIds[0];
 
@@ -77,6 +82,71 @@ export function useShortcuts() {
           break;
         case "ungroup":
           st.ungroupSelected();
+          break;
+        case "cut": {
+          if (!layerId || window.getSelection()?.toString()) return;
+          if (st.selectedLayerIds.length > 1) {
+            st.setNotice("여러 레이어가 선택되어 있어 잘라낼 수 없습니다. 하나만 선택하세요.");
+            break;
+          }
+          // cut = copy to the clipboard, then delete the layer (only when the copy worked, so nothing is lost)
+          void copyLayerToClipboard({ layerId, store: editorStore, codec: canvasCodec, write: writePngToSystemClipboard }).then((r) => {
+            const s = editorStore.getState();
+            s.setNotice(r.ok ? null : r.reason);
+            if (r.ok) s.deleteSelectedLayers();
+          });
+          break;
+        }
+        case "deselect":
+          st.deselectAll();
+          break;
+        case "invert-selection":
+          st.invertSelection();
+          break;
+        case "zoom-in":
+          window.dispatchEvent(new CustomEvent("slc-zoom", { detail: "in" }));
+          break;
+        case "zoom-out":
+          window.dispatchEvent(new CustomEvent("slc-zoom", { detail: "out" }));
+          break;
+        case "layer-forward":
+        case "layer-backward":
+        case "layer-front":
+        case "layer-back": {
+          if (!layerId || st.selectedLayerIds.length > 1) {
+            st.setNotice("레이어 순서는 레이어를 하나만 선택했을 때 바꿀 수 있습니다.");
+            break;
+          }
+          if (action === "layer-forward") st.reorderLayer(layerId, 1);
+          else if (action === "layer-backward") st.reorderLayer(layerId, -1);
+          else st.reorderLayerTo(layerId, action === "layer-front" ? "front" : "back");
+          break;
+        }
+        case "tool-shape": {
+          const order = ["line", "box", "ellipse"] as const; // the first press picks the line, each next press the next shape
+          const at = order.indexOf(st.activeTool as (typeof order)[number]);
+          st.setTool(order[(at + 1) % order.length]);
+          break;
+        }
+        case "swap-colors": {
+          const d = st.drawStyle;
+          if (d.fill === null) st.setNotice("채움 색이 없어 바꿀 수 없습니다. 채움을 켠 뒤 다시 시도하세요.");
+          else st.setDrawStyle({ stroke: d.fill, fill: d.stroke });
+          break;
+        }
+        case "default-colors":
+          st.setDrawStyle({ stroke: "#000000", fill: "#ffffff" });
+          break;
+        case "brush-smaller":
+        case "brush-bigger": {
+          const up = action === "brush-bigger";
+          const step = (v: number) => Math.max(1, Math.round(up ? (v < 10 ? v + 1 : v * 1.25) : v < 11 ? v - 1 : v / 1.25));
+          if (st.activeTool === "finger") st.setFingerStyle({ size: step(st.fingerStyle.size) });
+          else st.setDrawStyle({ strokeWidth: step(Math.max(st.drawStyle.strokeWidth, 1)) });
+          break;
+        }
+        case "save":
+          window.dispatchEvent(new CustomEvent("slc-file", { detail: "save" }));
           break;
         case "tool-select":
           st.setTool("select");

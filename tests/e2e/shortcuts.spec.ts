@@ -63,14 +63,14 @@ test.describe("delete, duplicate", () => {
     expect((await editor(page)).layers).toHaveLength(1);
   });
 
-  test("Ctrl+D duplicates 16px right and down, and the browser's own Ctrl+D does not run", async ({ page }) => {
+  test("Ctrl+J duplicates 16px right and down, and the browser's own Ctrl+J (downloads) does not run", async ({ page }) => {
     await withLayer(page);
     await page.evaluate(() => {
       (window as any).__seen = null;
       // the Control key press fires its own keydown first; only the D one matters
-      window.addEventListener("keydown", (e) => e.key === "d" && queueMicrotask(() => ((window as any).__seen = e.defaultPrevented)));
+      window.addEventListener("keydown", (e) => e.key === "j" && queueMicrotask(() => ((window as any).__seen = e.defaultPrevented)));
     });
-    await page.keyboard.press("Control+d");
+    await page.keyboard.press("Control+j");
     expect(await page.evaluate(() => (window as any).__seen)).toBe(true);
     const s = await editor(page);
     expect(s.layers).toHaveLength(2);
@@ -227,11 +227,11 @@ test.describe("copy and paste a layer (Ctrl+C / Ctrl+V)", () => {
 });
 
 test.describe("tool keys", () => {
-  test("V, H and R switch tools", async ({ page }) => {
+  test("V, H and M switch tools", async ({ page }) => {
     await withLayer(page);
     await page.keyboard.press("h");
     await expect(tool(page, "이동")).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("r");
+    await page.keyboard.press("m");
     await expect(tool(page, "영역 추출")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("v");
     await expect(tool(page, "선택")).toHaveAttribute("aria-pressed", "true");
@@ -239,18 +239,18 @@ test.describe("tool keys", () => {
     await expect(tool(page, "이동")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("R then a drag extracts, with no click on the tool rail", async ({ page }) => {
+  test("M then a drag extracts, with no click on the tool rail", async ({ page }) => {
     await openApp(page);
     await uploadPng(page, pageWithCard());
     await zoomTo(page, 1, 600, 300);
-    await page.keyboard.press("r");
+    await page.keyboard.press("m");
     await dragImageRect(page, { x: CARD.x, y: CARD.y }, { x: CARD.x + CARD.width, y: CARD.y + CARD.height });
     expect((await editor(page)).layers).toHaveLength(1);
   });
 
   test("with no project the keys do nothing", async ({ page }) => {
     await openApp(page);
-    await page.keyboard.press("r");
+    await page.keyboard.press("m");
     await page.keyboard.press("Control+z");
     await page.keyboard.press("Delete");
     expect(await editor(page)).toMatchObject({ screen: null });
@@ -299,11 +299,11 @@ test.describe("when the keys must stay out of the way", () => {
     await zoomTo(page, 1, 600, 300);
     await page.getByRole("button", { name: "PNG 내보내기" }).click();
     await expect(page.getByRole("dialog", { name: "목업 내보내기" })).toBeVisible();
-    await page.keyboard.press("r");
+    await page.keyboard.press("m");
     await expect(tool(page, "영역 추출")).toHaveAttribute("aria-pressed", "false");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await page.keyboard.press("r");
+    await page.keyboard.press("m");
     await expect(tool(page, "영역 추출")).toHaveAttribute("aria-pressed", "true");
   });
 });

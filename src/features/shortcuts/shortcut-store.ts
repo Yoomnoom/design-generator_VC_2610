@@ -1,96 +1,138 @@
 import { useSyncExternalStore } from "react";
-import { ACTION_INFO, Binding, BindingCheck, Bindings, ConfigurableAction, DEFAULT_BINDINGS, checkBinding, formatBinding, sameBinding } from "./shortcuts";
+import { ACTION_INFO, Binding, BindingCheck, Bindings, ConfigurableAction, DEFAULT_PRESET, PRESETS, PRESET_ALIASES, PresetId, checkBinding, formatBinding, sameBinding } from "./shortcuts";
 
-/* The user's shortcut keys. They are a setting of this browser, not of a project: stored in localStorage (`slc-shortcuts`) as only the
- * keys that differ from the defaults, never in a project file or the temporary save. A damaged or partly invalid entry is ignored
- * key by key (the default stays), so a bad value can never lock a shortcut away. */
+/* The user's shortcut keys. They are a setting of this browser, not of a project: stored in localStorage (`slc-shortcuts`) as the chosen
+ * preset and only the keys that differ from it, never in a project file or the temporary save. A damaged or partly invalid entry is
+ * ignored key by key (the preset's key stays), so a bad value can never lock a shortcut away.
+ * Format 2 = {format: 2, preset, bindings}. Format 1 (before presets) is not read: it was made against the old layout. */
 
 export const SHORTCUTS_STORAGE_KEY = "slc-shortcuts";
-const FORMAT = 1;
+const FORMAT = 2;
 
 type Listener = () => void;
+export type ShortcutSetting = { preset: PresetId; bindings: Bindings };
 
 function validBinding(v: unknown): v is Binding {
   if (typeof v !== "object" || v === null) return false;
   const x = v as Record<string, unknown>;
   return typeof x.key === "string" && x.key.length >= 1 && x.key.length <= 20 && typeof x.ctrl === "boolean" && typeof x.shift === "boolean" && typeof x.alt === "boolean";
 }
+const isPreset = (v: unknown): v is PresetId => v === "photoshop" || v === "legacy";
 
-/** the saved text as bindings: defaults, with each valid saved key applied when it passes the same checks as typing it in */
-export function parseStoredBindings(text: string | null): Bindings {
-  const out: Bindings = { ...DEFAULT_BINDINGS };
-  if (!text) return out;
+/** the saved text as a setting: the preset, with each valid saved key applied when it passes the same checks as typing it in */
+export function parseStoredSetting(text: string | null): ShortcutSetting {
+  const fallback: ShortcutSetting = { preset: DEFAULT_PRESET, bindings: { ...PRESETS[DEFAULT_PRESET] } };
+  if (!text) return fallback;
   let doc: unknown;
   try {
     doc = JSON.parse(text);
   } catch {
-    return out;
+    return fallback;
   }
-  const saved = (doc as { format?: unknown; bindings?: unknown } | null)?.bindings;
-  if ((doc as { format?: unknown } | null)?.format !== FORMAT || typeof saved !== "object" || saved === null) return out;
+  const d = doc as { format?: unknown; preset?: unknown; bindings?: unknown } | null;
+  if (!d || d.format !== FORMAT) return fallback;
+  const preset: PresetId = isPreset(d.preset) ? d.preset : DEFAULT_PRESET;
+  const out: Bindings = { ...PRESETS[preset] };
+  const saved = d.bindings;
+  if (typeof saved !== "object" || saved === null) return { preset, bindings: out };
   for (const info of ACTION_INFO) {
     const v = (saved as Record<string, unknown>)[info.id];
-    if (validBinding(v)) out[info.id] = { key: v.key, ctrl: v.ctrl, shift: v.shift, alt: v.alt };
+    if (v === null) out[info.id] = null; // the user cleared this key
+    else if (validBinding(v)) out[info.id] = { key: v.key, ctrl: v.ctrl, shift: v.shift, alt: v.alt };
   }
   // the saved keys are applied together (a key may have moved from one action to another), then each is checked against the rest;
-  // one that is reserved or collides goes back to its default, so a bad file cannot leave two actions on one key
+  // one that is reserved or collides goes back to the preset's, so a bad file cannot leave two actions on one key
   for (const info of ACTION_INFO) {
-    if (sameBinding(out[info.id], DEFAULT_BINDINGS[info.id])) continue;
-    if (!checkBinding(info.id, out[info.id], out).ok) out[info.id] = DEFAULT_BINDINGS[info.id];
-  }  return out;
+    const cur = out[info.id];
+    if (!cur || sameBinding(cur, PRESETS[preset][info.id])) continue;
+    if (!checkBinding(info.id, cur, out).ok) out[info.id] = PRESETS[preset][info.id];
+  }
+  return { preset, bindings: out };
 }
 
-export function serializeBindings(bindings: Bindings): string {
-  const changed: Partial<Bindings> = {};
-  for (const info of ACTION_INFO) if (!sameBinding(bindings[info.id], DEFAULT_BINDINGS[info.id])) changed[info.id] = bindings[info.id];
-  return JSON.stringify({ format: FORMAT, bindings: changed });
+export function serializeSetting(s: ShortcutSetting): string {
+  const changed: Partial<Record<ConfigurableAction, Binding | null>> = {};
+  for (const info of ACTION_INFO) {
+    const a = s.bindings[info.id], p = PRESETS[s.preset][info.id];
+    if (a === null ? p !== null : !sameBinding(a, p)) changed[info.id] = a;
+  }
+  return JSON.stringify({ format: FORMAT, preset: s.preset, bindings: changed });
+}
+
+/** the extra keys that are live: those of the preset, for each action that still has the preset's own key */
+export function liveAliases(s: ShortcutSetting): Partial<Record<ConfigurableAction, Binding[]>> {
+  const out: Partial<Record<ConfigurableAction, Binding[]>> = {};
+  for (const [id, list] of Object.entries(PRESET_ALIASES[s.preset]) as [ConfigurableAction, Binding[]][]) {
+    if (sameBinding(s.bindings[id], PRESETS[s.preset][id])) out[id] = list;
+  }
+  return out;
 }
 
 export type ShortcutStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export function createShortcutStore(storage: ShortcutStorage | null = typeof window === "undefined" ? null : safeLocalStorage()) {
-  const read = () => {
+  const read = (): ShortcutSetting => {
     try {
-      return parseStoredBindings(storage?.getItem(SHORTCUTS_STORAGE_KEY) ?? null);
+      return parseStoredSetting(storage?.getItem(SHORTCUTS_STORAGE_KEY) ?? null);
     } catch {
-      return { ...DEFAULT_BINDINGS }; // storage blocked: the defaults, and changes last until the page closes
+      return { preset: DEFAULT_PRESET, bindings: { ...PRESETS[DEFAULT_PRESET] } }; // storage blocked: the defaults, and changes last until the page closes
     }
   };
-  let bindings: Bindings = read();
+  let setting: ShortcutSetting = read();
+  let aliases = liveAliases(setting);
   const listeners = new Set<Listener>();
-  const emit = () => listeners.forEach((l) => l());
+  const emit = () => {
+    aliases = liveAliases(setting);
+    listeners.forEach((l) => l());
+  };
   const persist = () => {
     try {
-      const text = serializeBindings(bindings);
-      if (text === serializeBindings(DEFAULT_BINDINGS)) storage?.removeItem(SHORTCUTS_STORAGE_KEY);
+      const plain = serializeSetting({ preset: DEFAULT_PRESET, bindings: PRESETS[DEFAULT_PRESET] });
+      const text = serializeSetting(setting);
+      if (text === plain) storage?.removeItem(SHORTCUTS_STORAGE_KEY);
       else storage?.setItem(SHORTCUTS_STORAGE_KEY, text);
     } catch {
       /* not saved; the change still applies for this page */
     }
   };
   return {
-    get: () => bindings,
+    get: () => setting.bindings,
+    preset: () => setting.preset,
+    aliases: () => aliases,
     subscribe(l: Listener) {
       listeners.add(l);
       return () => void listeners.delete(l);
     },
     /** gives `action` the key, unless it is refused (reserved, or used by another action): then nothing changes and the reason comes back */
     set(action: ConfigurableAction, binding: Binding): BindingCheck {
-      const check = checkBinding(action, binding, bindings);
+      const check = checkBinding(action, binding, setting.bindings);
       if (!check.ok) return check;
-      bindings = { ...bindings, [action]: binding };
+      setting = { ...setting, bindings: { ...setting.bindings, [action]: binding } };
       persist();
       emit();
       return check;
     },
+    /** take the key away from an action (it stays in the tool bar or on a button) */
+    clear(action: ConfigurableAction) {
+      setting = { ...setting, bindings: { ...setting.bindings, [action]: null } };
+      persist();
+      emit();
+    },
+    /** change to a preset: its keys replace every key, the individual changes are dropped */
+    setPreset(preset: PresetId) {
+      setting = { preset, bindings: { ...PRESETS[preset] } };
+      persist();
+      emit();
+    },
+    /** back to the keys of the current preset */
     reset() {
-      bindings = { ...DEFAULT_BINDINGS };
+      setting = { preset: setting.preset, bindings: { ...PRESETS[setting.preset] } };
       persist();
       emit();
     },
     /** another tab changed the setting */
     reload() {
-      bindings = read();
+      setting = read();
       emit();
     },
   };
@@ -110,7 +152,8 @@ if (typeof window !== "undefined") {
   window.addEventListener("storage", (e) => e.key === SHORTCUTS_STORAGE_KEY && shortcutStore.reload());
 }
 
-export const useBindings = (): Bindings => useSyncExternalStore(shortcutStore.subscribe, shortcutStore.get, () => DEFAULT_BINDINGS);
+export const useBindings = (): Bindings => useSyncExternalStore(shortcutStore.subscribe, shortcutStore.get, () => PRESETS[DEFAULT_PRESET]);
+export const usePreset = (): PresetId => useSyncExternalStore(shortcutStore.subscribe, shortcutStore.preset, () => DEFAULT_PRESET);
 
 /** the live key text of an action ("Ctrl+Z", "V") for tooltips; it follows the setting */
 export function useShortcutLabel(action: ConfigurableAction): string {

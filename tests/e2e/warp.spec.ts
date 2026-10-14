@@ -24,7 +24,7 @@ test.describe("warp tool: corner handles", () => {
   test("W opens the tool on the selected layer; dragging a corner bends the layer in one undo step, previewing without history", async ({ page }) => {
     await withLayer(page);
     const past = (await editor(page)).past;
-    await page.keyboard.press("w");
+    await page.keyboard.press("Shift+w");
     await expect(page.getByTestId("warp-panel")).toBeVisible();
     expect(await page.evaluate(() => (window as any).__slc.getState().activeTool)).toBe("warp");
 
@@ -187,7 +187,7 @@ test.describe("who can be warped", () => {
   test("while comparing nothing can be warped", async ({ page }) => {
     await withLayer(page);
     await page.evaluate(() => (window as any).__slc.getState().setCompareMode("original"));
-    await page.keyboard.press("w");
+    await page.keyboard.press("Shift+w");
     expect(await notice(page)).toContain("비교");
     expect(await layerWarp(page)).toBeNull();
   });

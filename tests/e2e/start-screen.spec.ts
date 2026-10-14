@@ -59,7 +59,7 @@ for (const dpr of [1, 2]) {
       }
       await expect(page.getByRole("button", { name: "사각형", exact: true })).toBeEnabled();
 
-      await page.keyboard.press("r"); // the shortcut is refused too, with the reason on the notice line
+      await page.keyboard.press("m"); // the shortcut is refused too, with the reason on the notice line
       await expect(page.getByText(/추출할 스크린샷이 없습니다/).first()).toBeVisible();
 
       await page.getByTestId("notice").getByRole("button", { name: "닫기" }).click(); // the export dialog has its own close button

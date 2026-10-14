@@ -157,6 +157,10 @@ type EditorActions = {
   addImageLayer(input: { raw: RawImage; blob?: Blob; name: string }): string | null;
   deleteLayer(layerId: string): boolean;
   reorderLayer(layerId: string, direction: 1 | -1): boolean;
+  /** all the way to the front or the back (one undo step); false at that end already */
+  reorderLayerTo(layerId: string, end: "front" | "back"): boolean;
+  /** every layer that is not selected becomes the selection, and the selected ones are let go */
+  invertSelection(): void;
   /** resize/rotate in one undo step; a locked layer refuses */
   transformLayer(layerId: string, transform: LayerTransform): boolean;
   resetLayerTransform(layerId: string): boolean;
@@ -797,6 +801,24 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         if (drawOrder(next) === drawOrder(screen.layers)) return false; // already at that end
         commitLayers(direction === 1 ? "레이어 앞으로" : "레이어 뒤로", next);
         return true;
+      },
+
+      reorderLayerTo(layerId, end) {
+        const screen = screenOf();
+        if (!screen || frozen()) return false;
+        let next: readonly BitmapLayer[] = screen.layers;
+        for (let i = 0; i < screen.layers.length; i++) next = moveLayer(next, layerId, end === "front" ? 1 : -1);
+        if (drawOrder(next) === drawOrder(screen.layers)) return false;
+        commitLayers(end === "front" ? "레이어 맨 앞으로" : "레이어 맨 뒤로", next);
+        return true;
+      },
+
+      invertSelection() {
+        const screen = screenOf();
+        if (!screen) return;
+        const chosen = get().selectedLayerIds;
+        const ids = screen.layers.filter((l) => !chosen.includes(l.id)).map((l) => l.id);
+        set({ selectedLayerIds: ids, selectionAnchor: ids[0] ?? null, selectedPatchId: null, selectedMemoId: null });
       },
 
       transformLayer(layerId, transform) {

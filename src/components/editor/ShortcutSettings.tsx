@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ACTION_INFO, ConfigurableAction, bindingOf, formatBinding } from "@/features/shortcuts/shortcuts";
-import { shortcutStore, useBindings } from "@/features/shortcuts/shortcut-store";
+import { ACTION_INFO, BROWSER_FIRST, ConfigurableAction, NOT_AVAILABLE, PRESET_LABEL, PresetId, bindingOf, formatBinding } from "@/features/shortcuts/shortcuts";
+import { shortcutStore, useBindings, usePreset } from "@/features/shortcuts/shortcut-store";
 
-const GROUPS = ["편집", "선택·그룹", "이동", "도구"] as const;
+const GROUPS = ["편집", "선택·그룹", "이동·보기", "레이어 순서", "도구", "색·크기", "파일"] as const;
 
 /** keys that cannot be changed: they belong to a gesture or to the browser */
 const FIXED: { keys: string; what: string }[] = [
@@ -13,14 +13,16 @@ const FIXED: { keys: string; what: string }[] = [
   { keys: "Ctrl+클릭", what: "선택에 더하기·빼기 (캔버스와 레이어 패널)" },
   { keys: "Shift+클릭", what: "레이어 패널: 범위 선택 · 캔버스: 선택에 더하기" },
   { keys: "빈 곳 클릭", what: "선택 해제" },
-  { keys: "Alt (끄는 동안)", what: "스냅 끄기" },
-  { keys: "Ctrl+Y", what: "다시 실행 (다시 실행이 기본 키일 때)" },
+  { keys: "Alt+끌기", what: "레이어를 복제하며 옮기기" },
+  { keys: "Space+끌기", what: "어느 도구에서나 잠시 손 이동" },
+  { keys: "Ctrl+Alt+Z / Ctrl+Y / Backspace / Ctrl+T", what: "여러 단계 뒤로 / 다시 실행 / 삭제 / 자유 변형: 해당 동작이 프리셋의 키 그대로일 때만 함께 동작" },
 ];
 
 /** The shortcut window: every key by function. Click a key, press the new one. A key that is reserved by the browser or used by another
  *  function is refused with the reason (nothing is swapped silently). Stored in this browser only, never in a project. */
 export default function ShortcutSettings({ onClose }: { onClose: () => void }) {
   const bindings = useBindings();
+  const preset = usePreset();
   const [capturing, setCapturing] = useState<ConfigurableAction | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
@@ -48,7 +50,15 @@ export default function ShortcutSettings({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/30">
       <div role="dialog" aria-modal="true" aria-labelledby="shortcut-title" data-testid="shortcut-settings" className="flex max-h-[88vh] w-[560px] max-w-[94vw] flex-col rounded-[14px] border border-[var(--line)] bg-white p-[18px] shadow-[var(--shadow)]">
         <h2 id="shortcut-title" className="m-0 mb-1 text-lg font-bold">단축키</h2>
-        <p className="mb-3 text-xs text-[var(--muted)]">키를 누르면 새 키를 입력할 수 있습니다. 이 브라우저에만 저장되고 프로젝트 파일에는 들어가지 않습니다.</p>
+        <p className="mb-2 text-xs text-[var(--muted)]">키를 누르면 새 키를 입력할 수 있습니다. 이 브라우저에만 저장되고 프로젝트 파일에는 들어가지 않습니다.</p>
+        <div role="radiogroup" aria-label="단축키 프리셋" className="mb-3 flex items-center gap-2 text-sm">
+          <span className="font-bold">프리셋</span>
+          {(["photoshop", "legacy"] as PresetId[]).map((p) => (
+            <button key={p} type="button" role="radio" aria-checked={preset === p} data-testid={`preset-${p}`} className={`btn mini ${preset === p ? "primary" : ""}`} onClick={() => { shortcutStore.setPreset(p); setCapturing(null); setMessage({ kind: "ok", text: `"${PRESET_LABEL[p]}" 프리셋으로 바꿨습니다. 개별 변경은 지워졌습니다.` }); }}>
+              {PRESET_LABEL[p]}
+            </button>
+          ))}
+        </div>
         <div className="min-h-0 flex-1 overflow-auto pr-1">
           {GROUPS.map((g) => (
             <section key={g} className="mb-3">
@@ -75,6 +85,23 @@ export default function ShortcutSettings({ onClose }: { onClose: () => void }) {
               </ul>
             </section>
           ))}
+          <section className="mb-3">
+            <h3 className="mb-1 text-[13px] font-bold">해당 기능 없음</h3>
+            <ul data-testid="shortcut-not-available" className="m-0 list-none p-0 text-xs text-[var(--muted)]">
+              {NOT_AVAILABLE.map((f) => (
+                <li key={f.keys} className="flex justify-between gap-2 border-b border-[#f0f0ec] py-0.5">
+                  <span className="font-mono">{f.keys}</span>
+                  <span className="text-right">{f.what}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section className="mb-3">
+            <h3 className="mb-1 text-[13px] font-bold">브라우저가 먼저 처리하는 키</h3>
+            <p data-testid="shortcut-browser-first" className="m-0 text-xs text-[var(--muted)]">
+              {BROWSER_FIRST.join(" · ")}: 이 키는 브라우저가 먼저 처리해서 일반 탭에서는 앱까지 오지 않을 수 있어 지정할 수 없습니다. 자유 변형은 Shift+T(또는 화면의 "자유 변형" 버튼)를 쓰세요. 전체 화면·설치한 앱 창에서는 키보드 잠금으로 받아 보지만, 이 환경에서는 확인하지 못했습니다.
+            </p>
+          </section>
           <section className="mb-2">
             <h3 className="mb-1 text-[13px] font-bold">바꿀 수 없는 키</h3>
             <ul className="m-0 list-none p-0 text-xs text-[var(--muted)]">
@@ -95,8 +122,8 @@ export default function ShortcutSettings({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <div className="mt-2 flex justify-between">
-          <button type="button" data-testid="shortcut-reset" className="btn" onClick={() => { shortcutStore.reset(); setCapturing(null); setMessage({ kind: "ok", text: "모든 단축키를 기본값으로 되돌렸습니다." }); }}>
-            기본값으로 되돌리기
+          <button type="button" data-testid="shortcut-reset" className="btn" onClick={() => { shortcutStore.reset(); setCapturing(null); setMessage({ kind: "ok", text: `모든 단축키를 "${PRESET_LABEL[preset]}" 프리셋의 키로 되돌렸습니다.` }); }}>
+            프리셋으로 되돌리기
           </button>
           <button type="button" data-testid="shortcut-close" className="btn primary" onClick={onClose}>닫기</button>
         </div>

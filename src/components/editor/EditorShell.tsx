@@ -193,6 +193,29 @@ export default function EditorShell() {
     return () => document.removeEventListener("paste", onPaste);
   }, []);
 
+  // In a full-screen or installed-app window ask the browser to hand over keys it normally keeps (Ctrl+T/N/W); best effort, unverified
+  useEffect(() => {
+    const kb = (navigator as unknown as { keyboard?: { lock?: (codes: string[]) => Promise<void>; unlock?: () => void } }).keyboard;
+    if (!kb?.lock) return;
+    const standalone = () => window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || !!document.fullscreenElement;
+    const sync = () => (standalone() ? void kb.lock!(["KeyT", "KeyN", "KeyW"]).catch(() => {}) : kb.unlock?.());
+    sync();
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+  // Ctrl+S / Ctrl+O arrive as events from the shortcut handler
+  const fileRef = useRef({ save: saveProject, open: () => projectInput.current?.click() });
+  fileRef.current = { save: saveProject, open: () => projectInput.current?.click() };
+  useEffect(() => {
+    const on = (e: Event) => {
+      const what = (e as CustomEvent<string>).detail;
+      if (what === "save" && editorStore.getState().history) void fileRef.current.save();
+      else if (what === "open") fileRef.current.open();
+    };
+    window.addEventListener("slc-file", on);
+    return () => window.removeEventListener("slc-file", on);
+  }, []);
+
   const pickFrom = (kind: "image" | "project") => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // choosing the same file again must still fire

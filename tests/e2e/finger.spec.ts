@@ -47,7 +47,7 @@ test.describe("finger tool", () => {
     const idBefore = await layerImageId(page);
     const hashBefore = await layerHash(page);
     const past = (await editor(page)).past;
-    await page.keyboard.press("f");
+    await page.keyboard.press("r");
     await expect(page.getByTestId("finger-panel")).toBeVisible();
     await setStyle(page, { size: 20, strength: 100, softness: 0 });
 

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { KeyInfo, resolveShortcut } from "@/features/shortcuts/shortcuts";
+import { KeyInfo, PRESETS, PRESET_ALIASES, resolveShortcut as resolveWith } from "@/features/shortcuts/shortcuts";
+
+/** these tests describe the previous layout (the "이전 기본값" preset); the Photoshop preset has its own tests in shortcut-presets.test.ts */
+const resolveShortcut = (e: KeyInfo) => resolveWith(e, PRESETS.legacy, PRESET_ALIASES.legacy);
 
 const key = (k: string, over: Partial<KeyInfo> = {}): KeyInfo => ({ key: k, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...over });
 const ctrl = (k: string, over: Partial<KeyInfo> = {}) => key(k, { ctrlKey: true, ...over });

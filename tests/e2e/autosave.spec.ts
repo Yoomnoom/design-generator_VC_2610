@@ -197,7 +197,7 @@ test.describe("restoring", () => {
     await page.reload();
     await autosaveReady(page);
     await expect(page.getByTestId("restore-dialog")).toBeVisible();
-    await page.keyboard.press("r");
+    await page.keyboard.press("m");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("restore-dialog")).toBeVisible(); // Escape does not dismiss it
     await expect(page.getByRole("button", { name: "영역 추출", exact: true })).toBeDisabled(); // and there is no project to work on yet

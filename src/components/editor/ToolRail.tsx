@@ -33,7 +33,13 @@ const ACTION_OF: Partial<Record<Tool, ConfigurableAction>> = { select: "tool-sel
 /** the tool's tooltip with the key the user has set (the texts above end in the default key, which is replaced) */
 const titleWith = (t: { id: Tool; title: string }, bindings: ReturnType<typeof useBindings>) => {
   const a = ACTION_OF[t.id];
-  return a ? `${t.title.replace(/\s*\([A-Za-z]\)$/, "")} (${formatBinding(bindings[a])})` : t.title;
+  if (!a) return t.title;
+  const base = t.title.replace(/\s*\((?:[A-Za-z]|[A-Za-z]\+[A-Za-z])\)$/, "");
+  const own = bindings[a];
+  if (own) return `${base} (${formatBinding(own)})`;
+  // a tool with no key of its own: the shape tools share one cycle key
+  if ((t.id === "line" || t.id === "box" || t.id === "ellipse") && bindings["tool-shape"]) return `${base} (${formatBinding(bindings["tool-shape"])}를 반복해서 누르면 선 → 사각형 → 원)`;
+  return `${base} (단축키 없음: 도구 막대에서 선택)`;
 };
 
 export default function ToolRail({ enabled }: { enabled: boolean }) {

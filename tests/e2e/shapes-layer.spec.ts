@@ -58,7 +58,7 @@ test.describe("a shape is a layer like the others", () => {
     await dragClient(page, c, { x: c.x + 50, y: c.y + 30 });
     expect((await vector(page)).transform).toMatchObject({ x: 650, y: 530 });
 
-    await page.keyboard.press("Control+d");
+    await page.keyboard.press("Control+j");
     expect((await editor(page)).layers).toHaveLength(2);
     expect((await editor(page)).layers[1].transform).toMatchObject({ x: 666, y: 546 });
     await page.keyboard.press("Delete");
@@ -181,16 +181,16 @@ test.describe("with the rest of the app", () => {
     await expect(page.getByTestId("vec-stroke")).toBeDisabled();
   });
 
-  test("L, M, O and I pick the tools, and are ignored while typing in a field", async ({ page }) => {
+  test("U cycles line, rectangle, ellipse; I picks the eyedropper; the keys are ignored while typing in a field", async ({ page }) => {
     await setup(page);
-    for (const [key, name] of [["l", "선"], ["m", "사각형"], ["o", "원"], ["i", "스포이트"]] as const) {
+    for (const [key, name] of [["u", "선"], ["u", "사각형"], ["u", "원"], ["u", "선"], ["i", "스포이트"]] as const) {
       await page.keyboard.press(key);
       await expect(page.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
     }
-    await page.keyboard.press("m");
+    await page.keyboard.press("u");
     await page.getByTestId("draw-width").focus();
-    await page.keyboard.type("lo");
-    await expect(page.getByRole("button", { name: "사각형", exact: true })).toHaveAttribute("aria-pressed", "true"); // typing "lo" did not switch tools
+    await page.keyboard.type("uo");
+    await expect(page.getByRole("button", { name: "선", exact: true })).toHaveAttribute("aria-pressed", "true"); // typing "uo" did not switch tools
   });
 
   test("Ctrl+C on a shape puts its picture on the clipboard and Ctrl+V pastes it back as a shape, not as a bitmap", async ({ page, context }) => {
