@@ -228,6 +228,9 @@ type EditorActions = {
   /** while an effect slider is dragged: shown on the canvas, no history */
   effectsPreview: { layerId: string; effects: LayerEffects } | null;
   setEffectsPreview(preview: { layerId: string; effects: LayerEffects } | null): void;
+  /** the grid: shown over the page while editing (never in the PNG), and optionally a drag lands on its lines. Editing aids only; not saved. */
+  grid: { on: boolean; size: number; snap: boolean };
+  setGrid(change: Partial<{ on: boolean; size: number; snap: boolean }>): void;
   /** layer opacity 0..1 (one undo step; a locked layer or comparing refuses) */
   setLayerOpacity(layerId: string, opacity: number): boolean;
   /** while the opacity slider is dragged: shown on the canvas, no history */
@@ -592,6 +595,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         layerClipboard: null, // it points at bitmaps of the project that was just replaced
       selectionAnchor: null,
       cornerPreview: null,
+      grid: { on: false, size: 16, snap: false },
       opacityPreview: null,
       effectsPreview: null,
       freeTransform: false,
@@ -626,6 +630,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
       snapEnabled: true,
       selectionAnchor: null,
       cornerPreview: null,
+      grid: { on: false, size: 16, snap: false },
       opacityPreview: null,
       effectsPreview: null,
       freeTransform: false,
@@ -1165,6 +1170,12 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         const screen = screenOf();
         if (!screen) return 0;
         return mergeInto(screen.layers, "전체 병합");
+      },
+
+      setGrid(change) {
+        const next = { ...get().grid, ...change };
+        const size = Number.isFinite(next.size) ? Math.min(Math.max(Math.round(next.size), 2), 512) : 16;
+        set({ grid: { on: !!next.on, snap: !!next.snap, size } });
       },
 
       setEffectsPreview: (effectsPreview) => set({ effectsPreview }),

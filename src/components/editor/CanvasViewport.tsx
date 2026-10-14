@@ -411,6 +411,7 @@ export default function CanvasViewport() {
   // free transform: one box around the selection (always with two or more layers; for one layer only when switched on)
   const freeTransform = useEditorStore((s) => s.freeTransform);
   const ftPreview = useEditorStore((s) => s.ftPreview);
+  const grid = useEditorStore((s) => s.grid);
   const opacityPreview = useEditorStore((s) => s.opacityPreview);
   const effectsPreview = useEditorStore((s) => s.effectsPreview);
   const previewOf = (l0: BitmapLayer): BitmapLayer => {
@@ -473,6 +474,11 @@ export default function CanvasViewport() {
         y += r.dy;
         guides = r.guides;
       }
+    }
+    if (st.grid.on && st.grid.snap) {
+      // the layer's top-left corner lands on a grid line (the grid's own snap, apart from the line snap above)
+      x = Math.round(x / st.grid.size) * st.grid.size;
+      y = Math.round(y / st.grid.size) * st.grid.size;
     }
     x = Math.round(x);
     y = Math.round(y);
@@ -717,6 +723,16 @@ export default function CanvasViewport() {
                     }}
                   />
                 )}
+                {grid.on && screen && compare !== "original" && (() => {
+                  // the grid over the page: lines at multiples of its size (at most a few hundred, so a fine grid is skipped when zoomed far out)
+                  const step = grid.size;
+                  const nx = Math.floor(screen.width / step), ny = Math.floor(screen.height / step);
+                  if (nx + ny > 600) return null;
+                  const lines = [];
+                  for (let i = 1; i <= nx; i++) lines.push(<Line key={`gx${i}`} points={[screen.x + i * step, screen.y, screen.x + i * step, screen.y + screen.height]} stroke="rgba(79,70,229,0.35)" strokeWidth={1} strokeScaleEnabled={false} listening={false} />);
+                  for (let j = 1; j <= ny; j++) lines.push(<Line key={`gy${j}`} points={[screen.x, screen.y + j * step, screen.x + screen.width, screen.y + j * step]} stroke="rgba(79,70,229,0.35)" strokeWidth={1} strokeScaleEnabled={false} listening={false} />);
+                  return <>{lines}</>;
+                })()}
                 {ring && (tool === "finger" || tool === "liquify") && !comparing && (() => {
                   // the brush ring: its radius in the layer's own pixels, shown in frame pixels through the layer's scale
                   const target = layers.find((l) => l.id === selectedId);
@@ -804,6 +820,21 @@ export default function CanvasViewport() {
             <input data-testid="snap-toggle" type="checkbox" checked={snapEnabled} onChange={(e) => editorStore.getState().setSnapEnabled(e.target.checked)} />
             스냅
           </label>
+          <label className="flex cursor-pointer items-center gap-1 border-l border-[var(--line)] pl-2 text-xs" title="격자를 화면 위에 보입니다 (PNG에는 들어가지 않습니다)">
+            <input data-testid="grid-toggle" type="checkbox" checked={grid.on} onChange={(e) => editorStore.getState().setGrid({ on: e.target.checked })} />
+            격자
+          </label>
+          {grid.on && (
+            <>
+              <select data-testid="grid-size" aria-label="격자 간격" value={grid.size} onChange={(e) => editorStore.getState().setGrid({ size: Number(e.target.value) })} className="rounded border border-[var(--line)] bg-white px-1 text-xs">
+                {[8, 16, 32, 64, 100].map((n) => <option key={n} value={n}>{n}px</option>)}
+              </select>
+              <label className="flex cursor-pointer items-center gap-1 text-xs" title="끌 때 레이어의 왼쪽 위 모서리가 격자 선에 붙습니다">
+                <input data-testid="grid-snap" type="checkbox" checked={grid.snap} onChange={(e) => editorStore.getState().setGrid({ snap: e.target.checked })} />
+                격자 스냅
+              </label>
+            </>
+          )}
           <button className="btn mini" onClick={() => hasSize && editorStore.getState().setView(fitView(size, screen))}>화면 맞춤</button>
         </div>
       )}
