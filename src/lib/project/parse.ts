@@ -51,6 +51,21 @@ export function contentError(c: unknown): string | null {
 }
 const isRect = (v: unknown): v is Rect => isRec(v) && isNum(v.x) && isNum(v.y) && isNum(v.width) && isNum(v.height) && v.width >= 0 && v.height >= 0;
 
+const isHex = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
+const inRange = (v: unknown, lo: number, hi: number): v is number => typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi;
+/** the effects of a layer: only known effects, each with valid values */
+export function effectsError(e: unknown): string | null {
+  if (!isRec(e)) return "effects가 객체가 아닙니다";
+  for (const k of Object.keys(e)) if (!["shadow", "stroke", "overlay"].includes(k)) return `effects.${k}는 알 수 없는 효과입니다`;
+  const s = e.shadow;
+  if (s !== undefined && !(isRec(s) && typeof s.on === "boolean" && isHex(s.color) && inRange(s.dx, -500, 500) && inRange(s.dy, -500, 500) && inRange(s.blur, 0, 100) && inRange(s.opacity, 0, 1))) return "effects.shadow가 올바르지 않습니다";
+  const st = e.stroke;
+  if (st !== undefined && !(isRec(st) && typeof st.on === "boolean" && isHex(st.color) && inRange(st.width, 0, 60) && (st.position === "outside" || st.position === "inside" || st.position === "center"))) return "effects.stroke가 올바르지 않습니다";
+  const o = e.overlay;
+  if (o !== undefined && !(isRec(o) && typeof o.on === "boolean" && isHex(o.color) && inRange(o.opacity, 0, 1))) return "effects.overlay가 올바르지 않습니다";
+  return null;
+}
+
 function layerError(l: unknown, i: number): string | null {
   const at = `layers[${i}]`;
   if (!isRec(l)) return `${at}가 객체가 아닙니다`;
@@ -69,6 +84,10 @@ function layerError(l: unknown, i: number): string | null {
     if (e) return `${at}.${e}`;
   }
   if (l.blend !== undefined && !(BLEND_MODES as unknown[]).includes(l.blend)) return `${at}.blend가 올바르지 않습니다`;
+  if (l.effects !== undefined) {
+    const e = effectsError(l.effects);
+    if (e) return `${at}.${e}`;
+  }
   const t = l.transform;
   if (!isRec(t) || !isNum(t.x) || !isNum(t.y)) return `${at}.transform이 올바르지 않습니다`;
   if (!isNum(t.scaleX) || !isNum(t.scaleY) || t.scaleX === 0 || t.scaleY === 0 || Math.abs(t.scaleX) > MAX_ABS_SCALE || Math.abs(t.scaleY) > MAX_ABS_SCALE) return `${at}.transform의 scale이 올바르지 않습니다`;

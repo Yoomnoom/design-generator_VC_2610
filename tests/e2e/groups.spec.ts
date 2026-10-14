@@ -196,7 +196,7 @@ test.describe("groups", () => {
     await groupAB(page, ids);
     expect((await exportPngBytes(page)).equals(plain)).toBe(true);
     const file = await saveProjectFile(page);
-    expect(JSON.parse(file).project.version).toBe(10);
+    expect(JSON.parse(file).project.version).toBe(11);
     expect(JSON.parse(file).project.screens[0].groups).toHaveLength(1);
     const before = await page.getByTestId("autosave-status").getAttribute("data-saved-at").then(Number);
     await openProjectFile(page, file);

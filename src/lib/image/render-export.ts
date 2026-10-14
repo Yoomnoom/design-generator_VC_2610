@@ -1,7 +1,8 @@
 import { LayerTransform, cosSin, isOnlyMoved, layerBounds } from "../geometry/layer-transform";
-import { BackgroundPatch, BlendMode, LayerWarp } from "../project/schema";
+import { BackgroundPatch, BlendMode, LayerEffects, LayerWarp } from "../project/schema";
 import { hexToRgb } from "./color";
 import { RawImage, createRawImage } from "./raw-image";
+import { applyEffects, effectMargin, hasEffects } from "./layer-effects";
 import { isIdentityWarp } from "./warp";
 import { rasterizeWarped } from "./warp-raster";
 
@@ -19,6 +20,8 @@ export type RenderLayer = {
   opacity: number;
   /** how it mixes with what is below; absent = normal */
   blend?: BlendMode;
+  /** drop shadow, outline, colour overlay: computed from the layer's own pixels (they may reach beyond the layer) */
+  effects?: LayerEffects;
   visible: boolean;
 };
 
@@ -52,12 +55,44 @@ export function renderComposite({ width, height, source, patches, layers }: Rend
     .filter(({ layer }) => layer.visible)
     .sort((a, b) => a.layer.zIndex - b.layer.zIndex || a.i - b.i);
   for (const { layer } of ordered) {
-    const t: LayerTransform = { x: layer.x, y: layer.y, scaleX: layer.scaleX ?? 1, scaleY: layer.scaleY ?? 1, rotation: layer.rotation ?? 0 };
-    if (layer.warp && !isIdentityWarp(layer.warp, layer.image.width, layer.image.height)) drawWarped(out, layer, t, layer.warp);
-    else if (isOnlyMoved(t)) drawMoved(out, layer);
-    else drawTransformed(out, layer, t);
+    if (hasEffects(layer.effects)) {
+      // the layer with its effects is one picture (the effects may reach beyond the layer), laid on the page like a moved layer
+      const tile = layerEffectTile(layer, { width, height });
+      if (tile) drawMoved(out, { ...layer, image: tile.image, x: tile.x, y: tile.y, scaleX: undefined, scaleY: undefined, rotation: undefined, warp: undefined, effects: undefined });
+    } else drawLayer(out, layer);
   }
   return out;
+}
+
+/** one layer onto `out`, by the rule for a moved, a turned/scaled or a warped layer */
+function drawLayer(out: RawImage, layer: RenderLayer) {
+  const t: LayerTransform = { x: layer.x, y: layer.y, scaleX: layer.scaleX ?? 1, scaleY: layer.scaleY ?? 1, rotation: layer.rotation ?? 0 };
+  if (layer.warp && !isIdentityWarp(layer.warp, layer.image.width, layer.image.height)) drawWarped(out, layer, t, layer.warp);
+  else if (isOnlyMoved(t)) drawMoved(out, layer);
+  else drawTransformed(out, layer, t);
+}
+
+/** The layer drawn alone with its effects, as a picture and the whole-pixel place of its top-left corner on the page. The picture covers the
+ *  layer plus the room the effects need, cut to the page plus that room (nothing outside could reach the page). Null when nothing shows.
+ *  The screen uses this same function, so what is seen and what is saved cannot differ. */
+export function layerEffectTile(layer: RenderLayer, frame: { width: number; height: number }): { image: RawImage; x: number; y: number } | null {
+  const m = effectMargin(layer.effects);
+  const t: LayerTransform = { x: layer.x, y: layer.y, scaleX: layer.scaleX ?? 1, scaleY: layer.scaleY ?? 1, rotation: layer.rotation ?? 0 };
+  let bx: number, by: number, bw: number, bh: number;
+  if (layer.warp && !isIdentityWarp(layer.warp, layer.image.width, layer.image.height)) {
+    bx = -m; by = -m; bw = frame.width + 2 * m; bh = frame.height + 2 * m; // a warped layer: the whole page is the safe bound
+  } else if (isOnlyMoved(t)) {
+    bx = Math.round(t.x); by = Math.round(t.y); bw = layer.image.width; bh = layer.image.height;
+  } else {
+    const b = layerBounds(t, layer.image.width, layer.image.height);
+    bx = Math.floor(b.x); by = Math.floor(b.y); bw = Math.ceil(b.x + b.width) - bx; bh = Math.ceil(b.y + b.height) - by;
+  }
+  const x0 = Math.max(bx - m, -m), y0 = Math.max(by - m, -m);
+  const x1 = Math.min(bx + bw + m, frame.width + m), y1 = Math.min(by + bh + m, frame.height + m);
+  if (x1 <= x0 || y1 <= y0) return null;
+  const tile = createRawImage(x1 - x0, y1 - y0);
+  drawLayer(tile, { ...layer, x: layer.x - x0, y: layer.y - y0, opacity: 1, blend: undefined, effects: undefined }); // opacity and blend belong to the finished picture
+  return { image: applyEffects(tile, layer.effects), x: x0, y: y0 };
 }
 
 /** A warped layer: its pixels come from rasterizeWarped (the same function the screen uses), laid on whole pixels like a moved layer.

@@ -1,10 +1,24 @@
 import { ImageCodec } from "@/lib/image/codec";
 import { RawImage } from "@/lib/image/raw-image";
-import { renderComposite } from "@/lib/image/render-export";
+import { RenderLayer, renderComposite } from "@/lib/image/render-export";
 import { MemoOverlay, overlayMemos } from "@/lib/image/memo-raster";
 import { Rasterize, rasterizeVectorLayer } from "@/lib/image/vector-raster";
 import { Project } from "@/lib/project/schema";
 import { ImageCache } from "@/store/images";
+
+/** One layer as the renderer takes it: a vector layer drawn to a picture (hidden: null), a bitmap with its transform and warp. The PNG export and
+ *  the on-screen effect picture both start from this, so they cannot differ. */
+export function renderLayerOf(layer: Project["screens"][number]["layers"][number], images: ImageCache, frame: { width: number; height: number }, rasterize: Rasterize = rasterizeVectorLayer): RenderLayer | null {
+  if (layer.content) {
+    if (!layer.visible) return null;
+    const r = rasterize(layer.content, layer.transform, frame);
+    return r ? { image: r.image, x: r.x, y: r.y, zIndex: layer.zIndex, opacity: layer.opacity, blend: layer.blend, effects: layer.effects, visible: true } : null;
+  }
+  const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
+  if (!image) throw new Error(`레이어 "${layer.name}"의 이미지가 로드되어 있지 않습니다`);
+  const { x, y, scaleX, scaleY, rotation } = layer.transform;
+  return { image, x, y, scaleX, scaleY, rotation, warp: layer.warp, zIndex: layer.zIndex, opacity: layer.opacity, blend: layer.blend, effects: layer.effects, visible: layer.visible };
+}
 
 /** The finished screen as pixels: source, patches, then every visible layer. The size is the screen's, nothing else. Vector layers
  *  are rasterised here and only here, so a project never stores their pixels. Used by the PNG export and by the colour picker. */
@@ -14,15 +28,8 @@ export function renderProjectRaw(project: Project, images: ImageCache, rasterize
   if (!source) throw new Error("원본 이미지가 로드되어 있지 않습니다");
 
   const layers = screen.layers.flatMap((layer) => {
-    if (layer.content) {
-      if (!layer.visible) return [];
-      const r = rasterize(layer.content, layer.transform, { width: screen.width, height: screen.height });
-      return r ? [{ image: r.image, x: r.x, y: r.y, zIndex: layer.zIndex, opacity: layer.opacity, blend: layer.blend, visible: true }] : [];
-    }
-    const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
-    if (!image) throw new Error(`레이어 "${layer.name}"의 이미지가 로드되어 있지 않습니다`);
-    const { x, y, scaleX, scaleY, rotation } = layer.transform;
-    return [{ image, x, y, scaleX, scaleY, rotation, warp: layer.warp, zIndex: layer.zIndex, opacity: layer.opacity, blend: layer.blend, visible: layer.visible }];
+    const r = renderLayerOf(layer, images, { width: screen.width, height: screen.height }, rasterize);
+    return r ? [r] : [];
   });
 
   return renderComposite({ width: screen.width, height: screen.height, source, patches: screen.backgroundPatches, layers });

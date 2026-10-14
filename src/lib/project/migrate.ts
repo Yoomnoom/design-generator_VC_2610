@@ -40,6 +40,8 @@ const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
   8: (doc) => doc,
   /** 9 -> 10: `blend` is new and optional (a layer without it is normal), so every version 9 file is already a valid version 10 file. */
   9: (doc) => doc,
+  /** 10 -> 11: `effects` is new and optional (a layer without it has none), so every version 10 file is already a valid version 11 file. */
+  10: (doc) => doc,
 };
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };

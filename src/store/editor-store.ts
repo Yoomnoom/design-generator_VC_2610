@@ -24,6 +24,8 @@ import { MIN_GROUP_SIZE, expandToGroups, nextGroupName, panelRows, pruneGroups, 
 import { LIQUIFY_MODES, LiquifyMode, MAX_LIQUIFY_SIZE, MIN_LIQUIFY_SIZE } from "@/lib/image/liquify";
 import { BLANK_FILE, checkCanvasSize, isGeneratedPage } from "@/lib/project/blank";
 import { createRawImage } from "@/lib/image/raw-image";
+import { effectsError } from "@/lib/project/parse";
+import { LayerEffects } from "@/lib/project/schema";
 import { BLEND_MODES, BlendMode, BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode, MAX_GROUPS, MAX_GROUP_NAME } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
@@ -205,6 +207,11 @@ type EditorActions = {
   /** what the dragged free-transform handle would do, shown on the canvas without any history; null when nothing is being dragged */
   ftPreview: Record<string, LayerResult> | null;
   setFreeTransformPreview(op: FreeOp | null): void;
+  /** drop shadow, outline and colour overlay of a layer (null removes them all); one undo step. A locked layer, comparing or invalid values refuse. */
+  setLayerEffects(layerId: string, effects: LayerEffects | null): boolean;
+  /** while an effect slider is dragged: shown on the canvas, no history */
+  effectsPreview: { layerId: string; effects: LayerEffects } | null;
+  setEffectsPreview(preview: { layerId: string; effects: LayerEffects } | null): void;
   /** layer opacity 0..1 (one undo step; a locked layer or comparing refuses) */
   setLayerOpacity(layerId: string, opacity: number): boolean;
   /** while the opacity slider is dragged: shown on the canvas, no history */
@@ -317,6 +324,8 @@ export type EditorStoreOptions = { /** bytes the replaced bitmaps may take (see 
 export const NUDGE_MERGE_MS = 600;
 
 export const selectProject = (s: EditorState) => s.history?.present ?? null;
+/** any effect object at all (even switched off: the values are kept) */
+const hasAnyEffect = (e: LayerEffects) => !!(e.shadow || e.stroke || e.overlay);
 export const selectScreen = (s: EditorState): ScreenNode | null => s.history?.present.screens[0] ?? null;
 export const selectCanUndo = (s: EditorState) => !!s.history && canUndo(s.history);
 export const selectCanRedo = (s: EditorState) => !!s.history && canRedo(s.history);
@@ -497,6 +506,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       selectionAnchor: null,
       cornerPreview: null,
       opacityPreview: null,
+      effectsPreview: null,
       freeTransform: false,
       ftPreview: null,
       collapsedGroups: [],
@@ -530,6 +540,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       selectionAnchor: null,
       cornerPreview: null,
       opacityPreview: null,
+      effectsPreview: null,
       freeTransform: false,
       ftPreview: null,
       collapsedGroups: [],
@@ -953,6 +964,20 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         if (layer.opacity === v) return false;
         return editLayer(layerId, "불투명도 변경", (l) => {
           l.opacity = v;
+        });
+      },
+
+      setEffectsPreview: (effectsPreview) => set({ effectsPreview }),
+
+      setLayerEffects(layerId, effects) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer || layer.locked) return false;
+        if (effects !== null && effectsError(effects)) return false;
+        const next = effects && hasAnyEffect(effects) ? effects : null;
+        if (JSON.stringify(layer.effects ?? null) === JSON.stringify(next)) return false;
+        return editLayer(layerId, "레이어 효과", (l) => {
+          if (next) l.effects = JSON.parse(JSON.stringify(next));
+          else delete l.effects;
         });
       },
 

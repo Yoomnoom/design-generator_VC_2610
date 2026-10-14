@@ -8,8 +8,9 @@
  *  7: `warp` on a bitmap layer: skew, perspective, distortion and mesh warping, stored as control points (Phase 2).
  *  8: `groups` on a screen and `groupId` on a layer: layers that are selected and moved as one (one level, no nesting).
  *  9: `cornerRadius` on a rectangle layer's content: rounded corners (absent = square, as in every earlier file).
- *  10: `blend` on a layer: how it mixes with what is below it (absent = normal, as in every earlier file). */
-export const CURRENT_VERSION = 10 as const;
+ *  10: `blend` on a layer: how it mixes with what is below it (absent = normal, as in every earlier file).
+ *  11: `effects` on a layer: drop shadow, outline and colour overlay, as values (absent = none, as in every earlier file). */
+export const CURRENT_VERSION = 11 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -48,6 +49,12 @@ export type LayerWarp = WarpQuad | WarpMesh;
 export type BlendMode = "multiply" | "screen" | "overlay" | "darken" | "lighten";
 export const BLEND_MODES: BlendMode[] = ["multiply", "screen", "overlay", "darken", "lighten"];
 
+/** Layer effects, computed from the layer's own pixels (see lib/image/layer-effects.ts). Each effect keeps its values when switched off. */
+export type ShadowEffect = { on: boolean; color: string; dx: number; dy: number; blur: number; opacity: number };
+export type StrokeEffect = { on: boolean; color: string; width: number; position: "outside" | "inside" | "center" };
+export type OverlayEffect = { on: boolean; color: string; opacity: number };
+export type LayerEffects = { shadow?: ShadowEffect; stroke?: StrokeEffect; overlay?: OverlayEffect };
+
 export type BitmapLayer = {
   id: string;
   name: string;
@@ -63,6 +70,8 @@ export type BitmapLayer = {
   groupId?: string;
   /** absent = normal (and in every file before version 10) */
   blend?: BlendMode;
+  /** absent = no effects (and in every file before version 11) */
+  effects?: LayerEffects;
   /** Where the bitmap is placed. A bitmap pixel p lands at  T(x, y) · R(rotation) · S(scaleX, scaleY) · p,
    *  in frame pixels (original-image pixels, y down). So (x, y) is where the bitmap's top-left corner goes and is the
    *  centre of rotation; rotation is in degrees, clockwise on screen. */

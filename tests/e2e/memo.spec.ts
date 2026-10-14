@@ -363,7 +363,7 @@ test.describe("saved, restored, and old files", () => {
     await autosaveReady(page);
     await waitForAutosave(page);
     const text = await saveProjectFile(page);
-    expect(JSON.parse(text).project.version).toBe(10);
+    expect(JSON.parse(text).project.version).toBe(11);
     expect(JSON.parse(text).project.screens[0].memos).toEqual(saved);
 
     await reloadAndDiscard(page);
@@ -389,7 +389,7 @@ test.describe("saved, restored, and old files", () => {
     await zoomTo(page, 1, AT.x, AT.y);
     await memoWith(page, AT, "added to an old file");
     const file = JSON.parse(await saveProjectFile(page));
-    expect(file.project.version).toBe(10);
+    expect(file.project.version).toBe(11);
     expect(file.project.screens[0].memos).toHaveLength(1);
     expect(file.project.screens[0].layers).toHaveLength(4);
   });

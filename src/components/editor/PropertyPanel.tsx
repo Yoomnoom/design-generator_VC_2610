@@ -8,7 +8,7 @@ import { BitmapLayer, LayerContent, TextContent } from "@/lib/project/schema";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE } from "@/lib/image/text-layout";
 import { SHAPE_LABEL, maxCornerRadius } from "@/lib/image/vector";
 import { ColorField, WidthField } from "./StyleFields";
-import { AlignButtons, BlendSelect, FlipButtons, OpacityField } from "./LayerToolsPanel";
+import { AlignButtons, BlendSelect, EffectsFields, FlipButtons, OpacityField } from "./LayerToolsPanel";
 import { canStretch, selectionBox } from "@/features/free-transform/free-transform";
 import { ImageCache } from "@/store/images";
 import { useBindings } from "@/features/shortcuts/shortcut-store";
@@ -318,6 +318,7 @@ export default function PropertyPanel() {
           <OpacityField layer={layer} disabled={comparing || layer.locked} />
           <BlendSelect layer={layer} disabled={comparing || layer.locked} />
           <FlipButtons layer={layer} disabled={comparing || layer.locked} />
+          <EffectsFields layer={layer} disabled={comparing || layer.locked} />
           <AlignButtons disabled={comparing || layer.locked} />
         </div>
         <dl className="m-0 grid grid-cols-2 gap-[7px]">

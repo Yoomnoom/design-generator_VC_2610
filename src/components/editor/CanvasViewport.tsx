@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { effectTileFor } from "./effect-tile";
+import { hasEffects } from "@/lib/image/layer-effects";
 import type Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { Circle, Image as KImage, Layer, Line, Rect, Shape, Stage, Text, Transformer } from "react-konva";
@@ -410,8 +412,10 @@ export default function CanvasViewport() {
   const freeTransform = useEditorStore((s) => s.freeTransform);
   const ftPreview = useEditorStore((s) => s.ftPreview);
   const opacityPreview = useEditorStore((s) => s.opacityPreview);
+  const effectsPreview = useEditorStore((s) => s.effectsPreview);
   const previewOf = (l0: BitmapLayer): BitmapLayer => {
-    const l = opacityPreview?.layerId === l0.id ? { ...l0, opacity: opacityPreview.opacity } : l0; // the opacity slider is being dragged
+    const l1 = opacityPreview?.layerId === l0.id ? { ...l0, opacity: opacityPreview.opacity } : l0; // the opacity slider is being dragged
+    const l = effectsPreview?.layerId === l0.id ? { ...l1, effects: effectsPreview.effects } : l1; // an effect value is being dragged
     return ftPreview?.[l.id] ? { ...l, transform: ftPreview[l.id].transform, ...(ftPreview[l.id].content ? { content: ftPreview[l.id].content } : {}) } : l;
   };
   const ftOn = screen && tool === "select" && compare === "off" && (selectedIds.length >= 2 || (freeTransform && selectedIds.length >= 1));
@@ -556,7 +560,12 @@ export default function CanvasViewport() {
                     <KImage image={originalCanvas} x={originalX} y={screen.y} width={screen.width} height={screen.height} listening={false} />
                   </>
                 )}
-                {layers.map((layer) => {
+                {layers.map((baseLayer) => {
+                  const layer = previewOf(baseLayer); // what a drag of a handle or slider would make, shown before anything is recorded
+                  // a layer with effects is drawn as ONE picture (the layer with its effects), made by the same function as the PNG; its own node stays
+                  // for clicking, dragging and the handles, but draws nothing
+                  const fx = screen && hasEffects(layer.effects) && !comparing ? effectTileFor(layer, images, { width: screen.width, height: screen.height }) : null;
+                  const node = (() => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
                   // while the radius slider is dragged the shape shows the value at once (nothing is in the history yet)
                   const content = layer.content?.kind === "rect" && cornerPreview?.layerId === layer.id ? { ...layer.content, cornerRadius: cornerPreview.cornerRadius } : layer.content;
@@ -571,8 +580,8 @@ export default function CanvasViewport() {
                     scaleX: layer.transform.scaleX,
                     scaleY: layer.transform.scaleY,
                     rotation: layer.transform.rotation,
-                    opacity: layer.opacity,
-                    globalCompositeOperation: (layer.blend ?? "source-over") as GlobalCompositeOperation, // the blend mode: the canvas mixes it the way the export does
+                    opacity: fx ? 0 : layer.opacity,
+                    globalCompositeOperation: (fx ? "source-over" : layer.blend ?? "source-over") as GlobalCompositeOperation, // the blend mode: the canvas mixes it the way the export does
                     visible: layer.visible && compare !== "original", // a hidden layer is neither drawn nor clickable; the original has no layers
                     draggable: movable && !layer.locked && !comparing,
                     listening: movable && layer.visible && !comparing,
@@ -613,6 +622,15 @@ export default function CanvasViewport() {
                     return <WarpedShape key={layer.id} image={finger?.layerId === layer.id ? finger.raw : image!} rev={finger?.layerId === layer.id ? finger.rev : 0} warp={warp} placement={layer.transform} frame={{ x: -Math.round(at.x), y: -Math.round(at.y), width: screen.width, height: screen.height }} dragging={warpPreview?.layerId === layer.id || finger?.layerId === layer.id} {...shared} x={screen.x + Math.round(at.x)} y={screen.y + Math.round(at.y)} />;
                   }
                   return <KImage key={layer.id} image={finger?.layerId === layer.id ? finger.canvas : rawToCanvas(image!)} width={image!.width} height={image!.height} {...shared} />;
+                })();
+                  if (!fx || !node) return node;
+                  const off = placedAt(layer);
+                  return (
+                    <Fragment key={layer.id}>
+                      <KImage image={fx.canvas} x={screen.x + fx.x + (off.x - layer.transform.x)} y={screen.y + fx.y + (off.y - layer.transform.y)} width={fx.width} height={fx.height} opacity={layer.opacity} globalCompositeOperation={(layer.blend ?? "source-over") as GlobalCompositeOperation} visible={layer.visible && compare !== "original"} listening={false} />
+                      {node}
+                    </Fragment>
+                  );
                 })}
                 {layers.map((baseLayer) => {
                   const layer = previewOf(baseLayer);

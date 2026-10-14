@@ -223,7 +223,7 @@ describe("the file format: warp (version 7)", () => {
     const before = JSON.parse(v6).project;
     const r = await loadProjectText(v6, { blobs: await openBlobStore("v6", new IDBFactory()), codec: pngCodec() });
     if (!r.ok) throw new Error(r.error);
-    expect(r.project.version).toBe(10);
+    expect(r.project.version).toBe(11);
     expect(r.project.screens[0].layers).toEqual(before.screens[0].layers);
     expect(r.project.screens[0].memos).toEqual(before.screens[0].memos);
     expect(migrate(before).ok).toBe(true);
