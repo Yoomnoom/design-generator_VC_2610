@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
-import { Image as KImage, Layer, Line, Rect, Shape, Stage, Text, Transformer } from "react-konva";
+import { Circle, Image as KImage, Layer, Line, Rect, Shape, Stage, Text, Transformer } from "react-konva";
 import { layerBox } from "@/features/snap/layer-box";
 import { BitmapLayer } from "@/lib/project/schema";
 import { Box, SNAP_SCREEN_PIXELS, snapMove, unionBox } from "@/features/snap/snap";
@@ -17,6 +17,7 @@ import { MAX_STROKE_POINTS } from "@/lib/image/brush-raster";
 import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
 import { Point, clientToImage, imageToClient } from "@/lib/geometry/coords";
+import { FreeOp, HandleKind, ROTATE_GAP, canStretch, handlePoint, minFactor, rotateFromDrag, scaleFromDrag, selectionBox } from "@/features/free-transform/free-transform";
 import { MARQUEE_MIN_SCREEN_DRAG, MarqueeMode, boxFromPoints, combineSelection, marqueeHits } from "@/features/marquee/marquee";
 import { selectionFromImagePoints } from "@/lib/geometry/rect";
 import { renderComposite } from "@/lib/image/render-export";
@@ -48,7 +49,9 @@ type Gesture =
   | { kind: "finger"; stroke: FingerStroke; imageData: ImageData; context: CanvasRenderingContext2D }
   | { kind: "pan"; startX: number; startY: number; panX: number; panY: number }
   /** a box selection started on an empty place with the select tool; `moved` once the pointer has gone a few screen pixels */
-  | { kind: "pick"; a: Point; startX: number; startY: number; moved: boolean };
+  | { kind: "pick"; a: Point; startX: number; startY: number; moved: boolean }
+  /** a drag of a free-transform handle: the selection box at the start, which handle, and what the layers allow */
+  | { kind: "ft"; handle: HandleKind; box: { x: number; y: number; width: number; height: number }; start: Point; stretch: boolean; min: number; op: FreeOp | null };
 
 /** The working canvas. Konva only draws. Every pointer position goes through lib/geometry/coords,
  *  so the rectangle you drag is computed in original-image pixels whatever the zoom, pan or devicePixelRatio. */
@@ -70,6 +73,10 @@ export default function CanvasViewport() {
       if (e.code === "Space" && !typing(e.target) && !document.querySelector('[role="dialog"][aria-modal="true"]')) {
         space.current = true;
         if (e.target === document.body || (e.target instanceof HTMLElement && containerRef.current?.contains(e.target))) e.preventDefault();
+      } else if (e.key === "Escape" && gesture.current?.kind === "ft") {
+        gesture.current = null; // Esc while dragging a handle: back to how it was, no history
+        editorStore.getState().setFreeTransformPreview(null);
+        e.stopPropagation();
       } else if (e.key === "Escape" && gesture.current?.kind === "pick") {
         // Esc cancels the box: nothing is selected or changed, and the other Esc meanings do not run
         gesture.current = null;
@@ -250,7 +257,17 @@ export default function CanvasViewport() {
       // included (it is never moved), starts a box selection.
       const stage = layerRef.current?.getStage();
       const r = containerRef.current!.getBoundingClientRect();
-      if (stage?.getIntersection({ x: e.clientX - r.left, y: e.clientY - r.top })) return;
+      const hitNode = stage?.getIntersection({ x: e.clientX - r.left, y: e.clientY - r.top });
+      const handleName = hitNode?.name() ?? "";
+      if (handleName.startsWith("ft-handle-") && ftBox) {
+        const chosen = layers.filter((l) => selectedIds.includes(l.id));
+        gesture.current = { kind: "ft", handle: handleName.slice("ft-handle-".length) as HandleKind, box: ftBox, start: toImage(e, v), stretch: canStretch(chosen), min: minFactor(chosen), op: null };
+      } else if (hitNode) return;
+      if (gesture.current?.kind === "ft") {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        return;
+      }
       gesture.current = { kind: "pick", a: toImage(e, v), startX: e.clientX, startY: e.clientY, moved: false };
       // preventing the default below also stops the browser from moving focus off a field or checkbox, so do that here (shortcuts need the page to have focus)
       if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) document.activeElement.blur();
@@ -282,7 +299,11 @@ export default function CanvasViewport() {
         else layerRef.current?.batchDraw();
       }
     } else if (g.kind === "shape") setShapeDrag({ a: g.a, b: roundPoint(toImage(e)) });
-    else if (g.kind === "pick") {
+    else if (g.kind === "ft") {
+      const p = toImage(e);
+      g.op = g.handle === "rotate" ? rotateFromDrag(g.box, g.start, p, e.shiftKey) : scaleFromDrag(g.box, g.handle, p, { shift: e.shiftKey, alt: e.altKey, stretch: g.stretch, min: g.min });
+      editorStore.getState().setFreeTransformPreview(g.op);
+    } else if (g.kind === "pick") {
       if (!g.moved && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < MARQUEE_MIN_SCREEN_DRAG) return;
       g.moved = true;
       const box = boxFromPoints(g.a, toImage(e));
@@ -295,6 +316,12 @@ export default function CanvasViewport() {
     const g = gesture.current;
     gesture.current = null;
     if (!g || !screen) return;
+    if (g.kind === "ft") {
+      const st = editorStore.getState();
+      if (commit && g.op) st.applyFreeTransform(g.op); // the whole drag is ONE undo step
+      else st.setFreeTransformPreview(null);
+      return;
+    }
     if (g.kind === "pick") {
       setPickDrag(null);
       const st = editorStore.getState();
@@ -349,6 +376,15 @@ export default function CanvasViewport() {
 
   const originalCanvas = useMemo(() => (sourceRaw ? rawToCanvas(sourceRaw) : null), [sourceRaw]);
   const layers = useMemo(() => (screen ? sortByZ(screen.layers) : []), [screen]);
+  // free transform: one box around the selection (always with two or more layers; for one layer only when switched on)
+  const freeTransform = useEditorStore((s) => s.freeTransform);
+  const ftPreview = useEditorStore((s) => s.ftPreview);
+  const previewOf = (l: BitmapLayer): BitmapLayer => (ftPreview?.[l.id] ? { ...l, transform: ftPreview[l.id].transform, ...(ftPreview[l.id].content ? { content: ftPreview[l.id].content } : {}) } : l);
+  const ftOn = screen && tool === "select" && compare === "off" && (selectedIds.length >= 2 || (freeTransform && selectedIds.length >= 1));
+  const ftSelected = ftOn ? layers.filter((l) => selectedIds.includes(l.id)) : [];
+  const ftSizes = (l: BitmapLayer) => (l.imageId ? images.get(l.imageId)?.raw : undefined);
+  const ftBox = ftOn ? selectionBox(ftSelected, ftSizes) : null;
+  const ftNow = ftBox && ftPreview ? selectionBox(ftSelected.map(previewOf), ftSizes) : null;
 
   // Dragging a selected layer drags the whole selection: the dragged layer's preview is in the store, the others follow by the same distance
   // (a locked one stays). Nothing is stored until the drop.
@@ -410,7 +446,7 @@ export default function CanvasViewport() {
   const transformerRef = useRef<Konva.Transformer>(null);
   const selected = layers.find((l) => l.id === selectedId);
   // a warped layer has no resize/rotate frame (its shape is not a rectangle); its panel fields and the warp tool change it
-  const showHandles = tool === "select" && !comparing && selectedIds.length === 1 && !!selected && selected.visible && !selected.locked && !selected.warp;
+  const showHandles = tool === "select" && !comparing && selectedIds.length === 1 && !freeTransform && !!selected && selected.visible && !selected.locked && !selected.warp;
   const warpTarget = tool === "warp" && !comparing && warpSession && selectedIds.length === 1 && selectedId === warpSession.layerId ? layers.find((l) => l.id === warpSession.layerId) : undefined;
   useEffect(() => {
     const tr = transformerRef.current;
@@ -513,7 +549,8 @@ export default function CanvasViewport() {
                   }
                   return <KImage key={layer.id} image={finger?.layerId === layer.id ? finger.canvas : rawToCanvas(image!)} width={image!.width} height={image!.height} {...shared} />;
                 })}
-                {layers.map((layer) => {
+                {layers.map((baseLayer) => {
+                  const layer = previewOf(baseLayer);
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
                   const box = layer.content ? { width: layer.content.width, height: layer.content.height } : image;
                   if (!box || !selectedIds.includes(layer.id) || !layer.visible || showHandles || comparing || layer.id === warpTarget?.id) return null; // with handles, their frame is the outline (the warp tool draws its own)
@@ -596,6 +633,19 @@ export default function CanvasViewport() {
                       c.restore();
                     }}
                   />
+                )}
+                {ftBox && (
+                  <>
+                    <Rect x={screen.x + ftBox.x} y={screen.y + ftBox.y} width={ftBox.width} height={ftBox.height} stroke={ACCENT} strokeWidth={1} strokeScaleEnabled={false} dash={[4, 3]} listening={false} />
+                    {ftNow && <Rect x={screen.x + ftNow.x} y={screen.y + ftNow.y} width={ftNow.width} height={ftNow.height} stroke="#ff3d81" strokeWidth={1} strokeScaleEnabled={false} dash={[2, 2]} listening={false} />}
+                    <Line points={[screen.x + ftBox.x + ftBox.width / 2, screen.y + ftBox.y, screen.x + ftBox.x + ftBox.width / 2, screen.y + ftBox.y - ROTATE_GAP / view.zoom]} stroke={ACCENT} strokeWidth={1} strokeScaleEnabled={false} listening={false} />
+                    <Circle name="ft-handle-rotate" x={screen.x + ftBox.x + ftBox.width / 2} y={screen.y + ftBox.y - ROTATE_GAP / view.zoom} radius={6 / view.zoom} fill="#fff" stroke={ACCENT} strokeWidth={1.5} strokeScaleEnabled={false} />
+                    {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const).map((h) => {
+                      const hp = handlePoint(ftBox, h);
+                      const hs = 9 / view.zoom;
+                      return <Rect key={h} name={`ft-handle-${h}`} x={screen.x + hp.x - hs / 2} y={screen.y + hp.y - hs / 2} width={hs} height={hs} fill="#fff" stroke={ACCENT} strokeWidth={1.5} strokeScaleEnabled={false} />;
+                    })}
+                  </>
                 )}
                 {pickDrag && (
                   <>

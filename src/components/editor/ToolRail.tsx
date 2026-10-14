@@ -39,6 +39,7 @@ const titleWith = (t: { id: Tool; title: string }, bindings: ReturnType<typeof u
 export default function ToolRail({ enabled }: { enabled: boolean }) {
   const active = useEditorStore((s) => s.activeTool);
   const bindings = useBindings();
+  const freeTransform = useEditorStore((s) => s.freeTransform);
   const plain = useEditorStore((s) => isGeneratedPage(selectScreen(s)?.source.fileName ?? ""));
   return (
     <nav aria-label="도구" className="overflow-auto border-r border-[var(--line)] bg-[var(--panel)] px-2 py-2.5">
@@ -48,6 +49,10 @@ export default function ToolRail({ enabled }: { enabled: boolean }) {
           <span>{t.label}</span>
         </button>
       ))}
+      <button className="tool" data-testid="rail-free-transform" aria-pressed={freeTransform} disabled={!enabled} title={`자유 변형: 선택한 레이어 전체를 감싸는 상자로 크기·회전을 한꺼번에 바꿉니다 (${formatBinding(bindings["free-transform"])})`} onClick={() => editorStore.getState().setFreeTransform(!freeTransform)}>
+        <b aria-hidden>⤢</b>
+        <span>자유 변형</span>
+      </button>
     </nav>
   );
 }

@@ -8,10 +8,86 @@ import { BitmapLayer, LayerContent, TextContent } from "@/lib/project/schema";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE } from "@/lib/image/text-layout";
 import { SHAPE_LABEL, maxCornerRadius } from "@/lib/image/vector";
 import { ColorField, WidthField } from "./StyleFields";
+import { canStretch, selectionBox } from "@/features/free-transform/free-transform";
+import { ImageCache } from "@/store/images";
+import { useBindings } from "@/features/shortcuts/shortcut-store";
+import { formatBinding } from "@/features/shortcuts/shortcuts";
+
 
 /** 240, 12.5, 33.33: whole numbers without decimals, others to at most two places */
 const fmt = (n: number) => String(Number(n.toFixed(2)));
 
+/** the button that turns the free-transform box on (for one layer; with two or more it is always shown) */
+export function FreeTransformButton({ disabled }: { disabled: boolean }) {
+  const on = useEditorStore((s) => s.freeTransform);
+  const key = formatBinding(useBindings()["free-transform"]);
+  return (
+    <button type="button" data-testid="ft-toggle" aria-pressed={on} disabled={disabled} className="btn mini w-full aria-pressed:bg-[var(--accent)] aria-pressed:text-white" title={`선택한 레이어 전체를 감싸는 변형 상자를 켜고 끕니다. 모서리·변은 크기, 위쪽 둥근 점은 회전입니다. Shift = 비율 유지, Alt = 중심 기준, Enter = 끝내기, Esc = 취소 (${key})`} onClick={() => editorStore.getState().setFreeTransform(!on)}>
+      자유 변형
+    </button>
+  );
+}
+
+/** X, Y, width, height (with a ratio lock) and a turn for the whole selection. Each entry is ONE free transform, one undo step. */
+export function FreeTransformFields({ layers, images, disabled }: { layers: BitmapLayer[]; images: ImageCache; disabled: boolean }) {
+  const box = selectionBox(layers, (l) => (l.imageId ? images.get(l.imageId)?.raw : undefined));
+  const stretch = canStretch(layers);
+  const [lock, setLock] = useState(true);
+  const [draft, setDraft] = useState({ x: "", y: "", w: "", h: "", rot: "0" });
+  const key = box ? `${box.x}|${box.y}|${box.width}|${box.height}` : "";
+  useEffect(() => {
+    if (box) setDraft({ x: String(Math.round(box.x * 100) / 100), y: String(Math.round(box.y * 100) / 100), w: String(Math.round(box.width * 100) / 100), h: String(Math.round(box.height * 100) / 100), rot: "0" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the box itself
+  }, [key]);
+  if (!box) return null;
+  const num = (s: string) => (s.trim() === "" || !Number.isFinite(Number(s)) ? null : Number(s));
+  const keepLocked = lock || !stretch;
+  const apply = (field: "x" | "y" | "w" | "h" | "rot") => {
+    const v = num(draft[field]);
+    const st = editorStore.getState();
+    const reset = () => setDraft((d) => ({ ...d, [field]: field === "rot" ? "0" : String(Math.round({ x: box.x, y: box.y, w: box.width, h: box.height }[field] * 100) / 100) }));
+    if (v === null) return reset();
+    if (field === "x") st.applyFreeTransform({ kind: "move", dx: v - box.x, dy: 0 });
+    else if (field === "y") st.applyFreeTransform({ kind: "move", dx: 0, dy: v - box.y });
+    else if (field === "rot") st.applyFreeTransform({ kind: "rotate", degrees: v, center: { x: box.x + box.width / 2, y: box.y + box.height / 2 } });
+    else if (v > 0) {
+      const f = field === "w" ? v / box.width : v / box.height;
+      st.applyFreeTransform({ kind: "scale", sx: field === "w" || keepLocked ? f : 1, sy: field === "h" || keepLocked ? f : 1, pivot: { x: box.x, y: box.y } });
+    }
+    reset();
+  };
+  const input = (field: "x" | "y" | "w" | "h" | "rot", label: string, unit: string) => (
+    <label className="flex items-center gap-1.5 text-xs">
+      <span className="w-9 shrink-0 text-[var(--muted)]">{label}</span>
+      <input
+        data-testid={`ft-${field}`}
+        inputMode="decimal"
+        disabled={disabled}
+        value={draft[field]}
+        onChange={(e) => setDraft({ ...draft, [field]: e.target.value })}
+        onBlur={() => apply(field)}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        className="min-w-0 flex-1 rounded border border-[var(--line)] bg-white px-1.5 py-1"
+      />
+      <span className="text-[var(--muted)]">{unit}</span>
+    </label>
+  );
+  return (
+    <div data-testid="ft-fields" className="mt-2 grid gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
+        {input("x", "X", "px")}
+        {input("y", "Y", "px")}
+        {input("w", "너비", "px")}
+        {input("h", "높이", "px")}
+      </div>
+      <label className="flex items-center gap-2 text-xs">
+        <input data-testid="ft-lock" type="checkbox" checked={keepLocked} disabled={disabled || !stretch} onChange={(e) => setLock(e.target.checked)} />
+        비율 잠금{!stretch ? " (기울어진 레이어가 있어 비율 유지로만 바뀝니다)" : ""}
+      </label>
+      {input("rot", "회전", "° 더하기")}
+    </div>
+  );
+}
 function Field({ label, value, id }: { label: string; value: string | number; id: string }) {
   return (
     <div className="rounded-[7px] border border-[var(--line)] bg-[#fafafa] px-2 py-1.5 text-[#555]">
@@ -216,8 +292,10 @@ export default function PropertyPanel() {
     return (
       <section aria-label="선택 레이어" data-testid="multi-panel" className="px-3.5 py-3">
         <h3 className="mb-2.5 text-[13px] font-bold">선택 레이어 {chosen.length}개</h3>
-        <p className="m-0 text-xs text-[var(--muted)]">이동과 삭제만 할 수 있습니다. 끌거나 방향키(Shift는 10px)로 함께 옮기고, Delete로 모두 지웁니다.</p>
-        <p className="mb-0 mt-2 text-xs text-[var(--muted)]">크기·회전·이름·복제·복사는 레이어를 하나만 선택했을 때 쓸 수 있습니다.</p>
+        <p className="m-0 text-xs text-[var(--muted)]">끌거나 방향키(Shift는 10px)로 함께 옮기고, Delete로 모두 지웁니다. 크기와 회전은 선택 전체를 감싸는 상자(자유 변형)로 바꿉니다.</p>
+        <div className="mt-2"><FreeTransformButton disabled={comparing} /></div>
+        <FreeTransformFields layers={chosen} images={images} disabled={comparing} />
+        <p className="mb-0 mt-2 text-xs text-[var(--muted)]">이름·복제·복사는 레이어를 하나만 선택했을 때 쓸 수 있습니다.</p>
         {locked > 0 && <p className="mb-0 mt-2 text-xs text-[#8a5a12]">잠긴 레이어 {locked}개는 함께 움직이지 않고 지워지지도 않습니다.</p>}
       </section>
     );
@@ -233,6 +311,7 @@ export default function PropertyPanel() {
     return (
       <section aria-label="선택 레이어" className="px-3.5 py-3">
         <h3 className="mb-2.5 text-[13px] font-bold">선택 레이어</h3>
+        <div className="mb-2"><FreeTransformButton disabled={comparing || layer.locked} /></div>
         <dl className="m-0 grid grid-cols-2 gap-[7px]">
           <div className="col-span-2">
             <NameField id={layer.id} name={layer.name} disabled={comparing} />

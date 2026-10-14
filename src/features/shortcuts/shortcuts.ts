@@ -1,4 +1,4 @@
-export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "tool-warp" | "tool-finger" | "select-all" | "tool-auto" | "candidate-extract" | "candidate-clear" | "nudge-left" | "nudge-right" | "nudge-up" | "nudge-down" | "group" | "ungroup";
+export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "tool-warp" | "tool-finger" | "select-all" | "tool-auto" | "candidate-extract" | "candidate-clear" | "nudge-left" | "nudge-right" | "nudge-up" | "nudge-down" | "group" | "ungroup" | "free-transform";
 
 export type KeyInfo = { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat?: boolean };
 
@@ -20,6 +20,7 @@ export const DEFAULT_BINDINGS: Bindings = {
   "select-all": b("a", { ctrl: true }),
   group: b("g", { ctrl: true }),
   ungroup: b("g", { ctrl: true, shift: true }),
+  "free-transform": b("t", { shift: true }),
   "nudge-left": b("ArrowLeft"),
   "nudge-right": b("ArrowRight"),
   "nudge-up": b("ArrowUp"),
@@ -52,6 +53,7 @@ export const ACTION_INFO: { id: ConfigurableAction; label: string; group: "편�
   { id: "select-all", label: "전체 선택", group: "선택·그룹" },
   { id: "group", label: "그룹 만들기", group: "선택·그룹" },
   { id: "ungroup", label: "그룹 해제", group: "선택·그룹" },
+  { id: "free-transform", label: "자유 변형 (선택 전체의 크기·회전 상자)", group: "선택·그룹" },
   { id: "nudge-left", label: "왼쪽으로 1px (Shift: 10px)", group: "이동" },
   { id: "nudge-right", label: "오른쪽으로 1px (Shift: 10px)", group: "이동" },
   { id: "nudge-up", label: "위로 1px (Shift: 10px)", group: "이동" },

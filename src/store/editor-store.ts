@@ -18,6 +18,7 @@ import { MESH_DEFAULT, MESH_MAX, MESH_MIN, identityQuad, isIdentityWarp, resizeM
 import { hexToRgb, normalizeHex } from "@/lib/image/color";
 import { RawImage } from "@/lib/image/raw-image";
 import { sampleBackground } from "@/lib/image/sample-background";
+import { FreeOp, LayerResult, applyFreeTransform as computeFreeTransform, transformable } from "@/features/free-transform/free-transform";
 import { MIN_GROUP_SIZE, expandToGroups, nextGroupName, panelRows, pruneGroups, rangeSelect, wholeGroupOf } from "@/features/groups/groups";
 import { BLANK_FILE, checkCanvasSize, isGeneratedPage } from "@/lib/project/blank";
 import { createRawImage } from "@/lib/image/raw-image";
@@ -181,6 +182,14 @@ type EditorActions = {
   /** Shift+click in the layer panel: every row from the anchor to this layer, in the panel's order (hidden and locked ones too) */
   selectRange(layerId: string): void;
   selectGroup(groupId: string): void;
+  /** the free-transform box is on for a single layer too (with two or more layers selected it is always shown) */
+  freeTransform: boolean;
+  setFreeTransform(on: boolean): void;
+  /** what the dragged free-transform handle would do, shown on the canvas without any history; null when nothing is being dragged */
+  ftPreview: Record<string, LayerResult> | null;
+  setFreeTransformPreview(op: FreeOp | null): void;
+  /** apply a free transform (scale, turn or move) to every selected layer that is not locked: ONE undo step. False with a notice when refused. */
+  applyFreeTransform(op: FreeOp): boolean;
   /** the selection is exactly these layers (ids that are not in the screen are dropped): the result of a box selection */
   setLayerSelection(layerIds: readonly string[]): void;
   deselectAll(): void;
@@ -419,6 +428,8 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         layerClipboard: null, // it points at bitmaps of the project that was just replaced
       selectionAnchor: null,
       cornerPreview: null,
+      freeTransform: false,
+      ftPreview: null,
       collapsedGroups: [],
         compareMode: "off",
         dragPreview: null,
@@ -449,6 +460,8 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       snapEnabled: true,
       selectionAnchor: null,
       cornerPreview: null,
+      freeTransform: false,
+      ftPreview: null,
       collapsedGroups: [],
       snapGuides: [],
       textEditing: null,
@@ -806,6 +819,63 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         if (!screen?.layers.some((l) => l.id === layerId)) return;
         const rows = panelRows(screen.layers, screen.groups ?? [], new Set(get().collapsedGroups));
         set({ selectedLayerIds: rangeSelect(rows, get().selectionAnchor, layerId), selectedPatchId: null, selectedMemoId: null }); // the anchor stays, so the range can be widened
+      },
+
+      setFreeTransform: (on) => set({ freeTransform: on, ftPreview: null }),
+
+      setFreeTransformPreview(op) {
+        const screen = screenOf();
+        if (!op || !screen || frozen()) return set({ ftPreview: null });
+        const chosen = screen.layers.filter((l) => get().selectedLayerIds.includes(l.id));
+        set({ ftPreview: Object.fromEntries(computeFreeTransform(chosen, op, measure)) });
+      },
+
+      applyFreeTransform(op) {
+        const { history } = get();
+        const screen = screenOf();
+        set({ ftPreview: null });
+        if (!history || !screen) return false;
+        if (frozen()) {
+          set({ notice: "비교 보기 중에는 변형할 수 없습니다. 비교를 끄고 다시 시도해 주세요." });
+          return false;
+        }
+        const chosen = screen.layers.filter((l) => get().selectedLayerIds.includes(l.id));
+        const results = computeFreeTransform(chosen, op, measure);
+        if (results.size === 0) {
+          set({ notice: chosen.length ? "잠긴 레이어는 변형할 수 없습니다." : "변형할 레이어를 선택하세요." });
+          return false;
+        }
+        const same = (id: string) => {
+          const l = chosen.find((x) => x.id === id)!;
+          const r = results.get(id)!;
+          return JSON.stringify(l.transform) === JSON.stringify(r.transform) && JSON.stringify(l.content) === JSON.stringify(r.content);
+        };
+        if ([...results.keys()].every(same)) return false; // nothing changes: no history entry
+        set({
+          history: commit(history, op.kind === "scale" ? "자유 변형: 크기" : op.kind === "rotate" ? "자유 변형: 회전" : "자유 변형: 이동", (draft) => {
+            for (const l of draft.screens[0].layers) {
+              const r = results.get(l.id);
+              if (!r) continue;
+              l.transform.x = r.transform.x;
+              l.transform.y = r.transform.y;
+              l.transform.scaleX = r.transform.scaleX;
+              l.transform.scaleY = r.transform.scaleY;
+              l.transform.rotation = r.transform.rotation;
+              if (r.content && l.content) {
+                l.content.width = r.content.width;
+                l.content.height = r.content.height;
+                if (r.content.kind === "rect") {
+                  if (r.content.cornerRadius !== undefined) (l.content as { cornerRadius?: number }).cornerRadius = r.content.cornerRadius;
+                }
+              }
+            }
+          }),
+        });
+        const skipped = chosen.length - results.size;
+        const warped = op.kind === "scale" ? [...results.keys()].filter((id) => chosen.find((x) => x.id === id)?.warp).length : 0;
+        const notes = [skipped > 0 ? `잠긴 레이어 ${skipped}개는 변형되지 않았습니다.` : "", warped > 0 ? `변형(warp)한 레이어 ${warped}개는 크기가 바뀌지 않고 위치만 따라 움직였습니다.` : ""].filter(Boolean);
+        if (notes.length) set({ notice: notes.join(" ") });
+        return true;
       },
 
       selectGroup(groupId) {

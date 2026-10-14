@@ -62,6 +62,10 @@ export function useShortcuts() {
             editorStore.getState().setNotice(r.ok ? null : r.reason);
           });
           break;
+        case "free-transform":
+          if (st.selectedLayerIds.length === 0) st.setNotice("자유 변형: 먼저 레이어를 선택하세요.");
+          else st.setFreeTransform(!st.freeTransform);
+          break;
         case "group":
           st.groupSelected();
           break;
@@ -108,6 +112,10 @@ export function useShortcuts() {
             st.finishWarp(true); // Enter: keep the warp
             break;
           }
+          if (st.freeTransform) {
+            st.setFreeTransform(false); // Enter: done with the free-transform box (each drag was already one undo step)
+            break;
+          }
           if (!st.candidatePick) return; // Enter means nothing here otherwise
           st.extractCandidatePick();
           break;
@@ -118,6 +126,10 @@ export function useShortcuts() {
           }
           if (st.candidatePick) {
             st.clearCandidatePick();
+            break;
+          }
+          if (st.freeTransform) {
+            st.setFreeTransform(false);
             break;
           }
           if (st.selectedLayerIds.length === 0) return; // Esc means nothing here otherwise
