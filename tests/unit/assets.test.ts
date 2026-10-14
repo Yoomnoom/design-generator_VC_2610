@@ -45,10 +45,11 @@ describe("built-in sources", () => {
 
   test("the three looks of a button really differ, in the way each style says", () => {
     const body = (style: "fill" | "outline" | "underline" | "slide", state: "rest" | "hover" | "pressed") => buttonBundle(style, state).layers;
-    const shadowY = (s: "rest" | "hover" | "pressed") => body("fill", s)[0].transform.y - body("fill", s)[1].transform.y;
+    // layers: the paler soft edge, the shadow, the body, the label
+    const shadowY = (s: "rest" | "hover" | "pressed") => body("fill", s)[1].transform.y - body("fill", s)[2].transform.y;
     expect(shadowY("hover")).toBeGreaterThan(shadowY("rest")); // deeper shadow on hover
-    expect(body("fill", "pressed")[1].transform.y).toBeGreaterThan(body("fill", "rest")[1].transform.y); // sinks when pressed
-    const fillOf = (s: "rest" | "hover" | "pressed") => (body("fill", s)[1].content as { fill: string }).fill;
+    expect(body("fill", "pressed")[2].transform.y).toBeGreaterThan(body("fill", "rest")[2].transform.y); // sinks when pressed
+    const fillOf = (s: "rest" | "hover" | "pressed") => (body("fill", s)[2].content as { fill: string }).fill;
     expect(new Set(["rest", "hover", "pressed"].map((s) => fillOf(s as "rest"))).size).toBe(3);
     const edge = (s: "rest" | "hover" | "pressed") => (body("outline", s)[0].content as { strokeWidth: number }).strokeWidth;
     expect(edge("hover")).toBeGreaterThan(edge("rest"));
@@ -247,7 +248,7 @@ describe("templates", () => {
       const text = serializeProject(project);
       const parsed = parseProject(text);
       expect(parsed.ok).toBe(true);
-      expect(project.version).toBe(8);
+      expect(project.version).toBe(9);
       const sc = project.screens[0];
       expect([sc.width, sc.height]).toEqual([390, 844]);
       expect(sc.layers.length).toBeGreaterThan(5);

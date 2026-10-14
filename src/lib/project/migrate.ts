@@ -36,6 +36,8 @@ const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
   6: (doc) => doc,
   /** 7 -> 8: `groups` and `groupId` are new and optional (a layer without a groupId is in no group), so every version 7 file is already a valid version 8 file. */
   7: (doc) => doc,
+  /** 8 -> 9: `cornerRadius` is new and optional (a rectangle without it has square corners), so every version 8 file is already a valid version 9 file. */
+  8: (doc) => doc,
 };
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };

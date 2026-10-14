@@ -11,6 +11,7 @@ export type DrawCtx = {
   closePath(): void;
   rect(x: number, y: number, w: number, h: number): void;
   ellipse(x: number, y: number, rx: number, ry: number, rotation: number, start: number, end: number): void;
+  arc(x: number, y: number, r: number, start: number, end: number): void;
   moveTo(x: number, y: number): void;
   lineTo(x: number, y: number): void;
   fill(): void;
@@ -33,6 +34,27 @@ export const MAX_STROKE_WIDTH = 200;
 export const contentSize = (c: LayerContent) => ({ width: c.width, height: c.height });
 export const contentStroke = (c: LayerContent): string | null => c.stroke;
 export const contentFill = (c: LayerContent): string | null => (c.kind === "line" || c.kind === "text" ? null : c.fill);
+
+/** the radius a rectangle's corners are drawn with: what is set, kept inside 0 and half of the shorter side (a smaller box rounds less, it never overlaps) */
+export const maxCornerRadius = (width: number, height: number) => Math.max(0, Math.floor((Math.min(width, height) / 2) * 100) / 100);
+export const cornerRadiusOf = (c: LayerContent): number => (c.kind === "rect" && c.cornerRadius ? Math.min(Math.max(c.cornerRadius, 0), Math.min(c.width, c.height) / 2) : 0);
+
+/** a rectangle with rounded corners as a path (top-left of the box at the origin); radius 0 is a plain rectangle. The screen, its click area
+ *  and the PNG all use this one path. */
+export function roundedRectPath(ctx: Pick<DrawCtx, "beginPath" | "moveTo" | "lineTo" | "arc" | "closePath" | "rect">, w: number, h: number, radius: number): void {
+  const r = Math.min(Math.max(radius, 0), Math.min(w, h) / 2);
+  if (r <= 0) return ctx.rect(0, 0, w, h);
+  ctx.moveTo(r, 0);
+  ctx.lineTo(w - r, 0);
+  ctx.arc(w - r, r, r, -Math.PI / 2, 0);
+  ctx.lineTo(w, h - r);
+  ctx.arc(w - r, h - r, r, 0, Math.PI / 2);
+  ctx.lineTo(r, h);
+  ctx.arc(r, h - r, r, Math.PI / 2, Math.PI);
+  ctx.lineTo(0, r);
+  ctx.arc(r, r, r, Math.PI, (Math.PI * 3) / 2);
+  ctx.closePath();
+}
 
 /** how far the stroke reaches outside the box (a stroke is centred on the edge) */
 export const strokeOverhang = (c: LayerContent) => (c.stroke && c.strokeWidth > 0 ? c.strokeWidth / 2 : 0);
@@ -91,7 +113,7 @@ export function drawContent(ctx: DrawCtx, c: LayerContent): void {
     if (c.strokeWidth > 0) ctx.stroke();
     return;
   }
-  if (c.kind === "rect") ctx.rect(0, 0, c.width, c.height);
+  if (c.kind === "rect") roundedRectPath(ctx, c.width, c.height, cornerRadiusOf(c));
   else ctx.ellipse(c.width / 2, c.height / 2, c.width / 2, c.height / 2, 0, 0, Math.PI * 2);
   if (c.fill) {
     ctx.fillStyle = c.fill;
@@ -107,7 +129,12 @@ export function drawContent(ctx: DrawCtx, c: LayerContent): void {
 const clampSide = (v: number) => Math.max(MIN_VECTOR_SIDE, Math.round(v * 100) / 100);
 
 /** the same shape with a new box; sizes stay positive, strokes keep their thickness */
-export const withSize = (c: LayerContent, width: number, height: number): LayerContent => ({ ...c, width: clampSide(width), height: clampSide(height) });
+export const withSize = (c: LayerContent, width: number, height: number): LayerContent => {
+  const sized = { ...c, width: clampSide(width), height: clampSide(height) } as LayerContent;
+  // the radius stays the same in pixels while it fits; a box too small for it rounds as much as it can (half the shorter side)
+  if (sized.kind === "rect" && sized.cornerRadius !== undefined) sized.cornerRadius = Math.min(sized.cornerRadius, maxCornerRadius(sized.width, sized.height));
+  return sized;
+};
 
 /** the content a fresh drag from (x0, y0) to (x1, y1) describes, and where its top-left sits; null when it is too small to be one */
 export function shapeFromDrag(kind: Exclude<LayerContent["kind"], "text">, a: { x: number; y: number }, b: { x: number; y: number }, style: { stroke: string; fill: string | null; strokeWidth: number }): { content: LayerContent; x: number; y: number } | null {

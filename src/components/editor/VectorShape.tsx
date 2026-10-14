@@ -2,7 +2,7 @@
 
 import type { ComponentProps } from "react";
 import { Shape } from "react-konva";
-import { DrawCtx, drawContent } from "@/lib/image/vector";
+import { DrawCtx, cornerRadiusOf, drawContent, roundedRectPath } from "@/lib/image/vector";
 import { LayerContent } from "@/lib/project/schema";
 
 type Props = { content: LayerContent } & Omit<ComponentProps<typeof Shape>, "sceneFunc" | "hitFunc" | "width" | "height" | "fill" | "stroke" | "strokeEnabled">;
@@ -29,7 +29,7 @@ export default function VectorShape({ content, ...rest }: Props) {
         ctx.beginPath();
         if (content.kind !== "line") {
           if (content.kind === "ellipse") ctx.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2, false);
-          else ctx.rect(0, 0, w, h);
+          else roundedRectPath(ctx, w, h, cornerRadiusOf(content));
         } else {
           const [x0, y0, x1, y1] = content.direction === "down" ? [0, 0, w, h] : [0, h, w, 0];
           const len = Math.hypot(x1 - x0, y1 - y0) || 1;

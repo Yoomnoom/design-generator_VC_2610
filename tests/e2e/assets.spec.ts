@@ -20,9 +20,9 @@ test.describe("built-in sources", () => {
     const before = await editor(page);
     await page.getByTestId("asset-button-fill-hover").click();
     const after = await editor(page);
-    expect(after.layers.length).toBe(before.layers.length + 3);
+    expect(after.layers.length).toBe(before.layers.length + 4);
     expect(after.past).toBe(before.past + 1);
-    expect(after.selected.length).toBe(3);
+    expect(after.selected.length).toBe(4); // the paler soft edge, the shadow, the body and the label
     const added = after.layers.filter((l) => after.selected.includes(l.id));
     const xs = added.flatMap((l) => [l.transform.x, l.transform.x + (l.content?.width ?? 0)]);
     expect(Math.abs((Math.min(...xs) + Math.max(...xs)) / 2 - 600)).toBeLessThanOrEqual(1); // the frame is 1200 wide

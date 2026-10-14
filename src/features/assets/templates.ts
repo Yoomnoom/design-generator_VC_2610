@@ -4,7 +4,7 @@ import { BitmapLayer, CURRENT_VERSION, Project } from "@/lib/project/schema";
 import { hexToRgb } from "@/lib/image/color";
 import { templateFile } from "@/lib/project/blank";
 import { ImageCache } from "@/store/images";
-import { assetEllipse, assetRect, assetText, buttonBundle } from "./builtin";
+import { SOFT, assetEllipse, assetRect, assetText, buttonBundle } from "./builtin";
 import { AssetBundle, AssetLayer } from "./types";
 
 /* Built-in templates: whole screens made of vector layers, written here in code. Each opens as a new project (the page is a plain
@@ -26,7 +26,7 @@ const grp = (layers: AssetLayer[], key: string, name: string): AssetLayer[] => l
 function login(): AssetLayer[] {
   const field = (label: string, hint: string, y: number) => grp([
     assetText(`${label} 이름`, 24, y, 342, label, 13, "#374151"),
-    assetRect(`${label} 입력창`, 24, y + 22, 342, 48, { fill: "#ffffff", stroke: "#9ca3af", sw: 1 }),
+    assetRect(`${label} 입력창`, 24, y + 22, 342, 48, { fill: "#ffffff", stroke: "#9ca3af", sw: 1, r: 8 }),
     assetText(`${label} 안내`, 38, y + 36, 310, hint, 15, "#9ca3af"),
   ], `field-${label}`, `${label} 입력`);
   return [
@@ -34,17 +34,17 @@ function login(): AssetLayer[] {
     assetText("부제", 24, 164, 342, "계정에 로그인해 시작하세요.", 15, "#6b7280"),
     ...field("이메일", "name@example.com", 240),
     ...field("비밀번호", "비밀번호", 332),
-    ...at(buttonBundle("fill", "rest").layers.map((l) => ({ ...l })), 24, 440).map((l) => (l.content?.kind === "rect" ? { ...l, content: { ...l.content, width: 342, height: 48 } } : l.content?.kind === "text" ? { ...l, content: { ...l.content, width: 342, text: "로그인" }, transform: { ...l.transform, y: l.transform.y + 2 } } : l)),
+    ...at(buttonBundle("fill", "rest").layers.filter((l) => l.name !== SOFT).map((l) => ({ ...l })), 24, 440).map((l) => (l.content?.kind === "rect" ? { ...l, content: { ...l.content, width: 342, height: 48 } } : l.content?.kind === "text" ? { ...l, content: { ...l.content, width: 342, text: "로그인" }, transform: { ...l.transform, y: l.transform.y + 2 } } : l)),
     assetText("링크", 24, 520, 342, "비밀번호를 잊으셨나요?", 14, "#4f46e5", "center"),
   ];
 }
 function cards(): AssetLayer[] {
   const card = (n: number, y: number): AssetLayer[] => grp([
-    assetRect(`카드 ${n} 그림자`, 20, y + 3, 350, 150, { fill: "#e5e7eb" }),
-    assetRect(`카드 ${n}`, 20, y, 350, 150, { fill: "#ffffff", stroke: "#e5e7eb", sw: 1 }),
+    assetRect(`카드 ${n} 그림자`, 20, y + 3, 350, 150, { fill: "#e5e7eb", r: 12 }),
+    assetRect(`카드 ${n}`, 20, y, 350, 150, { fill: "#ffffff", stroke: "#e5e7eb", sw: 1, r: 12 }),
     assetText(`카드 ${n} 제목`, 36, y + 16, 250, `카드 제목 ${n}`, 18, "#111827"),
     assetText(`카드 ${n} 설명`, 36, y + 50, 318, "두 줄 정도의 짧은 설명이 들어갑니다. 내용은 자유롭게 바꾸세요.", 14, "#6b7280"),
-    assetRect(`카드 ${n} 태그`, 36, y + 108, 56, 24, { fill: "#e0e7ff" }),
+    assetRect(`카드 ${n} 태그`, 36, y + 108, 56, 24, { fill: "#e0e7ff", r: 12 }),
     assetText(`카드 ${n} 태그 글자`, 36, y + 112, 56, "태그", 12, "#3730a3", "center"),
   ], `card-${n}`, `카드 ${n}`);
   return [assetText("제목", 20, 72, 350, "목록", 26, "#111827"), assetRect("제목 줄", 20, 116, 350, 1, { fill: "#d1d5db" }), ...card(1, 140), ...card(2, 316), ...card(3, 492)];
@@ -58,7 +58,7 @@ function settings(): AssetLayer[] {
       const on = i % 2 === 0;
       return grp([
         assetText(`${label} 이름`, 24, y + 20, 250, label, 16, "#111827"),
-        assetRect(`${label} 스위치 바탕`, 306, y + 18, 60, 30, { fill: on ? "#4f46e5" : "#d1d5db" }),
+        assetRect(`${label} 스위치 바탕`, 306, y + 18, 60, 30, { fill: on ? "#4f46e5" : "#d1d5db", r: 15 }),
         assetEllipse(`${label} 스위치 손잡이`, on ? 340 : 310, y + 22, 22, 22, { fill: "#ffffff" }),
         assetRect(`${label} 구분선`, 24, y + 64, 342, 1, { fill: "#e5e7eb" }),
       ], `row-${i}`, `${label} 줄`);

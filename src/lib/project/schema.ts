@@ -6,8 +6,9 @@
  *  5: text layers (`content.kind` "text") (Phase 2).
  *  6: `memos` on a screen: notes pinned to points of the picture (Phase 2).
  *  7: `warp` on a bitmap layer: skew, perspective, distortion and mesh warping, stored as control points (Phase 2).
- *  8: `groups` on a screen and `groupId` on a layer: layers that are selected and moved as one (one level, no nesting). */
-export const CURRENT_VERSION = 8 as const;
+ *  8: `groups` on a screen and `groupId` on a layer: layers that are selected and moved as one (one level, no nesting).
+ *  9: `cornerRadius` on a rectangle layer's content: rounded corners (absent = square, as in every earlier file). */
+export const CURRENT_VERSION = 9 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -26,7 +27,9 @@ export type ShapeStyle = { stroke: string | null; strokeWidth: number; fill: str
 export type TextContent = { kind: "text"; width: number; height: number; text: string; fontSize: number; color: string; align: "left" | "center" | "right"; stroke: null; strokeWidth: 0 };
 export type LayerContent =
   | TextContent
-  | ({ kind: "rect" | "ellipse"; width: number; height: number } & ShapeStyle)
+  /** `cornerRadius` (pixels, 0 to half of the shorter side; absent = square corners) is only on a rectangle */
+  | ({ kind: "rect"; width: number; height: number; cornerRadius?: number } & ShapeStyle)
+  | ({ kind: "ellipse"; width: number; height: number } & ShapeStyle)
   /** a segment across the box: "down" runs top-left → bottom-right, "up" runs bottom-left → top-right */
   | { kind: "line"; width: number; height: number; direction: "down" | "up"; stroke: string; strokeWidth: number };
 

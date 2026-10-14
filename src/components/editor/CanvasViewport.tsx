@@ -75,6 +75,7 @@ export default function CanvasViewport() {
   const comparing = compare !== "off";
   const preview = useEditorStore((s) => s.dragPreview);
   const warpPreview = useEditorStore((s) => s.warpPreview);
+  const cornerPreview = useEditorStore((s) => s.cornerPreview);
   const warpUi = useEditorStore((s) => s.warpUi);
   const warpSession = useEditorStore((s) => s.warpSession);
 
@@ -407,7 +408,8 @@ export default function CanvasViewport() {
                 )}
                 {layers.map((layer) => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
-                  const content = layer.content;
+                  // while the radius slider is dragged the shape shows the value at once (nothing is in the history yet)
+                  const content = layer.content?.kind === "rect" && cornerPreview?.layerId === layer.id ? { ...layer.content, cornerRadius: cornerPreview.cornerRadius } : layer.content;
                   if (!image && !content) return null;
                   const at = placedAt(layer);
                   const warp = image ? effectiveWarp(warpPreview?.layerId === layer.id ? warpPreview.warp : layer.warp, image.width, image.height) : undefined;

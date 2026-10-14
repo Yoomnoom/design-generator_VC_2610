@@ -33,6 +33,10 @@ export function contentError(c: unknown): string | null {
   if (c.kind !== "rect" && c.kind !== "ellipse" && c.kind !== "line" && c.kind !== "text") return "content.kind가 올바르지 않습니다";
   if (!isNum(c.width) || !isNum(c.height) || c.width <= 0 || c.height <= 0 || c.width > MAX_SIDE || c.height > MAX_SIDE) return "content의 width/height가 올바르지 않습니다";
   if (!isNum(c.strokeWidth) || c.strokeWidth < 0 || c.strokeWidth > 1000) return "content.strokeWidth가 올바르지 않습니다";
+  if (c.cornerRadius !== undefined) {
+    if (c.kind !== "rect") return "모서리 반지름(cornerRadius)은 사각형에만 있을 수 있습니다";
+    if (!isNum(c.cornerRadius) || c.cornerRadius < 0 || c.cornerRadius > Math.min(c.width as number, c.height as number) / 2 + 1e-6) return "content.cornerRadius가 0부터 짧은 변의 절반 사이여야 합니다";
+  }
   if (c.kind === "text") return textError(c);
   if (c.kind === "line") {
     if (c.direction !== "down" && c.direction !== "up") return "content.direction이 올바르지 않습니다";

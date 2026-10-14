@@ -16,3 +16,5 @@
 | 2 시작 화면·빈 캔버스 | (이 기능의 커밋) | 개발 E2E 전체 — 특히 첫 화면 제목을 바꿨으므로 `app`, `autosave`, `handoff-9steps`(제목 검사 수정함, 아직 안 돌림), 내장 아이콘 이름을 "엑스"·"체크"로 바꾸고 `exportPngBytes` 닫기 버튼을 대화상자 범위로 좁혔으므로 `compare`, `lock-hide-rename`, `memo`, `panels`, `shortcuts`; 프로덕션 E2E 전체. 통과: `start-screen.spec.ts` 12개(DPR 1·2 포함), `asset-preview` 4, `assets` 6 | 위 규칙 |
 | (2 보충) | - | pp.spec.ts 전체 34개 통과(D가 만든 locator("section") 중복을 main > section으로 고침) | - |
 | 3 선택·그룹 단축키·단축키 설정 (스키마 v8) | (이 기능의 커밋) | 개발 E2E 전체와 프로덕션 E2E 전체. 특히 레이어 패널·선택 동작이 바뀌었으므로 pp, compare, lock-hide-rename, memo, handoff-9steps, utosave, 	ransform, shapes-layer, 	ext, rush. 통과: groups.spec.ts 10, shortcut-settings.spec.ts 6, multiselect 25(Shift 의미 바뀐 부분 고침), shortcuts 32, panels 18 | 위 규칙 |
+| 4 도형 둥근 모서리 (스키마 v9) | (이 기능의 커밋) | 개발 E2E 전체와 프로덕션 E2E 전체. 특히 버전 숫자 검사를 7→9로 고친 `brush`, `memo`, `text`, `transform`(이 넷은 고치기만 하고 안 돌림). 통과: `corner-radius.spec.ts` 8, `shapes-layer` 17, `assets` 6, `asset-preview` 4, `start-screen` 12 | 위 규칙 |
+| (보충) 3 이후 알게 된 것 | - | v8로 올릴 때 `brush`·`memo`·`shapes-layer`·`text`·`transform` E2E의 "버전 7" 검사가 깨졌는데 그때는 못 잡았다(4에서 9로 고침, `shapes-layer`만 돌려 통과). 나머지 spec을 돌려 확인해야 한다 | 같은 규칙 |

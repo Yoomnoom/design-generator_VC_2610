@@ -6,7 +6,7 @@ import { MAX_LAYER_NAME, selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { BitmapLayer, LayerContent, TextContent } from "@/lib/project/schema";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE } from "@/lib/image/text-layout";
-import { SHAPE_LABEL } from "@/lib/image/vector";
+import { SHAPE_LABEL, maxCornerRadius } from "@/lib/image/vector";
 import { ColorField, WidthField } from "./StyleFields";
 
 /** 240, 12.5, 33.33: whole numbers without decimals, others to at most two places */
@@ -117,6 +117,58 @@ function TextSection({ id, content, disabled }: { id: string; content: TextConte
   );
 }
 
+/** Corner radius of a rectangle. Dragging the slider shows the rounding on the canvas at once but writes no history; letting go (or leaving
+ *  the number box, or Enter) commits one undo step. The value runs from 0 to half of the shorter side. */
+function RadiusField({ id, content, disabled }: { id: string; content: Extract<LayerContent, { kind: "rect" }>; disabled: boolean }) {
+  const max = maxCornerRadius(content.width, content.height);
+  const stored = content.cornerRadius ?? 0;
+  const [value, setValue] = useState(stored);
+  const dirty = useRef(false);
+  useEffect(() => {
+    setValue(stored);
+    dirty.current = false;
+  }, [stored, id]);
+  useEffect(() => () => editorStore.getState().setCornerPreview(null), [id]);
+  const clamp = (v: number) => Math.min(Math.max(Number.isFinite(v) ? v : 0, 0), max);
+  const preview = (v: number) => {
+    const r = clamp(v);
+    setValue(r);
+    dirty.current = true;
+    editorStore.getState().setCornerPreview({ layerId: id, cornerRadius: r });
+  };
+  const commit = () => {
+    if (!dirty.current) return;
+    dirty.current = false;
+    const st = editorStore.getState();
+    st.setLayerContent(id, { cornerRadius: clamp(value) });
+    st.setCornerPreview(null);
+    setValue(clamp(value));
+  };
+  return (
+    <div className="grid gap-1 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="w-14 shrink-0">모서리</span>
+        <input data-testid="vec-radius" type="range" aria-label="모서리 반지름" min={0} max={Math.max(max, 0)} step={1} value={Math.min(value, max)} disabled={disabled || max <= 0} onChange={(e) => preview(Number(e.target.value))} onPointerUp={commit} onKeyUp={commit} onBlur={commit} className="min-w-0 flex-1" />
+        <input
+          data-testid="vec-radius-num"
+          type="number"
+          aria-label="모서리 반지름 숫자"
+          min={0}
+          max={max}
+          step={1}
+          disabled={disabled || max <= 0}
+          value={Number.isInteger(value) ? value : Math.round(value * 100) / 100}
+          onChange={(e) => preview(e.target.value === "" ? 0 : Number(e.target.value))}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === "Enter" && commit()}
+          className="w-14 rounded border border-[var(--line)] bg-white px-1 py-0.5"
+        />
+        <span className="text-[var(--muted)]">px</span>
+      </div>
+      <p className="m-0 pl-16 text-[11px] text-[var(--muted)]">0 ~ {max}px (짧은 변의 절반). 크기를 바꿔도 반지름은 같은 px로 유지되고, 상자가 작아지면 그만큼만 둥글어집니다.</p>
+    </div>
+  );
+}
 function VectorSection({ id, content, disabled }: { id: string; content: Exclude<LayerContent, TextContent>; disabled: boolean }) {
   const set = (change: Partial<{ stroke: string | null; fill: string | null; strokeWidth: number }>) => editorStore.getState().setLayerContent(id, change);
   const isLine = content.kind === "line";
@@ -141,6 +193,7 @@ function VectorSection({ id, content, disabled }: { id: string; content: Exclude
         </>
       )}
       <WidthField value={content.strokeWidth} disabled={disabled || content.stroke === null} testId="vec-width" onCommit={(strokeWidth) => set({ strokeWidth })} />
+      {content.kind === "rect" && <RadiusField id={id} content={content} disabled={disabled} />}
     </div>
   );
 }

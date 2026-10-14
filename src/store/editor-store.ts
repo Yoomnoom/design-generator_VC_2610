@@ -2,7 +2,7 @@ import { StoreApi, createStore } from "zustand/vanilla";
 import { addOnTop, moveLayer, removeLayer, sortByZ } from "@/features/layer-transform/order";
 import { View } from "@/lib/geometry/coords";
 import { isInside } from "@/lib/geometry/rect";
-import { MAX_STROKE_WIDTH, SHAPE_LABEL, withSize } from "@/lib/image/vector";
+import { MAX_STROKE_WIDTH, SHAPE_LABEL, maxCornerRadius, withSize } from "@/lib/image/vector";
 import { MAX_FONT_SIZE, MIN_FONT_SIZE, MIN_TEXT_WIDTH, TextAlign } from "@/lib/image/text-layout";
 import { MeasureFor, canvasMeasureFor, fitHeight } from "@/lib/image/text-measure";
 import { Candidate, candidatesAt, pickNext } from "@/lib/image/candidates";
@@ -199,7 +199,10 @@ type EditorActions = {
   /** a new vector layer at (x, y) (its top-left, in frame pixels); one undo step */
   addVectorLayer(content: LayerContent, x: number, y: number): string | null;
   /** change a vector layer's look (colours, stroke width); one undo step, refused on a locked layer */
-  setLayerContent(layerId: string, change: Partial<{ stroke: string | null; fill: string | null; strokeWidth: number }>): boolean;
+  setLayerContent(layerId: string, change: Partial<{ stroke: string | null; fill: string | null; strokeWidth: number; cornerRadius: number }>): boolean;
+  /** while the radius slider is being dragged: shown on the canvas at once, NOT in the history (the commit on release is `setLayerContent`) */
+  cornerPreview: { layerId: string; cornerRadius: number } | null;
+  setCornerPreview(preview: { layerId: string; cornerRadius: number } | null): void;
   /** Warps a bitmap layer (skew, perspective, distortion, mesh) without touching its pixels, or removes the warp (null, or one that changes
    *  nothing). One undo step. Refused for a locked layer, a vector layer, an unacceptable shape, and while comparing. */
   setLayerWarp(layerId: string, warp: LayerWarp | null): boolean;
@@ -409,6 +412,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         pendingExtraction: null,
         layerClipboard: null, // it points at bitmaps of the project that was just replaced
       selectionAnchor: null,
+      cornerPreview: null,
       collapsedGroups: [],
         compareMode: "off",
         dragPreview: null,
@@ -438,6 +442,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       candidateHover: null,
       snapEnabled: true,
       selectionAnchor: null,
+      cornerPreview: null,
       collapsedGroups: [],
       snapGuides: [],
       textEditing: null,
@@ -703,6 +708,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
               const box = withSize(l.content as LayerContent, l.content.width * Math.abs(next.scaleX), l.content.height * Math.abs(next.scaleY));
               l.content.width = box.width;
               l.content.height = box.height;
+              if (box.kind === "rect" && box.cornerRadius !== undefined) (l.content as { cornerRadius?: number }).cornerRadius = box.cornerRadius; // kept inside half of the new shorter side
             }
             l.transform.scaleX = 1;
             l.transform.scaleY = 1;
@@ -921,6 +927,8 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         return deletable.length;
       },
 
+      setCornerPreview: (cornerPreview) => set({ cornerPreview }),
+
       setSnapEnabled: (snapEnabled) => set({ snapEnabled, snapGuides: snapEnabled ? get().snapGuides : [] }),
       setSnapGuides: (snapGuides) => set({ snapGuides }),
 
@@ -990,7 +998,15 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       setLayerContent(layerId, change) {
         const layer = screenOf()?.layers.find((l) => l.id === layerId);
         if (!layer?.content || layer.locked) return false;
+        if (frozen()) return false;
+        if ("cornerRadius" in change && layer.content.kind !== "rect") return false; // only a rectangle has rounded corners
         const merged = { ...layer.content, ...change } as LayerContent;
+        if (merged.kind === "rect" && change.cornerRadius !== undefined) {
+          // 0 to half of the shorter side; 0 is the same as having none
+          const r = Math.min(Math.max(Number.isFinite(change.cornerRadius) ? Math.round(change.cornerRadius * 100) / 100 : 0, 0), maxCornerRadius(merged.width, merged.height));
+          if (r > 0) merged.cornerRadius = r;
+          else delete merged.cornerRadius;
+        }
         merged.strokeWidth = Math.min(Math.max(Math.round(merged.strokeWidth * 100) / 100, merged.kind === "line" ? 0.5 : 0), MAX_STROKE_WIDTH);
         if (contentError(merged)) return false;
         return editLayer(layerId, "도형 속성 변경", (l) => {
@@ -998,6 +1014,10 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
           const target = l.content as Record<string, unknown>;
           const wanted = merged as Record<string, unknown>;
           for (const key of ["stroke", "fill", "strokeWidth"]) if (key in wanted && target[key] !== wanted[key]) target[key] = wanted[key];
+          if ("cornerRadius" in change) {
+            if (wanted.cornerRadius === undefined) delete target.cornerRadius;
+            else if (target.cornerRadius !== wanted.cornerRadius) target.cornerRadius = wanted.cornerRadius;
+          }
         });
       },
 
