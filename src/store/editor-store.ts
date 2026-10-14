@@ -211,6 +211,10 @@ type EditorActions = {
   /** what the dragged free-transform handle would do, shown on the canvas without any history; null when nothing is being dragged */
   ftPreview: Record<string, LayerResult> | null;
   setFreeTransformPreview(op: FreeOp | null): void;
+  /** Change the page size (1..8192 each side). `ax`/`ay` (0 = left/top, 1 = centre, 2 = right/bottom) say where the old page sits in the new one;
+   *  the capture is copied onto a new picture of the new size (margin = `fill`, or transparent), so cropping drops the part outside. Layers follow the
+   *  picture ("follow") or keep their page positions ("stay"). One undo step. Returns an error text, or null. */
+  resizeCanvas(change: { width: number; height: number; ax: 0 | 1 | 2; ay: 0 | 1 | 2; layers: "follow" | "stay"; fill: string | null }): string | null;
   /** a shape, text or effect layer becomes a bitmap layer (what is on the page now, effects included; the part outside the page is dropped), one undo step */
   rasterizeLayer(layerId: string): boolean;
   /** the visible, unlocked selected layers (two or more) become ONE bitmap layer at the front-most one's place, one undo step; the number merged */
@@ -1048,6 +1052,52 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         return editLayer(layerId, "불투명도 변경", (l) => {
           l.opacity = v;
         });
+      },
+
+      resizeCanvas({ width, height, ax, ay, layers, fill }) {
+        const { history, images } = get();
+        const screen = screenOf();
+        if (!history || !screen) return "열려 있는 프로젝트가 없습니다.";
+        if (frozen()) return "비교 보기 중에는 캔버스 크기를 바꿀 수 없습니다. 비교를 끄고 다시 시도해 주세요.";
+        const size = checkCanvasSize(width, height);
+        if (!size.ok) return size.error;
+        const rgb = fill === null ? null : hexToRgb(fill);
+        if (fill !== null && !rgb) return "여백 색은 #rrggbb 형식이어야 합니다.";
+        if (size.width === screen.width && size.height === screen.height) return "크기가 그대로입니다.";
+        const old = images.get(screen.source.imageId)?.raw;
+        if (!old) return "원본 이미지가 로드되어 있지 않습니다.";
+        const dx = Math.round(((size.width - screen.width) * ax) / 2), dy = Math.round(((size.height - screen.height) * ay) / 2);
+        const next = createRawImage(size.width, size.height, rgb ? [rgb.r, rgb.g, rgb.b, 255] : [0, 0, 0, 0]);
+        for (let y = 0; y < old.height; y++) {
+          const ty = y + dy;
+          if (ty < 0 || ty >= size.height) continue;
+          const sx0 = Math.max(0, -dx), sx1 = Math.min(old.width, size.width - dx);
+          if (sx1 > sx0) next.data.set(old.data.subarray((y * old.width + sx0) * 4, (y * old.width + sx1) * 4), (ty * size.width + sx0 + dx) * 4);
+        }
+        const imageId = genId();
+        const shiftBy = layers === "follow" ? { x: dx, y: dy } : { x: 0, y: 0 };
+        set({
+          history: commit(history, "캔버스 크기", (draft) => {
+            const s = draft.screens[0];
+            s.width = size.width;
+            s.height = size.height;
+            s.source.imageId = imageId;
+            // the patches belong to the picture: they move with it and are cut to the new page
+            s.backgroundPatches = s.backgroundPatches.flatMap((p) => {
+              const x0 = Math.max(p.rect.x + dx, 0), y0 = Math.max(p.rect.y + dy, 0), x1 = Math.min(p.rect.x + dx + p.rect.width, size.width), y1 = Math.min(p.rect.y + dy + p.rect.height, size.height);
+              return x1 > x0 && y1 > y0 ? [{ ...p, rect: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } }] : [];
+            });
+            for (const l of s.layers) {
+              l.transform.x = Math.round((l.transform.x + shiftBy.x) * 100) / 100;
+              l.transform.y = Math.round((l.transform.y + shiftBy.y) * 100) / 100;
+            }
+            if (s.memos) s.memos = s.memos.map((m) => ({ ...m, x: Math.min(Math.max(m.x + shiftBy.x, 0), size.width), y: Math.min(Math.max(m.y + shiftBy.y, 0), size.height) }));
+          }),
+          images: new Map(images).set(imageId, { raw: next }),
+          needsFit: true,
+          selectedPatchId: null,
+        });
+        return null;
       },
 
       rasterizeLayer(layerId) {

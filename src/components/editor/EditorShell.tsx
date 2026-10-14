@@ -34,6 +34,7 @@ import ToolRail from "./ToolRail";
 import Notices from "./Notices";
 import TopBar from "./TopBar";
 import ShortcutSettings from "./ShortcutSettings";
+import CanvasSizeDialog from "./CanvasSizeDialog";
 import HelpPanel, { OnboardingGuide, useFirstUse } from "./HelpPanel";
 import StartChoices, { CanvasSpec, NewCanvasDialog, StartDialog } from "./StartChoices";
 import { TemplateId, TEMPLATES, buildTemplate } from "@/features/assets/templates";
@@ -84,6 +85,7 @@ export default function EditorShell() {
   const [startOpen, setStartOpen] = useState(false); // the top bar's "new project" window
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [sizeOpen, setSizeOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false); // the guide as a window, opened from the help
   const [firstUse, endFirstUse] = useFirstUse();
   const [canvasOpen, setCanvasOpen] = useState(false); // the blank-canvas size window
@@ -255,6 +257,7 @@ export default function EditorShell() {
           onPickFile={() => imageInput.current?.click()}
           onConfirmReplace={() => incoming && void run(incoming).then(() => setIncoming(null))}
           onCancelReplace={() => setIncoming(null)}
+          onCanvasSize={() => setSizeOpen(true)}
         >
           <AssetPanel />
         </SourcePanel>
@@ -319,6 +322,7 @@ export default function EditorShell() {
         />
       )}
       {canvasOpen && <NewCanvasDialog onClose={() => setCanvasOpen(false)} onCreate={(spec) => { setCanvasOpen(false); void request({ kind: "blank", spec }); }} />}
+      {sizeOpen && screen && <CanvasSizeDialog width={screen.width} height={screen.height} onClose={() => setSizeOpen(false)} />}
       {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} onShowGuide={() => { setHelpOpen(false); setGuideOpen(true); }} />}
       {guideOpen && <OnboardingGuide variant="modal" onDone={() => { setGuideOpen(false); endFirstUse(); }} />}
       {shortcutsOpen && <ShortcutSettings onClose={() => setShortcutsOpen(false)} />}

@@ -11,10 +11,11 @@ type Props = {
   onPickFile: () => void;
   onConfirmReplace: () => void;
   onCancelReplace: () => void;
+  onCanvasSize?: () => void;
   children?: React.ReactNode;
 };
 
-export default function SourcePanel({ screen, busy, error, replaceName, onPickFile, onConfirmReplace, onCancelReplace, children }: Props) {
+export default function SourcePanel({ screen, busy, error, replaceName, onPickFile, onConfirmReplace, onCancelReplace, onCanvasSize, children }: Props) {
   return (
     <aside className="min-h-0 overflow-auto border-r border-[var(--line)] bg-[var(--panel)]">
       <div className="panel-title">소스 이미지</div>
@@ -60,6 +61,11 @@ export default function SourcePanel({ screen, busy, error, replaceName, onPickFi
             <p className="mt-1 text-[var(--muted)]">
               원본 크기 {screen.width} × {screen.height} px · 레이어 {screen.layers.length}
             </p>
+            {onCanvasSize && (
+              <button type="button" data-testid="canvas-size-open" className="btn mini mt-2" title="캔버스 크기 바꾸기: 여백 추가·자르기" onClick={onCanvasSize}>
+                캔버스 크기…
+              </button>
+            )}
           </div>
         </>
       )}
