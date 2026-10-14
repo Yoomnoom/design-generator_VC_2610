@@ -21,3 +21,4 @@
 | S2 그룹 선택 버그·소스 그룹 삽입·그룹 넣기/빼기 | (S2 커밋) | 개발·프로덕션 E2E 전체; 특히 `assets`(삽입이 그룹이 됨), `multiselect`(Ctrl 클릭 의미), `panels`. 통과: `group-edit` 9, `groups` 10 | 전체 실행 금지 |
 | S3 드래그 박스 선택·선택 개수·Space 손 | (S3 커밋) | 개발·프로덕션 E2E 전체; 특히 multiselect(Stage 빈 곳 mousedown 해제를 pointerup 클릭 해제로 옮김; 2개 재확인 통과, 나머지 23은 이전에 통과), compare, rush(Space 키). 통과: marquee 7, multiselect 25(일부 -g로) | 전체 실행 금지 |
 | S4 자유 변형(선택 전체 상자·핸들·속성 입력, Shift+T) | (S4 커밋) | 개발·프로덕션 E2E 전체; 특히 `shortcut-settings`(항목 하나 늘어남, 통과), `multiselect`(통과), `panels`(레이어 패널 옆 속성 패널 문구 변경). 통과: `free-transform` 9(DPR 1·2, 200% 포함) | 전체 실행 금지 |
+| S5a 포토샵 편의 1차(Alt+드래그 복제, Ctrl+0/1, 정렬·분배, 불투명도, 혼합 모드(스키마 v10), 뒤집기) | (S5a 커밋) | 개발·프로덕션 E2E 전체; 특히 `multiselect`(Alt 드래그 의미 변경 영향), `shortcut-settings`(항목 증가), `corner-radius`·`groups` 등 버전 숫자 검사를 10으로 고친 spec 전부. 통과: `photoshop-basics` 7(DPR 1·2 혼합 모드·불투명도 화면=PNG ≤1) | 전체 실행 금지 |

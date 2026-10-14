@@ -342,11 +342,11 @@ describe("the file format: groups (version 8)", () => {
     const r = parseProjectFile(v7);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.file.project.version).toBe(9);
+    expect(r.file.project.version).toBe(10);
     expect(r.file.project.screens[0].layers).toEqual(before.screens[0].layers);
     expect(r.file.project.screens[0].memos).toEqual(before.screens[0].memos);
     const m = migrate(JSON.parse(v7).project);
-    expect(m.ok && m.doc.version).toBe(9);
+    expect(m.ok && m.doc.version).toBe(10);
   });
 
   test("groups survive save and open; a layer pointing at a missing group, a duplicate group id or a bad name is refused", () => {

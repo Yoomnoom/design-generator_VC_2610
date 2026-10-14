@@ -1,4 +1,4 @@
-export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "tool-warp" | "tool-finger" | "select-all" | "tool-auto" | "candidate-extract" | "candidate-clear" | "nudge-left" | "nudge-right" | "nudge-up" | "nudge-down" | "group" | "ungroup" | "free-transform";
+export type ShortcutAction = "undo" | "redo" | "delete" | "duplicate" | "copy" | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "tool-warp" | "tool-finger" | "select-all" | "tool-auto" | "candidate-extract" | "candidate-clear" | "nudge-left" | "nudge-right" | "nudge-up" | "nudge-down" | "group" | "ungroup" | "free-transform" | "zoom-fit" | "zoom-100";
 
 export type KeyInfo = { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat?: boolean };
 
@@ -21,6 +21,8 @@ export const DEFAULT_BINDINGS: Bindings = {
   group: b("g", { ctrl: true }),
   ungroup: b("g", { ctrl: true, shift: true }),
   "free-transform": b("t", { shift: true }),
+  "zoom-fit": b("0", { ctrl: true }),
+  "zoom-100": b("1", { ctrl: true }),
   "nudge-left": b("ArrowLeft"),
   "nudge-right": b("ArrowRight"),
   "nudge-up": b("ArrowUp"),
@@ -54,6 +56,8 @@ export const ACTION_INFO: { id: ConfigurableAction; label: string; group: "편�
   { id: "group", label: "그룹 만들기", group: "선택·그룹" },
   { id: "ungroup", label: "그룹 해제", group: "선택·그룹" },
   { id: "free-transform", label: "자유 변형 (선택 전체의 크기·회전 상자)", group: "선택·그룹" },
+  { id: "zoom-fit", label: "화면 맞춤", group: "이동" },
+  { id: "zoom-100", label: "100% 보기", group: "이동" },
   { id: "nudge-left", label: "왼쪽으로 1px (Shift: 10px)", group: "이동" },
   { id: "nudge-right", label: "오른쪽으로 1px (Shift: 10px)", group: "이동" },
   { id: "nudge-up", label: "위로 1px (Shift: 10px)", group: "이동" },
@@ -77,7 +81,7 @@ export const ACTION_INFO: { id: ConfigurableAction; label: string; group: "편�
 /** keys that cannot be given to an action: the browser or the system keeps them (new tab, close tab, reload, find, save, print, ...), or
  *  the app already gives them a fixed meaning (paste is the browser's paste event; Enter and Esc finish or cancel a task; Tab moves focus) */
 export const RESERVED: { binding: Binding; why: string }[] = [
-  ...["t", "w", "n", "r", "l", "f", "s", "p", "o", "u", "h", "j", "k", "e", "q", "x", "v", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Tab", "+", "-", "="].map((k) => ({ binding: b(k, { ctrl: true }), why: "브라우저가 쓰는 키입니다" })),
+  ...["t", "w", "n", "r", "l", "f", "s", "p", "o", "u", "h", "j", "k", "e", "q", "x", "v", "2", "3", "4", "5", "6", "7", "8", "9", "Tab", "+", "-", "="].map((k) => ({ binding: b(k, { ctrl: true }), why: "브라우저가 쓰는 키입니다" })),
   ...["t", "n", "w", "r", "i", "j", "Delete", "b", "o", "a", "Tab"].map((k) => ({ binding: b(k, { ctrl: true, shift: true }), why: "브라우저가 쓰는 키입니다" })),
   ...["F1", "F3", "F5", "F6", "F7", "F10", "F11", "F12"].map((k) => ({ binding: b(k), why: "브라우저가 쓰는 키입니다" })),
   ...["F4", "ArrowLeft", "ArrowRight", "Tab"].map((k) => ({ binding: b(k, { alt: true }), why: "브라우저·시스템이 쓰는 키입니다" })),

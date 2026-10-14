@@ -18,11 +18,12 @@ import { MESH_DEFAULT, MESH_MAX, MESH_MIN, identityQuad, isIdentityWarp, resizeM
 import { hexToRgb, normalizeHex } from "@/lib/image/color";
 import { RawImage } from "@/lib/image/raw-image";
 import { sampleBackground } from "@/lib/image/sample-background";
+import { AlignKind, alignDeltas, distributeDeltas, makeUnits } from "@/features/align/align";
 import { FreeOp, LayerResult, applyFreeTransform as computeFreeTransform, transformable } from "@/features/free-transform/free-transform";
 import { MIN_GROUP_SIZE, expandToGroups, nextGroupName, panelRows, pruneGroups, rangeSelect, wholeGroupOf } from "@/features/groups/groups";
 import { BLANK_FILE, checkCanvasSize, isGeneratedPage } from "@/lib/project/blank";
 import { createRawImage } from "@/lib/image/raw-image";
-import { BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode, MAX_GROUPS, MAX_GROUP_NAME } from "@/lib/project/schema";
+import { BLEND_MODES, BlendMode, BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode, MAX_GROUPS, MAX_GROUP_NAME } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
 
@@ -140,6 +141,9 @@ type EditorActions = {
   previewLayerDrag(layerId: string, x: number, y: number): void;
   commitLayerDrag(): boolean;
   cancelLayerDrag(): void;
+  /** Alt+drag: the drag ends with COPIES of the moved layers at the dropped place; the originals stay. One undo step; the copies are selected.
+   *  A whole group is copied as a new group. Locked layers are not copied. False when nothing moved. */
+  commitLayerDragAsCopy(): boolean;
 
   duplicateLayer(layerId: string): string | null;
   copyLayer(layerId: string, hash?: string): boolean;
@@ -188,6 +192,20 @@ type EditorActions = {
   /** what the dragged free-transform handle would do, shown on the canvas without any history; null when nothing is being dragged */
   ftPreview: Record<string, LayerResult> | null;
   setFreeTransformPreview(op: FreeOp | null): void;
+  /** layer opacity 0..1 (one undo step; a locked layer or comparing refuses) */
+  setLayerOpacity(layerId: string, opacity: number): boolean;
+  /** while the opacity slider is dragged: shown on the canvas, no history */
+  opacityPreview: { layerId: string; opacity: number } | null;
+  setOpacityPreview(preview: { layerId: string; opacity: number } | null): void;
+  /** how the layer mixes with what is below it; null = normal (one undo step; a locked layer or comparing refuses) */
+  setLayerBlend(layerId: string, mode: BlendMode | null): boolean;
+  /** mirror a layer left-right or top-bottom about its own centre (one undo step). A bitmap gets a negative scale, a line swaps its diagonal;
+   *  a rectangle or ellipse looks the same, a text box and a warped layer are refused with a reason. */
+  flipLayer(layerId: string, axis: "x" | "y"): boolean;
+  /** line the selected layers up (to each other; one unit alone: to the frame). A group counts as one unit. One undo step; the number moved. */
+  alignSelected(kind: AlignKind): number;
+  /** equal gaps between three or more units, horizontally or vertically (one undo step); the number moved */
+  distributeSelected(axis: "x" | "y"): number;
   /** apply a free transform (scale, turn or move) to every selected layer that is not locked: ONE undo step. False with a notice when refused. */
   applyFreeTransform(op: FreeOp): boolean;
   /** the selection is exactly these layers (ids that are not in the screen are dropped): the result of a box selection */
@@ -383,6 +401,43 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
     };
 
     /** one undo step for an edit of the layer list */
+    /** moves the selected layers (not locked, hidden ones too) by per-unit deltas from `deltas(units)`; one undo step; the number of layers moved */
+    const moveUnits = (deltas: (units: ReturnType<typeof makeUnits>) => { dx: number; dy: number }[] | null, label: string, needed: number): number => {
+      const { history } = get();
+      const screen = screenOf();
+      if (!history || !screen) return 0;
+      if (frozen()) {
+        set({ notice: "비교 보기 중에는 정렬할 수 없습니다. 비교를 끄고 다시 시도해 주세요." });
+        return 0;
+      }
+      const chosen = screen.layers.filter((l) => get().selectedLayerIds.includes(l.id));
+      const free = chosen.filter((l) => !l.locked && l.visible);
+      const items = sortByZ(free).map((l) => ({ id: l.id, groupId: l.groupId, box: layerBox(l, l.imageId ? get().images.get(l.imageId)?.raw : undefined) })).filter((i): i is { id: string; groupId: string | undefined; box: NonNullable<ReturnType<typeof layerBox>> } => !!i.box);
+      const units = makeUnits(items);
+      if (units.length < (needed === 1 ? 1 : needed)) {
+        set({ notice: needed === 3 ? "간격을 맞추려면 (그룹은 하나로 세어) 3개 이상을 선택하세요." : chosen.length > free.length && free.length === 0 ? "잠기거나 숨겨진 레이어는 정렬할 수 없습니다." : "정렬할 레이어를 선택하세요." });
+        return 0;
+      }
+      const d = deltas(units);
+      if (!d) return 0;
+      const byId = new Map<string, { dx: number; dy: number }>();
+      units.forEach((u, i) => u.ids.forEach((id) => byId.set(id, d[i])));
+      if ([...byId.values()].every((v) => v.dx === 0 && v.dy === 0)) return 0;
+      set({
+        history: commit(history, label, (draft) => {
+          for (const l of draft.screens[0].layers) {
+            const m = byId.get(l.id);
+            if (!m) continue;
+            l.transform.x = Math.round((l.transform.x + m.dx) * 100) / 100;
+            l.transform.y = Math.round((l.transform.y + m.dy) * 100) / 100;
+          }
+        }),
+      });
+      const skipped = chosen.length - free.length;
+      if (skipped > 0) set({ notice: `잠기거나 숨겨진 레이어 ${skipped}개는 움직이지 않았습니다.` });
+      return byId.size;
+    };
+
     const commitLayers = (label: string, next: readonly BitmapLayer[]) => {
       const history = get().history!;
       set({
@@ -428,6 +483,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         layerClipboard: null, // it points at bitmaps of the project that was just replaced
       selectionAnchor: null,
       cornerPreview: null,
+      opacityPreview: null,
       freeTransform: false,
       ftPreview: null,
       collapsedGroups: [],
@@ -460,6 +516,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       snapEnabled: true,
       selectionAnchor: null,
       cornerPreview: null,
+      opacityPreview: null,
       freeTransform: false,
       ftPreview: null,
       collapsedGroups: [],
@@ -605,6 +662,39 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       },
 
       cancelLayerDrag: () => set({ dragPreview: null, snapGuides: [] }),
+
+      commitLayerDragAsCopy() {
+        const { history, dragPreview, selectedLayerIds } = get();
+        set({ dragPreview: null, snapGuides: [] });
+        const screen = screenOf();
+        if (!history || !dragPreview || !screen || frozen()) return false;
+        const dragged = screen.layers.find((l) => l.id === dragPreview.layerId);
+        if (!dragged) return false;
+        const dx = dragPreview.x - dragged.transform.x, dy = dragPreview.y - dragged.transform.y;
+        if (dx === 0 && dy === 0) return false;
+        const group = selectedLayerIds.includes(dragged.id) ? selectedLayerIds : [dragged.id];
+        const sources = sortByZ(screen.layers.filter((l) => group.includes(l.id) && !l.locked));
+        if (sources.length === 0) return false;
+        const whole = wholeGroupOf(screen.layers, sources.map((l) => l.id));
+        const gid = whole && (screen.groups?.length ?? 0) < MAX_GROUPS ? genId() : null;
+        const copies: BitmapLayer[] = sources.map((s) => {
+          const { groupId: _g, ...plain } = s;
+          void _g;
+          return { ...plain, ...(gid ? { groupId: gid } : {}), id: genId(), name: `${s.name} 복사`, visible: true, locked: false, crop: { ...s.crop }, transform: { ...s.transform, x: Math.round((s.transform.x + dx) * 100) / 100, y: Math.round((s.transform.y + dy) * 100) / 100 } };
+        });
+        let list: readonly BitmapLayer[] = screen.layers;
+        for (const c of copies) list = addOnTop(list, c); // back to front: the copies keep their stacking
+        const gname = whole ? `${screen.groups?.find((g) => g.id === whole)?.name ?? "그룹"} 복사`.slice(0, MAX_GROUP_NAME) : "";
+        set({
+          history: commit(history, copies.length > 1 ? "레이어 복제 이동(여러 개)" : "레이어 복제 이동", (draft) => {
+            applyLayers(draft.screens[0].layers, list);
+            if (gid) (draft.screens[0].groups ??= []).push({ id: gid, name: gname });
+          }),
+          selectedLayerIds: copies.map((c) => c.id),
+          selectionAnchor: copies[0].id,
+        });
+        return true;
+      },
 
       duplicateLayer(layerId) {
         if (frozen()) return null;
@@ -819,6 +909,70 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         if (!screen?.layers.some((l) => l.id === layerId)) return;
         const rows = panelRows(screen.layers, screen.groups ?? [], new Set(get().collapsedGroups));
         set({ selectedLayerIds: rangeSelect(rows, get().selectionAnchor, layerId), selectedPatchId: null, selectedMemoId: null }); // the anchor stays, so the range can be widened
+      },
+
+      setOpacityPreview: (opacityPreview) => set({ opacityPreview }),
+
+      setLayerOpacity(layerId, opacity) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer || layer.locked || !Number.isFinite(opacity)) return false;
+        const v = Math.min(Math.max(Math.round(opacity * 100) / 100, 0), 1);
+        if (layer.opacity === v) return false;
+        return editLayer(layerId, "불투명도 변경", (l) => {
+          l.opacity = v;
+        });
+      },
+
+      setLayerBlend(layerId, mode) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer || layer.locked || (mode !== null && !BLEND_MODES.includes(mode)) || (layer.blend ?? null) === mode) return false;
+        return editLayer(layerId, "혼합 모드 변경", (l) => {
+          if (mode) l.blend = mode;
+          else delete l.blend;
+        });
+      },
+
+      flipLayer(layerId, axis) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer || frozen()) return false;
+        if (layer.locked) {
+          set({ notice: "잠긴 레이어는 뒤집을 수 없습니다." });
+          return false;
+        }
+        const why = layer.warp ? "변형(warp)한 레이어는 뒤집을 수 없습니다. 먼저 변형을 초기화하세요." : layer.content?.kind === "text" ? "텍스트 상자는 뒤집을 수 없습니다(글자가 거꾸로 됩니다)." : layer.content && layer.content.kind !== "line" ? "사각형과 원은 뒤집어도 모양이 같습니다." : null;
+        if (why) {
+          set({ notice: why });
+          return false;
+        }
+        if (layer.content) {
+          return editLayer(layerId, axis === "x" ? "좌우 뒤집기" : "상하 뒤집기", (l) => {
+            if (l.content?.kind === "line") l.content.direction = l.content.direction === "down" ? "up" : "down"; // either mirror turns the diagonal over
+          });
+        }
+        const raw = layer.imageId ? get().images.get(layer.imageId)?.raw : undefined;
+        const w = raw?.width ?? layer.crop.width, h = raw?.height ?? layer.crop.height;
+        return editLayer(layerId, axis === "x" ? "좌우 뒤집기" : "상하 뒤집기", (l) => {
+          const t = l.transform;
+          const a = (t.rotation * Math.PI) / 180;
+          const cos = Math.cos(a), sin = Math.sin(a);
+          const at = (sx: number, sy: number) => ({ x: cos * (sx * w) / 2 - sin * (sy * h) / 2, y: sin * (sx * w) / 2 + cos * (sy * h) / 2 });
+          const c = at(t.scaleX, t.scaleY); // the centre, from the corner
+          const nx = axis === "x" ? -t.scaleX : t.scaleX, ny = axis === "y" ? -t.scaleY : t.scaleY;
+          const c2 = at(nx, ny);
+          l.transform.x = Math.round((t.x + c.x - c2.x) * 100) / 100;
+          l.transform.y = Math.round((t.y + c.y - c2.y) * 100) / 100;
+          l.transform.scaleX = nx;
+          l.transform.scaleY = ny;
+        });
+      },
+
+      alignSelected(kind) {
+        const moved = moveUnits((units) => alignDeltas(units, kind, { x: 0, y: 0, width: screenOf()!.width, height: screenOf()!.height }), "정렬", 1);
+        return moved;
+      },
+
+      distributeSelected(axis) {
+        return moveUnits((units) => distributeDeltas(units, axis), "간격 맞춤", 3);
       },
 
       setFreeTransform: (on) => set({ freeTransform: on, ftPreview: null }),

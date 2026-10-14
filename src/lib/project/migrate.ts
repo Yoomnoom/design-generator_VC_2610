@@ -38,6 +38,8 @@ const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
   7: (doc) => doc,
   /** 8 -> 9: `cornerRadius` is new and optional (a rectangle without it has square corners), so every version 8 file is already a valid version 9 file. */
   8: (doc) => doc,
+  /** 9 -> 10: `blend` is new and optional (a layer without it is normal), so every version 9 file is already a valid version 10 file. */
+  9: (doc) => doc,
 };
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };

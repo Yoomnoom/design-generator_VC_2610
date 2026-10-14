@@ -17,12 +17,12 @@ export function renderProjectRaw(project: Project, images: ImageCache, rasterize
     if (layer.content) {
       if (!layer.visible) return [];
       const r = rasterize(layer.content, layer.transform, { width: screen.width, height: screen.height });
-      return r ? [{ image: r.image, x: r.x, y: r.y, zIndex: layer.zIndex, opacity: layer.opacity, visible: true }] : [];
+      return r ? [{ image: r.image, x: r.x, y: r.y, zIndex: layer.zIndex, opacity: layer.opacity, blend: layer.blend, visible: true }] : [];
     }
     const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
     if (!image) throw new Error(`레이어 "${layer.name}"의 이미지가 로드되어 있지 않습니다`);
     const { x, y, scaleX, scaleY, rotation } = layer.transform;
-    return [{ image, x, y, scaleX, scaleY, rotation, warp: layer.warp, zIndex: layer.zIndex, opacity: layer.opacity, visible: layer.visible }];
+    return [{ image, x, y, scaleX, scaleY, rotation, warp: layer.warp, zIndex: layer.zIndex, opacity: layer.opacity, blend: layer.blend, visible: layer.visible }];
   });
 
   return renderComposite({ width: screen.width, height: screen.height, source, patches: screen.backgroundPatches, layers });

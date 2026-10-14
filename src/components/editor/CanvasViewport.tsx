@@ -379,7 +379,11 @@ export default function CanvasViewport() {
   // free transform: one box around the selection (always with two or more layers; for one layer only when switched on)
   const freeTransform = useEditorStore((s) => s.freeTransform);
   const ftPreview = useEditorStore((s) => s.ftPreview);
-  const previewOf = (l: BitmapLayer): BitmapLayer => (ftPreview?.[l.id] ? { ...l, transform: ftPreview[l.id].transform, ...(ftPreview[l.id].content ? { content: ftPreview[l.id].content } : {}) } : l);
+  const opacityPreview = useEditorStore((s) => s.opacityPreview);
+  const previewOf = (l0: BitmapLayer): BitmapLayer => {
+    const l = opacityPreview?.layerId === l0.id ? { ...l0, opacity: opacityPreview.opacity } : l0; // the opacity slider is being dragged
+    return ftPreview?.[l.id] ? { ...l, transform: ftPreview[l.id].transform, ...(ftPreview[l.id].content ? { content: ftPreview[l.id].content } : {}) } : l;
+  };
   const ftOn = screen && tool === "select" && compare === "off" && (selectedIds.length >= 2 || (freeTransform && selectedIds.length >= 1));
   const ftSelected = ftOn ? layers.filter((l) => selectedIds.includes(l.id)) : [];
   const ftSizes = (l: BitmapLayer) => (l.imageId ? images.get(l.imageId)?.raw : undefined);
@@ -398,8 +402,10 @@ export default function CanvasViewport() {
 
   /** a press on a layer: with Shift/Ctrl it joins or leaves the selection (and a layer that left is not dragged); without, a member of a
    *  selection keeps the selection so the group can be dragged, and anything else becomes the selection */
-  const pressLayer = (id: string, additive: boolean, node: Konva.Node, addOnly = false) => {
+  const altCopy = useRef(false); // Alt was held when the press began: the drag makes copies and leaves the layers where they were
+  const pressLayer = (id: string, additive: boolean, node: Konva.Node, addOnly = false, alt = false) => {
     const st = editorStore.getState();
+    altCopy.current = alt && !additive;
     if (additive && addOnly) {
       // Shift+click adds (a layer already in the selection stays in it and can be dragged with the rest)
       if (!st.selectedLayerIds.includes(id)) st.toggleLayerSelection(id); // this layer only, not its group
@@ -466,6 +472,22 @@ export default function CanvasViewport() {
   const tagAt = marqueeRect ? imageToClient({ x: marqueeRect.x, y: marqueeRect.y }, { x: 0, y: 0 }, view, frameOrigin) : null;
 
   const zoomBy = (factor: number) => editorStore.getState().setView(zoomAt(view, view.zoom * factor, { x: size.width / 2, y: size.height / 2 }));
+  // keyboard zoom (Ctrl+0 fit, Ctrl+1 100%, Ctrl++ / Ctrl+-) arrives as an event from the shortcut handler, which does not know the viewport size
+  const zoomRef = useRef({ view, size, screen, zoomBy });
+  zoomRef.current = { view, size, screen, zoomBy };
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { view: v, size: sz, screen: sc, zoomBy: zb } = zoomRef.current;
+      const what = (e as CustomEvent<string>).detail;
+      if (!sc || sz.width === 0) return;
+      if (what === "fit") editorStore.getState().setView(fitView(sz, sc));
+      else if (what === "100") zb(1 / v.zoom);
+      else if (what === "in") zb(ZOOM_STEP);
+      else if (what === "out") zb(1 / ZOOM_STEP);
+    };
+    window.addEventListener("slc-zoom", on);
+    return () => window.removeEventListener("slc-zoom", on);
+  }, []);
   const cursor = tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "memo" || tool === "auto" || tool === "finger" ? "crosshair" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
 
   return (
@@ -517,17 +539,27 @@ export default function CanvasViewport() {
                     scaleY: layer.transform.scaleY,
                     rotation: layer.transform.rotation,
                     opacity: layer.opacity,
+                    globalCompositeOperation: (layer.blend ?? "source-over") as GlobalCompositeOperation, // the blend mode: the canvas mixes it the way the export does
                     visible: layer.visible && compare !== "original", // a hidden layer is neither drawn nor clickable; the original has no layers
                     draggable: movable && !layer.locked && !comparing,
                     listening: movable && layer.visible && !comparing,
-                    onMouseDown: (e: KonvaEventObject<MouseEvent>) => pressLayer(layer.id, e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey, e.target, e.evt.shiftKey && !e.evt.ctrlKey && !e.evt.metaKey),
+                    onMouseDown: (e: KonvaEventObject<MouseEvent>) => pressLayer(layer.id, e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey, e.target, e.evt.shiftKey && !e.evt.ctrlKey && !e.evt.metaKey, e.evt.altKey),
                     onTouchStart: (e: KonvaEventObject<TouchEvent>) => pressLayer(layer.id, false, e.target),
                     // a plain click (no drag) on a member of a selection narrows the selection to that layer
                     onClick: (e: KonvaEventObject<MouseEvent>) => !(e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey) && editorStore.getState().selectedLayerIds.length > 1 && editorStore.getState().selectLayerWithGroup(layer.id),
                     onDblClick: () => layer.content?.kind === "text" && editorStore.getState().activeTool === "select" && editorStore.getState().beginTextEdit({ layerId: layer.id }),
                     onDblTap: () => layer.content?.kind === "text" && editorStore.getState().activeTool === "select" && editorStore.getState().beginTextEdit({ layerId: layer.id }),
                     onDragMove: (e: KonvaEventObject<DragEvent>) => dragMove(layer, e),
-                    onDragEnd: () => editorStore.getState().commitLayerDrag(), // one history step, on release
+                    onDragEnd: (e: KonvaEventObject<DragEvent>) => {
+              // one history step, on release. With Alt held at the press, the drop makes copies and the dragged layer goes back where it was.
+              if (altCopy.current) {
+                altCopy.current = false;
+                const origin = layer.transform;
+                editorStore.getState().commitLayerDragAsCopy();
+                e.target.position({ x: screen.x + origin.x, y: screen.y + origin.y });
+                e.target.getLayer()?.batchDraw();
+              } else editorStore.getState().commitLayerDrag();
+            },
                     onTransformEnd: (e: KonvaEventObject<Event>) => {
                       // handles were dragged: the node holds the new placement; the store keeps it (one history step) or refuses it
                       const node = e.target;

@@ -7,8 +7,9 @@
  *  6: `memos` on a screen: notes pinned to points of the picture (Phase 2).
  *  7: `warp` on a bitmap layer: skew, perspective, distortion and mesh warping, stored as control points (Phase 2).
  *  8: `groups` on a screen and `groupId` on a layer: layers that are selected and moved as one (one level, no nesting).
- *  9: `cornerRadius` on a rectangle layer's content: rounded corners (absent = square, as in every earlier file). */
-export const CURRENT_VERSION = 9 as const;
+ *  9: `cornerRadius` on a rectangle layer's content: rounded corners (absent = square, as in every earlier file).
+ *  10: `blend` on a layer: how it mixes with what is below it (absent = normal, as in every earlier file). */
+export const CURRENT_VERSION = 10 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -43,6 +44,10 @@ export type WarpQuad = { kind: "quad"; points: [WarpPoint, WarpPoint, WarpPoint,
 export type WarpMesh = { kind: "mesh"; cols: number; rows: number; points: WarpPoint[] };
 export type LayerWarp = WarpQuad | WarpMesh;
 
+/** how a layer mixes with the layers and picture below it; absent = "normal". The names are the canvas' own (`globalCompositeOperation`). */
+export type BlendMode = "multiply" | "screen" | "overlay" | "darken" | "lighten";
+export const BLEND_MODES: BlendMode[] = ["multiply", "screen", "overlay", "darken", "lighten"];
+
 export type BitmapLayer = {
   id: string;
   name: string;
@@ -56,6 +61,8 @@ export type BitmapLayer = {
   warp?: LayerWarp;
   /** the group this layer belongs to (an id in the screen's `groups`); absent = in no group (and in every file before version 8) */
   groupId?: string;
+  /** absent = normal (and in every file before version 10) */
+  blend?: BlendMode;
   /** Where the bitmap is placed. A bitmap pixel p lands at  T(x, y) · R(rotation) · S(scaleX, scaleY) · p,
    *  in frame pixels (original-image pixels, y down). So (x, y) is where the bitmap's top-left corner goes and is the
    *  centre of rotation; rotation is in degrees, clockwise on screen. */

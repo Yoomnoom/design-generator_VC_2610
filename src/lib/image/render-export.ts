@@ -1,5 +1,5 @@
 import { LayerTransform, cosSin, isOnlyMoved, layerBounds } from "../geometry/layer-transform";
-import { BackgroundPatch, LayerWarp } from "../project/schema";
+import { BackgroundPatch, BlendMode, LayerWarp } from "../project/schema";
 import { hexToRgb } from "./color";
 import { RawImage, createRawImage } from "./raw-image";
 import { isIdentityWarp } from "./warp";
@@ -17,6 +17,8 @@ export type RenderLayer = {
   warp?: LayerWarp;
   zIndex: number;
   opacity: number;
+  /** how it mixes with what is below; absent = normal */
+  blend?: BlendMode;
   visible: boolean;
 };
 
@@ -69,14 +71,14 @@ function drawWarped(out: RawImage, layer: RenderLayer, t: LayerTransform, warp: 
 /** A layer that is only moved: each of its pixels is copied to one pixel, so nothing is blurred. */
 function drawMoved(out: RawImage, layer: RenderLayer) {
   const ox = Math.round(layer.x), oy = Math.round(layer.y);
-  const { image, opacity } = layer;
+  const { image, opacity, blend: mode } = layer;
   for (let ly = 0; ly < image.height; ly++) {
     const y = oy + ly;
     if (y < 0 || y >= out.height) continue;
     for (let lx = 0; lx < image.width; lx++) {
       const x = ox + lx;
       if (x < 0 || x >= out.width) continue;
-      blend(out.data, (y * out.width + x) * 4, image.data, (ly * image.width + lx) * 4, opacity);
+      blend(out.data, (y * out.width + x) * 4, image.data, (ly * image.width + lx) * 4, opacity, mode);
     }
   }
 }
@@ -93,7 +95,7 @@ const EDGE_SAMPLES = 4;
  *  exactly on the pixel grid (quarter turns, whole-number scales, whole-number positions) has no pixel in between, so such a
  *  layer comes out exactly as a hard-edged copy would. */
 function drawTransformed(out: RawImage, layer: RenderLayer, t: LayerTransform) {
-  const { image, opacity } = layer;
+  const { image, opacity, blend: mode } = layer;
   const b = layerBounds(t, image.width, image.height);
   const x0 = Math.max(Math.floor(b.x), 0), x1 = Math.min(Math.ceil(b.x + b.width), out.width);
   const y0 = Math.max(Math.floor(b.y), 0), y1 = Math.min(Math.ceil(b.y + b.height), out.height);
@@ -158,15 +160,37 @@ function drawTransformed(out: RawImage, layer: RenderLayer, t: LayerTransform) {
       px[1] = g / a;
       px[2] = bl / a;
       px[3] = a * 255 * coverage;
-      blend(out.data, (y * out.width + x) * 4, px, 0, opacity);
+      blend(out.data, (y * out.width + x) * 4, px, 0, opacity, mode);
     }
   }
 }
 
-/** source-over on non-premultiplied RGBA */
-function blend(dst: Uint8ClampedArray, d: number, src: Uint8ClampedArray, s: number, opacity: number) {
+/** the separable blend functions of the canvas specification, on 0..1 channels (cb = what is below, cs = the layer) */
+const BLEND_FN: Record<BlendMode, (cb: number, cs: number) => number> = {
+  multiply: (cb, cs) => cb * cs,
+  screen: (cb, cs) => cb + cs - cb * cs,
+  overlay: (cb, cs) => (cb <= 0.5 ? 2 * cb * cs : 1 - 2 * (1 - cb) * (1 - cs)), // hard light with the layers swapped
+  darken: (cb, cs) => Math.min(cb, cs),
+  lighten: (cb, cs) => Math.max(cb, cs),
+};
+
+/** source-over on non-premultiplied RGBA, or a blend mode on top of it (W3C compositing: the part of the layer over opaque backdrop is
+ *  mixed by the blend function, the part over transparent backdrop is the layer's own colour) */
+function blend(dst: Uint8ClampedArray, d: number, src: Uint8ClampedArray, s: number, opacity: number, mode?: BlendMode) {
   const sa = (src[s + 3] / 255) * opacity;
   if (sa === 0) return;
+  if (mode) {
+    const ab = dst[d + 3] / 255;
+    const ao = sa + ab * (1 - sa);
+    const f = BLEND_FN[mode];
+    for (let k = 0; k < 3; k++) {
+      const cs = src[s + k] / 255, cb = dst[d + k] / 255;
+      const co = (sa * (1 - ab) * cs + sa * ab * f(cb, cs) + (1 - sa) * ab * cb) / ao;
+      dst[d + k] = co * 255;
+    }
+    dst[d + 3] = ao * 255;
+    return;
+  }
   if (sa >= 1) {
     dst.set(src.subarray(s, s + 4), d);
     return;

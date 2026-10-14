@@ -8,6 +8,7 @@ import { BitmapLayer, LayerContent, TextContent } from "@/lib/project/schema";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE } from "@/lib/image/text-layout";
 import { SHAPE_LABEL, maxCornerRadius } from "@/lib/image/vector";
 import { ColorField, WidthField } from "./StyleFields";
+import { AlignButtons, BlendSelect, FlipButtons, OpacityField } from "./LayerToolsPanel";
 import { canStretch, selectionBox } from "@/features/free-transform/free-transform";
 import { ImageCache } from "@/store/images";
 import { useBindings } from "@/features/shortcuts/shortcut-store";
@@ -295,6 +296,7 @@ export default function PropertyPanel() {
         <p className="m-0 text-xs text-[var(--muted)]">끌거나 방향키(Shift는 10px)로 함께 옮기고, Delete로 모두 지웁니다. 크기와 회전은 선택 전체를 감싸는 상자(자유 변형)로 바꿉니다.</p>
         <div className="mt-2"><FreeTransformButton disabled={comparing} /></div>
         <FreeTransformFields layers={chosen} images={images} disabled={comparing} />
+        <div className="mt-3"><AlignButtons disabled={comparing} /></div>
         <p className="mb-0 mt-2 text-xs text-[var(--muted)]">이름·복제·복사는 레이어를 하나만 선택했을 때 쓸 수 있습니다.</p>
         {locked > 0 && <p className="mb-0 mt-2 text-xs text-[#8a5a12]">잠긴 레이어 {locked}개는 함께 움직이지 않고 지워지지도 않습니다.</p>}
       </section>
@@ -312,6 +314,12 @@ export default function PropertyPanel() {
       <section aria-label="선택 레이어" className="px-3.5 py-3">
         <h3 className="mb-2.5 text-[13px] font-bold">선택 레이어</h3>
         <div className="mb-2"><FreeTransformButton disabled={comparing || layer.locked} /></div>
+        <div className="mb-2 grid gap-2">
+          <OpacityField layer={layer} disabled={comparing || layer.locked} />
+          <BlendSelect layer={layer} disabled={comparing || layer.locked} />
+          <FlipButtons layer={layer} disabled={comparing || layer.locked} />
+          <AlignButtons disabled={comparing || layer.locked} />
+        </div>
         <dl className="m-0 grid grid-cols-2 gap-[7px]">
           <div className="col-span-2">
             <NameField id={layer.id} name={layer.name} disabled={comparing} />
