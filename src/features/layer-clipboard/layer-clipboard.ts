@@ -29,9 +29,20 @@ export const writePngToSystemClipboard: ClipboardWriter = async (png) => {
   await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
 };
 
+/** the copy being written right now. A Ctrl+V pressed before it finishes finds no picture on the clipboard yet; it waits for this instead of doing nothing. */
+let copyInFlight: Promise<unknown> | null = null;
+export const copyInProgress = (): Promise<unknown> | null => copyInFlight;
+
 /** Copies a layer: PNG to the system clipboard, then remembers the layer and the picture's hash. On failure nothing is remembered,
  *  because a paste without a matching picture on the clipboard would do nothing anyway. */
-export async function copyLayerToClipboard(args: { layerId: string; store: EditorStoreApi; codec: ImageCodec; write: ClipboardWriter; rasterize?: Rasterize }): Promise<CopyResult> {
+export function copyLayerToClipboard(args: { layerId: string; store: EditorStoreApi; codec: ImageCodec; write: ClipboardWriter; rasterize?: Rasterize }): Promise<CopyResult> {
+  const run = doCopy(args);
+  const tracked = run.finally(() => void (copyInFlight === tracked && (copyInFlight = null)));
+  copyInFlight = tracked;
+  return run;
+}
+
+async function doCopy(args: { layerId: string; store: EditorStoreApi; codec: ImageCodec; write: ClipboardWriter; rasterize?: Rasterize }): Promise<CopyResult> {
   const { layerId, store, codec, write, rasterize = rasterizeVectorLayer } = args;
   const state = store.getState();
   const layer = state.history?.present.screens[0].layers.find((l) => l.id === layerId);

@@ -115,6 +115,10 @@ type EditorActions = {
   /** a message for the user about something that did not work (shown until dismissed) */
   setNotice(message: string | null): void;
   pasteLayer(): string | null;
+  /** Adds a picture from outside (Ctrl+V of an external image, a file dropped on the canvas) as a NEW bitmap layer, centred in the frame and
+   *  shrunk (never enlarged) to fit when it is bigger. Each one after the first lands DUPLICATE_OFFSET further down and right. One undo step.
+   *  Null when refused (comparing, no project). The raw picture is kept as it is; the shrinking is the layer's scale. */
+  addImageLayer(input: { raw: RawImage; blob?: Blob; name: string }): string | null;
   deleteLayer(layerId: string): boolean;
   reorderLayer(layerId: string, direction: 1 | -1): boolean;
   /** resize/rotate in one undo step; a locked layer refuses */
@@ -229,6 +233,8 @@ const drawOrder = (layers: readonly BitmapLayer[]) => sortByZ(layers).map((l) =>
 
 export function createEditorStore({ genId = () => crypto.randomUUID(), now = () => Date.now(), measure = canvasMeasureFor }: EditorStoreOptions = {}): EditorStoreApi {
   /** the last keyboard move: which layer, when, and the undo entry it made, so the next press can fold into it */
+  /** how many outside pictures were added since the project was opened, for the staggering of repeated pastes */
+  let externalPastes = 0;
   let lastNudge: { layerId: string; at: number; entry: unknown; dx: number; dy: number } | null = null;
   return createStore<EditorStore>()((set, get) => {
     const screenOf = () => get().history?.present.screens[0] ?? null;
@@ -308,7 +314,8 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
       return true;
     };
 
-    const reset = (project: Project, images: ImageCache) =>
+    const reset = (project: Project, images: ImageCache) => {
+      externalPastes = 0;
       set({
         history: createHistory(project),
         images,
@@ -329,6 +336,7 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         compareMode: "off",
         dragPreview: null,
       });
+    };
 
     return {
       history: null,
@@ -503,6 +511,35 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
         commitLayers("레이어 붙여넣기", addOnTop(screen.layers, copy));
         set({ selectedLayerIds: [copy.id], selectedPatchId: null, layerClipboard: { ...layerClipboard, pastes: layerClipboard.pastes + 1 } });
         return copy.id;
+      },
+
+      addImageLayer({ raw, blob, name }) {
+        const { history, images } = get();
+        const screen = screenOf();
+        if (frozen() || !history || !screen || raw.width < 1 || raw.height < 1) return null;
+        const fit = Math.min(1, screen.width / raw.width, screen.height / raw.height);
+        const shift = DUPLICATE_OFFSET * externalPastes;
+        const w = raw.width * fit;
+        const h = raw.height * fit;
+        const round = (v: number) => (fit === 1 ? Math.round(v) : Math.round(v * 100) / 100);
+        const imageId = genId();
+        const id = genId();
+        const layer: BitmapLayer = {
+          id,
+          name: name.trim().slice(0, MAX_LAYER_NAME) || `붙여넣기 ${nextNumberFor(screen.layers, "붙여넣기")}`,
+          crop: { x: 0, y: 0, width: raw.width, height: raw.height },
+          imageId,
+          transform: { x: round((screen.width - w) / 2 + shift), y: round((screen.height - h) / 2 + shift), scaleX: fit, scaleY: fit, rotation: 0 },
+          zIndex: 0,
+          opacity: 1,
+          visible: true,
+          locked: false,
+        };
+        externalPastes++;
+        set({ images: new Map(images).set(imageId, { raw, blob }) });
+        commitLayers("이미지 붙여넣기", addOnTop(screen.layers, layer));
+        set({ selectedLayerIds: [id], selectedPatchId: null, activeTool: "select" });
+        return id;
       },
 
       deleteLayer(layerId) {
@@ -908,3 +945,4 @@ export function createEditorStore({ genId = () => crypto.randomUUID(), now = () 
     };
   });
 }
+

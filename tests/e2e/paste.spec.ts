@@ -1,5 +1,5 @@
 import { Page, expect, test } from "@playwright/test";
-import { CARD, PAGE, blank, dragImageRect, editor, encodePng, openApp, pageWithCard, pickTool, uploadPng, zoomTo } from "./helpers";
+import { CARD, PAGE, blank, dragImageRect, editor, encodePng, openApp, pageWithCard, pickTool, upload, uploadPng, zoomTo } from "./helpers";
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
@@ -44,7 +44,7 @@ test.describe("paste an image (Ctrl+V)", () => {
     await expect(page.getByTestId("screen-label")).toContainText("375 × 812 px");
   });
 
-  test("with unsaved edits it asks first; cancelling keeps the work, confirming replaces it", async ({ page }) => {
+  test("with a project open, a pasted picture becomes a new layer without asking; the screen stays", async ({ page }) => {
     await openApp(page);
     await uploadPng(page, pageWithCard());
     await zoomTo(page, 1, 600, 300);
@@ -53,12 +53,22 @@ test.describe("paste an image (Ctrl+V)", () => {
     expect((await editor(page)).layers).toHaveLength(1);
 
     await pasteImage(page, encodePng(blank(100, 100, [1, 2, 3, 255])));
+    await expect.poll(async () => (await editor(page)).layers.length).toBe(2);
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(page.getByTestId("screen-label")).toContainText(`${PAGE.width} × ${PAGE.height}`);
+  });
+
+  test("the upload button with unsaved edits still asks first, then replaces", async ({ page }) => {
+    await openApp(page);
+    await uploadPng(page, pageWithCard());
+    await zoomTo(page, 1, 600, 300);
+    await pickTool(page, "영역 추출");
+    await dragImageRect(page, { x: CARD.x, y: CARD.y }, { x: CARD.x + CARD.width, y: CARD.y + CARD.height });
+    await upload(page, { name: "image.png", mimeType: "image/png", buffer: encodePng(blank(100, 100, [1, 2, 3, 255])) });
     await expect(page.getByRole("alertdialog")).toContainText("image.png");
     await page.getByRole("button", { name: "취소", exact: true }).click();
     expect((await editor(page)).layers).toHaveLength(1);
-    await expect(page.getByTestId("screen-label")).toContainText(`${PAGE.width} × ${PAGE.height}`);
-
-    await pasteImage(page, encodePng(blank(100, 100, [1, 2, 3, 255])));
+    await upload(page, { name: "image.png", mimeType: "image/png", buffer: encodePng(blank(100, 100, [1, 2, 3, 255])) });
     await page.getByRole("button", { name: "새로 불러오기" }).click();
     await expect(page.getByTestId("screen-label")).toContainText("100 × 100");
     expect((await editor(page)).layers).toHaveLength(0);

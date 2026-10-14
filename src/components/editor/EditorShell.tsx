@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { getAutosave } from "@/features/autosave/browser-autosave";
-import { decidePaste } from "@/features/layer-clipboard/layer-clipboard";
+import { copyInProgress, decidePaste } from "@/features/layer-clipboard/layer-clipboard";
 import { imageFromClipboard } from "@/features/import-image/clipboard";
 import { checkImageFile, importImage } from "@/features/import-image/import-image";
 import { parseProjectFile } from "@/features/project-persistence/project-file";
@@ -106,6 +106,18 @@ export default function EditorShell() {
     }
   };
 
+  /** a picture from outside while a project is open: it becomes a new layer, no question asked */
+  const addAsLayer = async (file: File) => {
+    const state = editorStore.getState();
+    if (state.compareMode !== "off") return state.setNotice("비교 보기 중에는 이미지를 붙여넣을 수 없습니다. 비교를 끄고 다시 시도해 주세요.");
+    const result = await importImage(file, canvasCodec);
+    if (!result.ok) return state.setNotice(result.error);
+    if (!editorStore.getState().addImageLayer({ raw: result.raw, blob: file, name: file.name.replace(/\.[^.]+$/, "") })) editorStore.getState().setNotice("이미지를 레이어로 추가하지 못했습니다.");
+  };
+
+  /** a picture arriving from outside: a new layer when a project is open, otherwise a new project (like an upload) */
+  const receiveImage = (file: File) => (editorStore.getState().history ? addAsLayer(file) : request({ kind: "image", file }));
+
   const run = (next: Incoming) => (next.kind === "image" ? loadImage(next.file) : openProject(next.file));
 
   /** replacing a project that has unsaved edits asks first */
@@ -129,17 +141,22 @@ export default function EditorShell() {
   // Ctrl/⌘+V needs a picture on the system clipboard; with none, nothing happens. A picture whose hash is the one the app put there
   // when a layer was copied is pasted as that layer. Any other picture is loaded exactly like an upload, including the
   // "discard current work?" question. (Leaving the window changes nothing: the copy stays until something else is copied.)
-  const requestRef = useRef(request);
-  requestRef.current = request;
+  const receiveRef = useRef(receiveImage);
+  receiveRef.current = receiveImage;
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       if (isTypingTarget(e.target)) return;
       const file = imageFromClipboard(e.clipboardData);
-      if (!file) return; // no picture: nothing is pasted
+      if (!file) {
+        // no picture: nothing is pasted, unless a layer copy is still being written to the clipboard (Ctrl+C then Ctrl+V in quick succession)
+        const copying = copyInProgress();
+        if (copying) void copying.then(() => editorStore.getState().pasteLayer());
+        return;
+      }
       e.preventDefault();
       void decidePaste({ file, store: editorStore, codec: canvasCodec }).then((what) => {
         if (what === "layer") editorStore.getState().pasteLayer();
-        else if (what === "image") void requestRef.current({ kind: "image", file });
+        else if (what === "image") void receiveRef.current(file);
       });
     };
     document.addEventListener("paste", onPaste);
@@ -189,7 +206,7 @@ export default function EditorShell() {
             e.preventDefault();
             setDropping(false);
             const file = e.dataTransfer.files[0];
-            if (file) void request({ kind: "image", file });
+            if (file) void receiveImage(file);
           }}
         >
           <CanvasViewport />

@@ -147,14 +147,15 @@ test.describe("copy and paste a layer (Ctrl+C / Ctrl+V)", () => {
     await expect(page.getByTestId("screen-label")).toContainText(`${PAGE.width} × ${PAGE.height}`);
   });
 
-  test("a picture copied somewhere else after the layer is pasted as a new image, not as the layer", async ({ page }) => {
+  test("a picture copied somewhere else after the layer is added as a new image layer, not as a copy of the layer", async ({ page }) => {
     await withLayer(page);
     await page.keyboard.press("Control+c");
     await copied(page);
     await copyOtherPicture(page);
     await page.keyboard.press("Control+v");
-    await expect(page.getByRole("alertdialog")).toBeVisible(); // a new image: it asks before replacing the unsaved work
-    expect((await editor(page)).layers).toHaveLength(1);
+    await expect.poll(async () => (await editor(page)).layers.length).toBe(2); // a new image layer: no question, the screen stays
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    expect((await editor(page)).layers.some((l) => l.name.endsWith(" 복사"))).toBe(false);
   });
 
   test("text copied somewhere else after the layer: nothing is pasted, although the layer is still remembered", async ({ page }) => {
@@ -204,15 +205,15 @@ test.describe("copy and paste a layer (Ctrl+C / Ctrl+V)", () => {
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
   });
 
-  test("with a picture on the clipboard and no layer copied, Ctrl+V loads the picture, not a layer", async ({ page }) => {
+  test("with a picture on the clipboard and no layer copied, Ctrl+V adds the picture as a new layer", async ({ page }) => {
     await withLayer(page);
     await page.evaluate(async (b64) => {
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) })]);
     }, encodePng(blank(100, 100, [1, 2, 3, 255])).toString("base64"));
     await page.keyboard.press("Control+v");
-    await expect(page.getByRole("alertdialog")).toBeVisible(); // unsaved edits: asks before replacing
-    expect((await editor(page)).layers).toHaveLength(1);
+    await expect.poll(async () => (await editor(page)).layers.length).toBe(2);
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
   });
 
   test("Ctrl+V with nothing copied does nothing", async ({ page }) => {
