@@ -1,6 +1,6 @@
 export type ShortcutAction =
   | "undo" | "redo" | "delete" | "duplicate" | "copy" | "cut"
-  | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-shape" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "tool-warp" | "tool-finger" | "tool-auto"
+  | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-shape" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "tool-warp" | "tool-finger" | "tool-liquify" | "tool-auto"
   | "select-all" | "deselect" | "invert-selection" | "group" | "ungroup" | "free-transform"
   | "zoom-fit" | "zoom-100" | "zoom-in" | "zoom-out"
   | "layer-forward" | "layer-backward" | "layer-front" | "layer-back"
@@ -79,6 +79,7 @@ export const PRESETS: Record<PresetId, Bindings> = {
     "tool-ellipse": null,
     "tool-warp": b("w", { shift: true }),
     "tool-finger": b("r"),
+    "tool-liquify": b("x", { shift: true }),
   },
   legacy: {
     ...COMMON,
@@ -93,6 +94,7 @@ export const PRESETS: Record<PresetId, Bindings> = {
     "tool-ellipse": b("o"),
     "tool-warp": b("w"),
     "tool-finger": b("f"),
+    "tool-liquify": b("x", { shift: true }),
     "default-colors": null, // plain D is free in the old layout, but a one-letter key for a rarely used function is left unassigned there
   },
 };
@@ -163,7 +165,8 @@ export const ACTION_INFO: { id: ConfigurableAction; label: string; group: "편�
   { id: "tool-text", label: "텍스트", group: "도구" },
   { id: "tool-memo", label: "메모", group: "도구" },
   { id: "tool-warp", label: "변형(왜곡)", group: "도구" },
-  { id: "tool-finger", label: "손가락", group: "도구" },
+  { id: "tool-liquify", label: "유동화 (모양을 밀어 바꿈)", group: "도구" },
+  { id: "tool-finger", label: "손가락 (색을 번지게 함)", group: "도구" },
   { id: "tool-eyedropper", label: "스포이트", group: "도구" },
   { id: "swap-colors", label: "테두리·채움 색 바꾸기", group: "색·크기" },
   { id: "default-colors", label: "기본색(검정·흰색)", group: "색·크기" },

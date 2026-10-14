@@ -117,7 +117,8 @@ test.describe("finger tool", () => {
     const drag = () => dragImageRect(page, { x: CARD.x + 10, y: CARD.y + 10 }, { x: CARD.x + 150, y: CARD.y + 10 });
     const past = (await editor(page)).past;
     await page.evaluate(() => { const s = (window as any).__slc.getState(); s.selectLayer(null); });
-    await drag();
+    // with nothing chosen a drag that starts on a picture takes that layer (so it works at once); one over the bare capture says why not
+    await dragImageRect(page, { x: CARD.x + 10, y: CARD.y + 220 }, { x: CARD.x + 150, y: CARD.y + 220 });
     expect(await notice(page)).toContain("원본 스크린샷");
     await page.evaluate(() => { const s = (window as any).__slc.getState(); s.setNotice(null); const id = s.history.present.screens[0].layers[0].id; s.selectLayer(id); s.setLayerLocked(id, true); });
     const pastLocked = (await editor(page)).past;

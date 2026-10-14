@@ -12,7 +12,8 @@ import { rgbToHex } from "@/lib/image/color";
 import { DrawCtx, drawContent, shapeFromDrag } from "@/lib/image/vector";
 import { SHAPE_TOOLS } from "@/store/editor-store";
 import { applyStroke } from "@/features/brush/brush";
-import { FingerStroke, startFingerStroke } from "@/features/smudge/finger";
+import { FingerStroke, bitmapMapper, startFingerStroke } from "@/features/smudge/finger";
+import { startLiquifyStroke } from "@/features/liquify/liquify";
 import { MAX_STROKE_POINTS } from "@/lib/image/brush-raster";
 import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
@@ -66,6 +67,9 @@ export default function CanvasViewport() {
   const gesture = useRef<Gesture | null>(null);
   /** the box being dragged for a box selection, and the layers it would select (shown before the button is released) */
   const [pickDrag, setPickDrag] = useState<{ box: Box; hits: string[]; mode: MarqueeMode } | null>(null);
+  const [ring, setRing] = useState<Point | null>(null); // where the finger / liquify brush is, for its ring
+  const fingerSize = useEditorStore((s) => s.fingerStyle.size);
+  const liquifySize = useEditorStore((s) => s.liquifyStyle.size);
   const space = useRef(false); // Space held: a temporary hand, whatever the tool
   useEffect(() => {
     const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ["TEXTAREA", "SELECT"].includes(t.tagName) || (t instanceof HTMLInputElement && !["checkbox", "radio", "button", "range", "color"].includes(t.type))); // a focused checkbox is not a text box
@@ -216,12 +220,27 @@ export default function CanvasViewport() {
       brushPoints.current = [{ x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100 }];
       gesture.current = { kind: "brush", points: brushPoints.current };
       setBrushTick((t) => t + 1);
-    } else if (e.button === 0 && activeTool === "finger") {
+    } else if (e.button === 0 && (activeTool === "finger" || activeTool === "liquify")) {
       const st = editorStore.getState();
-      const target = st.selectedLayerIds.length === 1 ? st.selectedLayerIds[0] : undefined;
-      const started = startFingerStroke(editorStore, target ?? "");
+      let target = st.selectedLayerIds.length === 1 ? st.selectedLayerIds[0] : undefined;
+      if (!target) {
+        // nothing chosen yet: the layer under the pointer is taken, so the first drag on a picture just works
+        const at = toImage(e, v);
+        for (const l of [...(screen?.layers ?? [])].sort((x, y) => y.zIndex - x.zIndex)) {
+          const pic = l.imageId ? editorStore.getState().images.get(l.imageId)?.raw : undefined;
+          if (!pic || !l.visible || l.content) continue;
+          const q = bitmapMapper(l, pic)(at);
+          if (q && q.x >= 0 && q.y >= 0 && q.x < pic.width && q.y < pic.height && pic.data[(Math.floor(q.y) * pic.width + Math.floor(q.x)) * 4 + 3] > 0) {
+            st.selectLayer(l.id);
+            target = l.id;
+            break;
+          }
+        }
+      }
+      const name = activeTool === "liquify" ? "유동화" : "손가락";
+      const started = activeTool === "liquify" ? startLiquifyStroke(editorStore, target ?? "") : startFingerStroke(editorStore, target ?? "");
       if (!started.ok) {
-        st.setNotice(target ? started.reason : "손가락 도구는 이미지 레이어를 하나 선택한 뒤 쓸 수 있습니다. 원본 스크린샷은 바꿀 수 없습니다.");
+        st.setNotice(target ? started.reason : `${name} 도구는 이미지 레이어 위에서 쓸 수 있습니다. 이미지 레이어를 선택하거나 그 위를 끌어 보세요. 원본 스크린샷은 바꿀 수 없습니다.`);
         return;
       }
       const { raw } = started.stroke;
@@ -277,6 +296,10 @@ export default function CanvasViewport() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    {
+      const t0 = editorStore.getState().activeTool;
+      if (screen && (t0 === "finger" || t0 === "liquify")) setRing(toImage(e)); // the brush ring follows the pointer
+    }
     if (!gesture.current && screen && editorStore.getState().activeTool === "auto") return editorStore.getState().hoverCandidateAt(toImage(e));
     const g = gesture.current;
     if (!g || !screen) return;
@@ -291,7 +314,14 @@ export default function CanvasViewport() {
         setBrushTick((t) => t + 1);
       }
     } else if (g.kind === "finger") {
-      const box = g.stroke.move(toImage(e));
+      // every pointer sample the browser collected since the last event, so a fast curve is followed and not cut short
+      const native = e.nativeEvent as PointerEvent;
+      const samples = native.getCoalescedEvents?.() ?? [];
+      let box: { x: number; y: number; width: number; height: number } | null = null;
+      for (const s of samples.length ? samples : [native]) {
+        const b = g.stroke.move(toImage(s));
+        if (b) box = box ? { x: Math.min(box.x, b.x), y: Math.min(box.y, b.y), width: Math.max(box.x + box.width, b.x + b.width) - Math.min(box.x, b.x), height: Math.max(box.y + box.height, b.y + b.height) - Math.min(box.y, b.y) } : b;
+      }
       if (box) {
         // only the pixels this move wrote are copied to the canvas the layer shows; the layer itself is not re-encoded
         g.context.putImageData(g.imageData, 0, 0, box.x, box.y, box.width, box.height);
@@ -488,7 +518,7 @@ export default function CanvasViewport() {
     window.addEventListener("slc-zoom", on);
     return () => window.removeEventListener("slc-zoom", on);
   }, []);
-  const cursor = tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "memo" || tool === "auto" || tool === "finger" ? "crosshair" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
+  const cursor = tool === "hand" ? "grab" : tool === "text" ? "text" : tool === "memo" || tool === "auto" || tool === "finger" || tool === "liquify" ? "crosshair" : tool === "rect" || tool === "eyedropper" || tool === "brush" || tool === "eraser" || SHAPE_TOOLS[tool] ? "crosshair" : tool === "fill" ? "pointer" : "default";
 
   return (
     <div
@@ -500,7 +530,10 @@ export default function CanvasViewport() {
       onPointerMove={onPointerMove}
       onPointerUp={(e) => endGesture(e, true)}
       onPointerCancel={(e) => endGesture(e, false)}
-      onPointerLeave={() => editorStore.getState().hoverCandidateAt(null)}
+      onPointerLeave={() => {
+          editorStore.getState().hoverCandidateAt(null);
+          setRing(null);
+        }}
     >
       {hasSize && (
         <Stage
@@ -666,6 +699,18 @@ export default function CanvasViewport() {
                     }}
                   />
                 )}
+                {ring && (tool === "finger" || tool === "liquify") && !comparing && (() => {
+                  // the brush ring: its radius in the layer's own pixels, shown in frame pixels through the layer's scale
+                  const target = layers.find((l) => l.id === selectedId);
+                  const k = target ? (Math.abs(target.transform.scaleX) + Math.abs(target.transform.scaleY)) / 2 : 1;
+                  const r = ((tool === "liquify" ? liquifySize : fingerSize) / 2) * k;
+                  return (
+                    <>
+                      <Circle x={screen.x + ring.x} y={screen.y + ring.y} radius={r} stroke="#ffffff" strokeWidth={3} strokeScaleEnabled={false} listening={false} />
+                      <Circle x={screen.x + ring.x} y={screen.y + ring.y} radius={r} stroke="#111827" strokeWidth={1} strokeScaleEnabled={false} listening={false} />
+                    </>
+                  );
+                })()}
                 {ftBox && (
                   <>
                     <Rect x={screen.x + ftBox.x} y={screen.y + ftBox.y} width={ftBox.width} height={ftBox.height} stroke={ACCENT} strokeWidth={1} strokeScaleEnabled={false} dash={[4, 3]} listening={false} />

@@ -226,6 +226,9 @@ export function useShortcuts() {
         case "tool-warp":
           st.setTool("warp");
           break;
+        case "tool-liquify":
+          st.setTool("liquify");
+          break;
         case "tool-finger":
           st.setTool("finger");
           break;

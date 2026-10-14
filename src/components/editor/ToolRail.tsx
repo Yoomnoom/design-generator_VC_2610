@@ -26,11 +26,12 @@ const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
   { id: "text", icon: "T", label: "텍스트", title: "클릭하고 글자를 입력해 텍스트 상자를 만듭니다. 두 번 클릭하면 고칩니다 (T)" },
   { id: "memo", icon: "💬", label: "메모", title: "클릭해서 메모 핀을 꽂습니다. 편집용이며 PNG에는 기본으로 들어가지 않습니다 (N)" },
   { id: "warp", icon: "◩", label: "변형", title: "선택한 이미지 레이어의 모서리·격자점을 끌어 기울이기·원근·왜곡·뒤틀기를 합니다. 원본 픽셀은 바뀌지 않습니다. Enter로 확정, Esc로 취소합니다 (W)" },
+  { id: "liquify", icon: "≋", label: "유동화", title: "" },
   { id: "finger", icon: "☝", label: "손가락", title: "이미지 레이어 위에서 끌면 시작한 자리의 색이 끄는 방향으로 번집니다. 크기·강도·부드러움을 정할 수 있고, 원본 스크린샷과 도형·텍스트 레이어는 바뀌지 않습니다 (F)" },
   { id: "eyedropper", icon: "💧", label: "스포이트", title: "화면의 색을 읽어 그리기 색으로 씁니다 (I)" },
 ];
 
-const ACTION_OF: Partial<Record<Tool, ConfigurableAction>> = { select: "tool-select", hand: "tool-hand", rect: "tool-rect", auto: "tool-auto", line: "tool-line", box: "tool-box", ellipse: "tool-ellipse", brush: "tool-brush", eraser: "tool-eraser", text: "tool-text", memo: "tool-memo", warp: "tool-warp", finger: "tool-finger", eyedropper: "tool-eyedropper" };
+const ACTION_OF: Partial<Record<Tool, ConfigurableAction>> = { select: "tool-select", hand: "tool-hand", rect: "tool-rect", auto: "tool-auto", line: "tool-line", box: "tool-box", ellipse: "tool-ellipse", brush: "tool-brush", eraser: "tool-eraser", text: "tool-text", memo: "tool-memo", warp: "tool-warp", finger: "tool-finger", liquify: "tool-liquify", eyedropper: "tool-eyedropper" };
 /** the tool's tooltip with the key the user has set (the texts above end in the default key, which is replaced) */
 const titleWith = (t: { id: Tool; title: string }, bindings: ReturnType<typeof useBindings>) => {
   const a = ACTION_OF[t.id];

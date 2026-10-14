@@ -21,6 +21,7 @@ import { sampleBackground } from "@/lib/image/sample-background";
 import { AlignKind, alignDeltas, distributeDeltas, makeUnits } from "@/features/align/align";
 import { FreeOp, LayerResult, applyFreeTransform as computeFreeTransform, transformable } from "@/features/free-transform/free-transform";
 import { MIN_GROUP_SIZE, expandToGroups, nextGroupName, panelRows, pruneGroups, rangeSelect, wholeGroupOf } from "@/features/groups/groups";
+import { LIQUIFY_MODES, LiquifyMode, MAX_LIQUIFY_SIZE, MIN_LIQUIFY_SIZE } from "@/lib/image/liquify";
 import { BLANK_FILE, checkCanvasSize, isGeneratedPage } from "@/lib/project/blank";
 import { createRawImage } from "@/lib/image/raw-image";
 import { BLEND_MODES, BlendMode, BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode, MAX_GROUPS, MAX_GROUP_NAME } from "@/lib/project/schema";
@@ -40,11 +41,14 @@ export type LayerClipboard = { layer: BitmapLayer; pastes: number; /** hash of t
  *  While comparing, nothing can be edited: what is being compared must not change under the eye. */
 export type CompareMode = "off" | "original" | "split";
 
-export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text" | "memo" | "auto" | "warp" | "finger";
+export type Tool = "select" | "hand" | "rect" | "fill" | "line" | "box" | "ellipse" | "eyedropper" | "brush" | "eraser" | "text" | "memo" | "auto" | "warp" | "finger" | "liquify";
 
 /** The finger (smudge) tool's brush. Size is in the layer's own pixels; strength and softness are 0..100 (percent). Not part of the project. */
 export type FingerStyle = { size: number; strength: number; softness: number };
 export const DEFAULT_FINGER_STYLE: FingerStyle = { size: 30, strength: 60, softness: 50 };
+/** the liquify tool's brush: mode, size (the layer's own pixels), strength and edge softness (percent) */
+export type LiquifyStyle = { mode: LiquifyMode; size: number; strength: number; softness: number };
+export const DEFAULT_LIQUIFY_STYLE: LiquifyStyle = { mode: "push", size: 80, strength: 70, softness: 50 };
 
 /** The finger tool writes a whole new bitmap per stroke, and every undo step keeps the one it replaced alive. The versions that are no
  *  longer the present one may take at most this many bytes; past that, the oldest undo steps are dropped (and the pictures only they
@@ -121,6 +125,11 @@ type EditorState = {
   /** a drag in progress: shown live, recorded only by commitLayerDrag */
   dragPreview: { layerId: string; x: number; y: number } | null;
   fingerStyle: FingerStyle;
+  liquifyStyle: LiquifyStyle;
+  setLiquifyStyle(change: Partial<LiquifyStyle>): void;
+  /** the picture a layer had when liquify first touched it (what "restore" blends back toward); dropped when another tool is chosen */
+  liquifyBase: { layerId: string; raw: RawImage } | null;
+  setLiquifyBase(base: { layerId: string; raw: RawImage } | null): void;
   warpUi: WarpUi;
   warpSession: WarpSession | null;
   /** a warp drag in progress: shown live, recorded only by commitWarpPreview */
@@ -260,7 +269,7 @@ type EditorActions = {
   /** Puts the result of a finger stroke on a bitmap layer: `raw` (same size as the layer's bitmap) becomes the layer's picture under a NEW
    *  imageId, and the old picture stays for undo; the history holds only the imageId change. One undo step. Refused (false) for a locked or
    *  vector layer, while comparing, or when the size differs. Old versions are released by the memory budget (IMAGE_VERSION_BUDGET). */
-  commitSmudge(layerId: string, raw: RawImage): boolean;
+  commitSmudge(layerId: string, raw: RawImage, label?: string): boolean;
   setDrawStyle(change: Partial<DrawStyle>): void;
   setTextStyle(change: Partial<TextStyle>): void;
   /** a new text box with its top-left at (x, y), in the current text style; one undo step. Empty text makes nothing. */
@@ -529,6 +538,8 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       selectedMemoId: null,
       dragPreview: null,
       fingerStyle: DEFAULT_FINGER_STYLE,
+      liquifyStyle: DEFAULT_LIQUIFY_STYLE,
+      liquifyBase: null,
       warpUi: DEFAULT_WARP_UI,
       warpSession: null,
       warpPreview: null,
@@ -1486,13 +1497,21 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         set({ fingerStyle: { size: clamp(next.size, 2, 300, DEFAULT_FINGER_STYLE.size), strength: clamp(next.strength, 1, 100, DEFAULT_FINGER_STYLE.strength), softness: clamp(next.softness, 0, 100, DEFAULT_FINGER_STYLE.softness) } });
       },
 
-      commitSmudge(layerId, raw) {
+      setLiquifyStyle(change) {
+        const next = { ...get().liquifyStyle, ...change };
+        const clamp = (v: number, lo: number, hi: number, fallback: number) => (Number.isFinite(v) ? Math.min(Math.max(Math.round(v), lo), hi) : fallback);
+        const mode: LiquifyMode = LIQUIFY_MODES.includes(next.mode) ? next.mode : DEFAULT_LIQUIFY_STYLE.mode;
+        set({ liquifyStyle: { mode, size: clamp(next.size, MIN_LIQUIFY_SIZE, MAX_LIQUIFY_SIZE, DEFAULT_LIQUIFY_STYLE.size), strength: clamp(next.strength, 1, 100, DEFAULT_LIQUIFY_STYLE.strength), softness: clamp(next.softness, 0, 100, DEFAULT_LIQUIFY_STYLE.softness) } });
+      },
+      setLiquifyBase: (liquifyBase) => set({ liquifyBase }),
+
+      commitSmudge(layerId, raw, label = "손가락 번짐") {
         const { history, images } = get();
         const layer = screenOf()?.layers.find((l) => l.id === layerId);
         const old = layer?.imageId ? images.get(layer.imageId)?.raw : undefined;
         if (frozen() || !history || !layer || layer.content || layer.locked || !old || old.width !== raw.width || old.height !== raw.height) return false;
         const imageId = genId();
-        const next = commit(history, "손가락 번짐", (draft) => {
+        const next = commit(history, label, (draft) => {
           const l = draft.screens[0].layers.find((d) => d.id === layerId);
           if (l) l.imageId = imageId; // only the id changes: the history never holds pixels
         });
@@ -1684,6 +1703,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       // a gesture or question that was under way is dropped, so nothing half-done lingers behind the comparison
       setCompareMode: (compareMode) => set({ compareMode, dragPreview: null, pendingExtraction: null }),
       setTool(activeTool) {
+        if (activeTool !== "liquify" && get().liquifyBase) set({ liquifyBase: null });
         if ((activeTool === "rect" || activeTool === "auto") && isGeneratedPage(screenOf()?.source.fileName ?? "")) {
           return set({ notice: "빈 캔버스·템플릿 화면에는 추출할 스크린샷이 없습니다. 영역 추출과 자동 후보는 캡처를 올렸을 때 쓸 수 있습니다." });
         }

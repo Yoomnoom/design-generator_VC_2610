@@ -1,3 +1,4 @@
+import { liquifyTargetProblem } from "@/features/liquify/liquify";
 import { strokeTargetProblem } from "@/features/brush/brush";
 import { isGeneratedPage } from "@/lib/project/blank";
 import { BitmapLayer, ScreenNode } from "@/lib/project/schema";
@@ -9,7 +10,7 @@ import type { Tool } from "@/store/editor-store";
 export type ToolHint = { usable: boolean; text: string };
 export type HintState = { screen: ScreenNode | null; selected: BitmapLayer[]; comparing: boolean };
 
-const NEEDS_EDIT: Tool[] = ["rect", "fill", "line", "box", "ellipse", "brush", "eraser", "text", "memo", "auto", "warp", "finger"];
+const NEEDS_EDIT: Tool[] = ["liquify", "rect", "fill", "line", "box", "ellipse", "brush", "eraser", "text", "memo", "auto", "warp", "finger"];
 
 export function toolHint(tool: Tool, s: HintState): ToolHint {
   const ok = (text: string): ToolHint => ({ usable: true, text });
@@ -49,6 +50,10 @@ export function toolHint(tool: Tool, s: HintState): ToolHint {
       if (one.content || !one.imageId) return no("변형: 도형·텍스트 레이어는 대상이 아닙니다. 이미지 레이어를 선택하세요.");
       if (one.locked) return no("변형: 잠긴 레이어입니다. 잠금을 풀고 다시 시도하세요.");
       return ok("변형 · 모서리·격자점을 끌어 기울이기·원근·왜곡을 합니다. Enter 확정, Esc 취소");
+    case "liquify": {
+      const problem = liquifyTargetProblem(one, !!one?.imageId);
+      return problem ? no(`유동화: ${problem}`) : ok("유동화 · 끌어서 모양을 밀고, 부풀리고, 오므립니다. 위쪽 설정에서 방식·크기·강도를 고릅니다");
+    }
     case "finger": {
       if (!one) return no("손가락: 이미지 레이어를 하나만 선택하세요. 원본 스크린샷은 바꿀 수 없습니다.");
       if (one.content || !one.imageId) return no("손가락: 도형·텍스트 레이어는 번지게 할 수 없습니다. 이미지 레이어를 선택하세요.");

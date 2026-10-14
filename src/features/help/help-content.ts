@@ -20,6 +20,7 @@ export const TOOL_HELP: Record<HelpId, ToolHelp> = {
   text: { label: "텍스트", summary: "클릭하고 글자를 입력해 텍스트 상자를 만듭니다. Ctrl+Enter 확정, Esc 취소.", when: "새 문구를 넣거나 기존 글자를 덮어 쓸 때.", example: "버튼 위를 클릭해 '확인'을 입력. 두 번 클릭하면 고칩니다.", action: "tool-text" },
   memo: { label: "메모", summary: "클릭해서 메모 핀을 꽂습니다. 편집용이며 PNG에는 기본으로 들어가지 않습니다.", when: "수정 지시나 확인할 점을 화면 위에 적어 둘 때.", example: "카드에 핀을 꽂고 '여기 문구 교체'라고 적기. 내보내기에서 '메모 포함'을 켜면 PNG에도 나옵니다.", action: "tool-memo" },
   warp: { label: "변형", summary: "이미지 레이어의 모서리·격자점을 끌어 기울이기·원근·왜곡을 합니다. 원본 픽셀은 바뀌지 않습니다.", when: "화면 캡처를 비스듬히 놓거나 목업 위에 맞춰 늘릴 때.", example: "카드 레이어를 선택 → 변형 → 모서리 하나를 끌어 원근을 주고 Enter.", stuck: "이미지(비트맵) 레이어 하나만 선택해야 합니다. 변형한 레이어에 브러시를 쓰려면 '변형 초기화'를 먼저 누르세요.", action: "tool-warp" },
+  liquify: { label: "유동화", summary: "이미지 레이어의 모양을 끌어서 밀고(밀기), 부풀리고, 오므리고, 원래대로 복원합니다. 손가락은 색을 번지게 하고 유동화는 모양을 밀어 바꿉니다.", when: "얼굴·물체의 윤곽을 다듬거나 요소를 살짝 늘리고 줄일 때.", example: "버튼 레이어의 모서리를 밀기로 바깥으로 당기고, 어색해진 곳은 복원으로 되돌립니다. 부풀리기·오므리기는 누르기만 해도 적용됩니다.", stuck: "이미지(비트맵) 레이어 하나를 선택해야 합니다. 원본 스크린샷, 도형·텍스트·메모, 변형(warp)한 레이어(변형 초기화 후 가능), 잠긴·숨긴 레이어는 안 됩니다. 레이어 밖으로 밀려난 부분은 사라집니다.", action: "tool-liquify" },
   finger: { label: "손가락", summary: "끄는 방향으로 색을 번지게 합니다.", when: "경계를 부드럽게 흐리거나 얼룩을 밀어 정리할 때.", example: "추출한 레이어의 거친 가장자리를 바깥쪽으로 살짝 끌어 다듬기.", stuck: "이미지 레이어 하나를 선택해야 합니다. 원본 스크린샷과 도형·텍스트는 바뀌지 않습니다.", action: "tool-finger" },
   eyedropper: { label: "스포이트", summary: "화면의 색을 읽어 그리기 색으로 씁니다.", when: "기존 화면과 같은 색의 도형·글자를 만들 때.", example: "버튼 색을 찍은 뒤 사각형을 그리면 같은 색으로 나옵니다.", action: "tool-eyedropper" },
   "free-transform": { label: "자유 변형", summary: "선택한 레이어 전체를 감싸는 상자로 크기·회전을 한꺼번에 바꿉니다.", when: "그림자와 버튼처럼 여러 레이어를 같은 비율로 키우거나 돌릴 때.", example: "버튼 묶음을 선택 → 모서리를 끌면 모두 같은 비율로 커집니다. Shift = 비율 유지, Alt = 중심 기준.", stuck: "잠긴 레이어는 변하지 않고, 변형(warp)한 레이어는 크기가 안 바뀝니다. 기울어진 레이어가 섞이면 비율 유지로만 바뀝니다.", action: "free-transform" },
@@ -27,7 +28,7 @@ export const TOOL_HELP: Record<HelpId, ToolHelp> = {
 };
 
 /** every tool of the tool rail has help */
-export const HELP_ORDER: HelpId[] = ["select", "hand", "rect", "auto", "fill", "line", "box", "ellipse", "brush", "eraser", "text", "memo", "warp", "finger", "eyedropper", "free-transform", "sources"];
+export const HELP_ORDER: HelpId[] = ["select", "hand", "rect", "auto", "fill", "line", "box", "ellipse", "brush", "eraser", "text", "memo", "warp", "liquify", "finger", "eyedropper", "free-transform", "sources"];
 
 /** the tooltip: what it does, when to use it, and the key (the caller passes the live key text) */
 export const toolTooltip = (id: HelpId, key: string | null): string => {

@@ -22,6 +22,7 @@ import MemoPanel from "./MemoPanel";
 import TextStylePanel from "./TextStylePanel";
 import AssetPanel from "./AssetPanel";
 import FingerPanel from "./FingerPanel";
+import LiquifyPanel from "./LiquifyPanel";
 import WarpPanel from "./WarpPanel";
 import ExportDialog from "./ExportDialog";
 import FillColorDialog from "./FillColorDialog";
@@ -292,6 +293,7 @@ export default function EditorShell() {
           <TextStylePanel />
           <WarpPanel />
           <FingerPanel />
+          <LiquifyPanel />
           <LayerPanel />
           <PropertyPanel />
           <MemoPanel />
