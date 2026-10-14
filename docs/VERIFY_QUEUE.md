@@ -31,3 +31,12 @@
 | A6 캔버스 크기 조정(여백 추가·자르기) | (A6 커밋) | 개발·프로덕션 E2E 전체. 통과: `canvas-size` 2 | 전체·프로덕션 실행 금지 |
 | A3 격자·색상 스와치(눈금자·가이드는 못 함) | (A3 커밋) | 개발·프로덕션 E2E 전체. 통과: `grid-swatches` 2 | 전체·프로덕션 실행 금지 |
 | A4 image adjustments (brightness, contrast, saturation, hue, blur, sharpen; schema v12) | (A4 commit) | full dev + production E2E; production `adjust` spec; large-image frame timing in a browser (unit timing only: 3600x2700 blur about 4.6 s, colour 0.15 s, 480px preview 50-85 ms). Passed: `adjust` 3 (DPR 1 and 2, screen = PNG within 1) | full / production runs not allowed (memory) |
+
+## 2026-10-15 밤 검증 결과 (위 표의 대기 항목은 모두 처리됨)
+
+- [x] 개발 E2E 전체(spec 파일 단위, workers=1): 통과. 처음 실패 3건은 모두 테스트 경합이라 "현재 상태를 기다리게" 고침: `corner-radius`(복원 직후 `layers[0]` 읽기), `grid-swatches`(reload 뒤 복원 질문), `panels`(효과·조정 입력까지 세던 선택자).
+- [x] 간헐 실패 반복: `shortcuts` x30 = 960 통과, `autosave` x30 = 630 통과, `brush` x30 = 568 통과·2 실패(지우개 Undo 직후 캔버스 픽셀을 한 번만 읽던 경합 → `expect.poll`로 고침), `grid-swatches` x30 통과.
+- [x] **앱 버그 1건 수정**: 다른 탭 상태(`ready=true`)로 있다가 잠금을 이어받을 때 `ready`가 true인 채 저장본을 읽어 복원 질문이 늦게 떴다(`becomeOwner`가 `ready:false`로 되돌리지 않았다). 고친 뒤 30회 반복 통과.
+- [x] 프로덕션 빌드 E2E(`NEXT_PUBLIC_E2E=1` 빌드, `PW_PROD=1`, spec 단위): 전부 통과. 처음 실패 1건(`lock-hide-rename`: (10,10) 클릭이 캔버스가 아니라 헤더라 선택 해제가 우연에 의존)은 테스트를 고쳤고 프로덕션 5회 반복 통과.
+- [x] 큰 변형 레이어(3600×2700) 놓은 뒤 멈춤: 개발 서버에서 놓는 순간 약 5.1초(`releaseWallMs` 13090 − 8000) → 약 0.19초(8185 − 8000). 프로덕션은 약 0.11초, 놓은 뒤 가장 긴 프레임 39ms. 방법: 1.5백만 픽셀을 넘는 변형은 거친 그림을 바로 그리고 진짜 그림은 Web Worker에서 같은 `rasterizeWarped`로 만들어 바꾼다. 화면=PNG 차이는 `warp-staged.spec`(DPR 1·2)이 채널 최대 1 이하로 확인하고, 변이 검사(워커 결과를 무시)로 이 테스트가 실패함을 확인했다.
+- [x] 프로덕션 성능(3600×2700 레이어): 변형 드래그 33ms 초과 프레임 1/163, 손가락 1/205, 유동화 79/303(개발과 같음, 무거움). 이미지 조정·효과는 **놓는 순간 편집기가 멈춘다**: 색 조정 약 0.17초, 그림자 약 2.0초, 흐림 20 약 3.2초(`adjust-effects-perf.spec.ts`). 이번 범위(새 기능 금지)라 고치지 않았다. 다음 작업 후보: 같은 Worker 방식.

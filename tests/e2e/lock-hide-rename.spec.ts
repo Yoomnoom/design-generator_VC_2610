@@ -63,9 +63,10 @@ test.describe("hide", () => {
   test("a hidden layer cannot be grabbed on the canvas, but it can still be picked in the list", async ({ page }) => {
     await withLayer(page);
     await eye(page).click();
-    await page.mouse.click(10, 10); // anything: deselect by clicking the canvas
+    await page.evaluate(() => (window as any).__slc.getState().selectLayer(null)); // deselect (a click at (10, 10) lands on the header, not the canvas)
     const c = await clientOf(page, spot.x, spot.y);
     await page.mouse.click(c.x, c.y);
+    await page.waitForTimeout(300); // give a (wrong) selection time to happen
     expect((await editor(page)).selected).toEqual([]);
     await page.getByTestId("layer-item").click();
     expect((await editor(page)).selected).toHaveLength(1);
