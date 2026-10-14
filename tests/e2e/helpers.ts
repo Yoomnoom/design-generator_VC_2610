@@ -422,6 +422,8 @@ export const idbDo = (page: Page, store: "autosave" | "blobs", action: "put" | "
  *  empty editor. (A test that wants to restore reloads by itself.) */
 export async function reloadAndDiscard(page: Page) {
   await page.reload();
+  // right after a reload the old page may still hold the lock: this tab then waits in line, and only when it takes over does it look for a saved copy and ask
+  await expect(autosaveStatus(page)).toHaveAttribute("data-ownership", "owner", { timeout: 15000 });
   await autosaveReady(page);
   if ((await autosaveStatus(page).getAttribute("data-candidate")) === "yes") {
     await page.getByRole("button", { name: "버리기" }).click();

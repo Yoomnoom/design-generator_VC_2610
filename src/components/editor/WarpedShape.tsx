@@ -1,12 +1,13 @@
 "use client";
 
 import type { ComponentProps } from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Shape } from "react-konva";
 import { LayerWarp } from "@/lib/project/schema";
 import { RawImage } from "@/lib/image/raw-image";
-import { MAX_RASTER_PIXELS, WarpPlacement, rasterizeWarped, warpedOutlineLocal } from "@/lib/image/warp-raster";
+import { MAX_RASTER_PIXELS, WarpPlacement, WarpRaster, rasterizeWarped, warpedOutlineLocal } from "@/lib/image/warp-raster";
 import { warpInverse } from "@/lib/image/warp";
+import { rasterizeWarpedAsync, warpWorkerAvailable } from "@/features/warp-render/warp-client";
 import { rawToCanvas } from "./raw-canvas";
 
 type Props = {
@@ -28,6 +29,9 @@ const PREVIEW_FULL_PIXELS = 150_000;
 const PREVIEW_PIXELS = 40_000;
 /** a raster bigger than this is cut to the frame (so it is redrawn when the layer moves; a normal one is not) */
 const UNCLIPPED_PIXELS = 16_000_000;
+/** a settled raster covering more than this many pixels is drawn in two stages: a coarse one at once, the real one from a Web Worker */
+const STAGED_PIXELS = 1_500_000;
+const COARSE_PIXELS = 300_000;
 
 /** A warped bitmap layer on the canvas. Its pixels come from rasterizeWarped, the very function the PNG export uses, so the screen and the
  *  file agree. The node sits at the layer's origin with no scale or rotation of its own (those are baked into the raster); its hit area is
@@ -39,13 +43,29 @@ export default function WarpedShape({ image, warp, placement, frame, dragging, r
     const outline = warpedOutlineLocal(warpInverse(warp, image.width, image.height), t);
     const xs = outline.map((p) => p.x), ys = outline.map((p) => p.y);
     const area = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
-    const step = dragging && area > PREVIEW_FULL_PIXELS ? Math.ceil(Math.sqrt(area / PREVIEW_PIXELS)) : 1;
     const clip = area > UNCLIPPED_PIXELS ? frame : undefined;
-    return { r: rasterizeWarped(image, t, warp, { step, clip }), outline };
+    const shown = clip ? Math.min(area, frame.width * frame.height) : area;
+    const staged = !dragging && shown > STAGED_PIXELS && warpWorkerAvailable();
+    const step = dragging && area > PREVIEW_FULL_PIXELS ? Math.ceil(Math.sqrt(area / PREVIEW_PIXELS)) : staged ? Math.ceil(Math.sqrt(shown / COARSE_PIXELS)) : 1;
+    return { r: rasterizeWarped(image, t, warp, { step, clip }), outline, staged, t, clip };
     // the frame only matters for a raster too big to keep whole, which is the only case it is part of the key
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [image, rev, warp, scaleX, scaleY, rotation, dragging, frame.x, frame.y, frame.width, frame.height]);
-  const { r, outline } = raster;
+  // the real picture of a big layer arrives from the worker; until then the coarse one is shown (and a newer coarse one drops a late answer)
+  const [full, setFull] = useState<{ from: typeof raster; r: WarpRaster | null } | null>(null);
+  useEffect(() => {
+    if (!raster.staged) return;
+    let live = true;
+    rasterizeWarpedAsync(image, raster.t, warp, raster.clip).then(
+      (r) => live && setFull({ from: raster, r }),
+      () => undefined, // superseded or failed: the coarse picture stays
+    );
+    return () => {
+      live = false;
+    };
+  }, [raster, image, warp]);
+  const done = full && full.from === raster ? full.r : undefined;  const { outline } = raster;
+  const r = done ?? raster.r;
   return (
     <Shape
       {...rest}

@@ -1,5 +1,5 @@
 import { Page, expect, test } from "@playwright/test";
-import { clientOf, drawShape, editor, exportPngBytes, openApp, pngPixelAt, screenPixel, zoomTo } from "./helpers";
+import { clientOf, drawShape, editor, exportPngBytes, openApp, pngPixelAt, reloadAndDiscard, screenPixel, waitForAutosave, zoomTo } from "./helpers";
 
 async function blank(page: Page) {
   await openApp(page);

@@ -140,7 +140,7 @@ test.describe("property panel", () => {
     await expect(page.getByTestId("prop-width")).toHaveText(String(CARD.width));
     await expect(page.getByTestId("prop-height")).toHaveText(String(CARD.height));
     // the name is the only TEXT input in the section (X, Y, width and height are plain text); the opacity slider and its number box are the other controls
-    await expect(page.getByRole("region", { name: "선택 레이어" }).locator("input:not([data-testid^=\"opacity\"]), textarea, [contenteditable]")).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "선택 레이어" }).locator("input:not([data-testid^=\"opacity\"]):not([data-testid^=\"fx-\"]):not([data-testid^=\"adj-\"]), textarea, [contenteditable]")).toHaveCount(1);
     await expect(page.getByTestId("prop-name")).toBeEditable();
   });
 

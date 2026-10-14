@@ -128,7 +128,7 @@ test.describe("rectangle corner radius", () => {
     expect(JSON.parse(file).project.version).toBe(12);
     expect(JSON.parse(file).project.screens[0].layers[0].content.cornerRadius).toBe(32);
     await openProjectFile(page, file);
-    await expect.poll(async () => (await content(page, (await editor(page)).layers[0].id)).cornerRadius).toBe(32);
+    await expect.poll(async () => { const l = (await editor(page)).layers[0]; return l ? (await content(page, l.id)).cornerRadius : null; }).toBe(32);
     expect((await exportPngBytes(page)).equals(before)).toBe(true);
 
     const t = await page.getByTestId("autosave-status").getAttribute("data-saved-at").then(Number);
@@ -138,7 +138,7 @@ test.describe("rectangle corner radius", () => {
     await page.reload();
     await autosaveReady(page);
     await page.getByRole("button", { name: "복원" }).click();
-    await expect.poll(async () => (await content(page, (await editor(page)).layers[0].id)).cornerRadius).toBe(36);
+    await expect.poll(async () => { const l = (await editor(page)).layers[0]; return l ? (await content(page, l.id)).cornerRadius : null; }).toBe(36);
   });
 
   test("a locked layer cannot be changed and comparing blocks it", async ({ page }) => {

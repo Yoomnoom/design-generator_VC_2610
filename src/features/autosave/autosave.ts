@@ -153,7 +153,7 @@ export function createAutosave(deps: AutosaveDeps) {
       const idb = await deps.openIdbBlobs();
       records = await deps.openRecords();
       blobs.use(idb); // whatever was loaded before this moment is only in memory: the first save writes it
-      set({ ownership: "owner" });
+      set({ ownership: "owner", ready: false }); // taking over (maybe after waiting in line as another tab) re-opens "is there a saved copy?": not settled until checkStored is done
       await checkStored();
       set({ ready: true });
       schedule();
