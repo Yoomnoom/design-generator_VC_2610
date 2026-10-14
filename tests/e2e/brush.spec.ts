@@ -152,7 +152,7 @@ test.describe("the eraser", () => {
 
     await page.keyboard.press("Control+z");
     expect((await brushLayer(page))!.imageId).toBe(before.imageId);
-    expect(diff(await screenPixel(page, 700, 500), RED)).toBeLessThanOrEqual(3);
+    await expect.poll(async () => diff(await screenPixel(page, 700, 500), RED)).toBeLessThanOrEqual(3); // Konva repaints a frame after the undo
   });
 
   test("it never erases the capture: with nothing to erase it refuses, says why, and records nothing", async ({ page }) => {

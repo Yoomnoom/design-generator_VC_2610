@@ -63,10 +63,14 @@ test("warping a 4000 x 3000 layer: frames while dragging, time to the full pictu
   const t0 = Date.now();
   await page.mouse.up();
   const releaseMs = await page.evaluate(() => new Promise<number>((res) => { const t = performance.now(); requestAnimationFrame(() => requestAnimationFrame(() => res(performance.now() - t))); }));
+  // the main thread after the release: the longest frame while the full picture is made (a stall shows as one very long frame)
+  await page.evaluate(() => ((window as any).__frames = []));
+  await page.waitForTimeout(8000);
+  const after = await page.evaluate(() => (window as any).__frames as number[]);
   const wall = Date.now() - t0;
   const long = during.filter((d) => d > 33).length;
   const sorted = [...during].sort((a, b) => a - b);
-  const report = { frames: during.length, medianMs: Math.round(sorted[Math.floor(sorted.length / 2)] * 10) / 10, p95Ms: Math.round(sorted[Math.floor(sorted.length * 0.95)] * 10) / 10, maxMs: Math.round(sorted.at(-1)! * 10) / 10, over33ms: long, releaseToPaintMs: Math.round(releaseMs), releaseWallMs: wall, layers: (await editor(page)).layers.length };
+  const report = { frames: during.length, medianMs: Math.round(sorted[Math.floor(sorted.length / 2)] * 10) / 10, p95Ms: Math.round(sorted[Math.floor(sorted.length * 0.95)] * 10) / 10, maxMs: Math.round(sorted.at(-1)! * 10) / 10, over33ms: long, releaseToPaintMs: Math.round(releaseMs), releaseWallMs: wall, afterReleaseMaxFrameMs: Math.round(Math.max(...after)), afterReleaseOver100ms: after.filter((d) => d > 100).length, layers: (await editor(page)).layers.length };
   console.log("WARP-PERF " + JSON.stringify(report));
   fs.mkdirSync("test-results", { recursive: true });
   fs.writeFileSync(`test-results/warp-perf-${process.env.PW_PROD === "1" ? "prod" : "dev"}.json`, JSON.stringify(report, null, 1));
