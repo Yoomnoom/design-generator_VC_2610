@@ -1,5 +1,5 @@
 import { StoreApi, createStore } from "zustand/vanilla";
-import { addOnTop, moveLayer, removeLayer, sortByZ } from "@/features/layer-transform/order";
+import { addOnTop, moveLayer, normalizeZ, removeLayer, sortByZ } from "@/features/layer-transform/order";
 import { View } from "@/lib/geometry/coords";
 import { isInside } from "@/lib/geometry/rect";
 import { MAX_STROKE_WIDTH, SHAPE_LABEL, maxCornerRadius, withSize } from "@/lib/image/vector";
@@ -24,6 +24,10 @@ import { MIN_GROUP_SIZE, expandToGroups, nextGroupName, panelRows, pruneGroups, 
 import { LIQUIFY_MODES, LiquifyMode, MAX_LIQUIFY_SIZE, MIN_LIQUIFY_SIZE } from "@/lib/image/liquify";
 import { BLANK_FILE, checkCanvasSize, isGeneratedPage } from "@/lib/project/blank";
 import { createRawImage } from "@/lib/image/raw-image";
+import { renderLayerOf } from "@/features/export-image/export-png";
+import { RenderLayer, renderComposite } from "@/lib/image/render-export";
+import { Rasterize, rasterizeVectorLayer } from "@/lib/image/vector-raster";
+import { effectMargin } from "@/lib/image/layer-effects";
 import { effectsError } from "@/lib/project/parse";
 import { LayerEffects } from "@/lib/project/schema";
 import { BLEND_MODES, BlendMode, BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode, MAX_GROUPS, MAX_GROUP_NAME } from "@/lib/project/schema";
@@ -207,6 +211,14 @@ type EditorActions = {
   /** what the dragged free-transform handle would do, shown on the canvas without any history; null when nothing is being dragged */
   ftPreview: Record<string, LayerResult> | null;
   setFreeTransformPreview(op: FreeOp | null): void;
+  /** a shape, text or effect layer becomes a bitmap layer (what is on the page now, effects included; the part outside the page is dropped), one undo step */
+  rasterizeLayer(layerId: string): boolean;
+  /** the visible, unlocked selected layers (two or more) become ONE bitmap layer at the front-most one's place, one undo step; the number merged */
+  mergeSelected(): number;
+  /** the selected layer and the visible one right below it become one bitmap (Ctrl+E) */
+  mergeDown(): number;
+  /** every visible, unlocked layer becomes one bitmap (Ctrl+Shift+E); the capture and the background patches are not part of it */
+  mergeAll(): number;
   /** drop shadow, outline and colour overlay of a layer (null removes them all); one undo step. A locked layer, comparing or invalid values refuse. */
   setLayerEffects(layerId: string, effects: LayerEffects | null): boolean;
   /** while an effect slider is dragged: shown on the canvas, no history */
@@ -318,7 +330,7 @@ type EditorActions = {
 
 export type EditorStore = EditorState & EditorActions;
 export type EditorStoreApi = StoreApi<EditorStore>;
-export type EditorStoreOptions = { /** bytes the replaced bitmaps may take (see IMAGE_VERSION_BUDGET) */ imageBudget?: number; genId?: () => string; /** how wide a string is at a font size; the canvas's own measure in the browser */ measure?: MeasureFor; /** the clock, so tests can say how much time passed between two key presses */ now?: () => number };
+export type EditorStoreOptions = { /** how a vector layer is drawn to a picture (the canvas one in the browser; tests pass a stand-in) */ rasterize?: Rasterize; /** bytes the replaced bitmaps may take (see IMAGE_VERSION_BUDGET) */ imageBudget?: number; genId?: () => string; /** how wide a string is at a font size; the canvas's own measure in the browser */ measure?: MeasureFor; /** the clock, so tests can say how much time passed between two key presses */ now?: () => number };
 
 /** key presses on the same layer closer together than this are one undo step */
 export const NUDGE_MERGE_MS = 600;
@@ -359,7 +371,7 @@ const clampToFrame = (screen: { width: number; height: number }, x: number, y: n
 
 const drawOrder = (layers: readonly BitmapLayer[]) => sortByZ(layers).map((l) => l.id).join("\n");
 
-export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = () => crypto.randomUUID(), now = () => Date.now(), measure = canvasMeasureFor }: EditorStoreOptions = {}): EditorStoreApi {
+export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudget = IMAGE_VERSION_BUDGET, genId = () => crypto.randomUUID(), now = () => Date.now(), measure = canvasMeasureFor }: EditorStoreOptions = {}): EditorStoreApi {
   /** the last keyboard move: which layer, when, and the undo entry it made, so the next press can fold into it */
   /** how many outside pictures were added since the project was opened, for the staggering of repeated pastes */
   let externalPastes = 0;
@@ -458,6 +470,77 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       const skipped = chosen.length - free.length;
       if (skipped > 0) set({ notice: `잠기거나 숨겨진 레이어 ${skipped}개는 움직이지 않았습니다.` });
       return byId.size;
+    };
+
+    /** the given layers drawn together on a transparent page of their own size (union of their boxes and effects, cut to the page); positions are
+     *  shifted so the box starts at (0, 0). Their own opacity, blend and effects count; hidden ones are not part of it. Null when nothing shows. */
+    const bakeLayers = (layers: readonly BitmapLayer[]): { raw: RawImage; x: number; y: number } | null => {
+      const screen = screenOf();
+      if (!screen) return null;
+      const imgs = get().images;
+      const shown = sortByZ(layers.filter((l) => l.visible));
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const l of shown) {
+        const b = layerBox(l, l.imageId ? imgs.get(l.imageId)?.raw : undefined);
+        if (!b) continue;
+        const m = l.effects ? effectMargin(l.effects) : 0;
+        x0 = Math.min(x0, b.x - m); y0 = Math.min(y0, b.y - m); x1 = Math.max(x1, b.x + b.width + m); y1 = Math.max(y1, b.y + b.height + m);
+      }
+      x0 = Math.max(Math.floor(x0), 0); y0 = Math.max(Math.floor(y0), 0); x1 = Math.min(Math.ceil(x1), screen.width); y1 = Math.min(Math.ceil(y1), screen.height);
+      if (!(x1 > x0 && y1 > y0)) return null;
+      const frame = { width: x1 - x0, height: y1 - y0 };
+      const rl: RenderLayer[] = [];
+      for (const l of shown) {
+        const moved = { ...l, transform: { ...l.transform, x: l.transform.x - x0, y: l.transform.y - y0 } };
+        const r = renderLayerOf(moved, imgs, frame, rasterize);
+        if (r) rl.push({ ...r, zIndex: rl.length });
+      }
+      const raw = renderComposite({ width: frame.width, height: frame.height, source: createRawImage(frame.width, frame.height), patches: [], layers: rl });
+      return raw.data.some((v, i) => i % 4 === 3 && v > 0) ? { raw, x: x0, y: y0 } : null;
+    };
+
+    /** the layers become one bitmap layer at the front-most one's place (one undo step); how many were merged */
+    const mergeInto = (picked: readonly BitmapLayer[], label: string): number => {
+      const { history } = get();
+      const screen = screenOf();
+      if (!history || !screen || frozen()) return 0;
+      const free = picked.filter((l) => !l.locked && l.visible);
+      if (free.length < 2) {
+        set({ notice: picked.some((l) => l.locked) ? "잠긴 레이어는 병합할 수 없습니다. 보이고 잠기지 않은 레이어가 둘 이상 필요합니다." : "병합하려면 보이는 레이어가 둘 이상 필요합니다." });
+        return 0;
+      }
+      const made = bakeLayers(free);
+      if (!made) {
+        set({ notice: "페이지 안에 보이는 부분이 없어 병합할 수 없습니다." });
+        return 0;
+      }
+      const top = sortByZ(free).at(-1)!;
+      const imageId = genId();
+      const id = genId();
+      const merged: BitmapLayer = {
+        id,
+        name: label === "병합" || label === "아래와 병합" || label === "전체 병합" ? `병합 ${nextNumberFor(screen.layers, "병합")}` : label,
+        crop: { x: 0, y: 0, width: made.raw.width, height: made.raw.height },
+        imageId,
+        transform: { x: made.x, y: made.y, scaleX: 1, scaleY: 1, rotation: 0 },
+        zIndex: top.zIndex + 0.5,
+        opacity: 1,
+        visible: true,
+        locked: false,
+      };
+      const gone = new Set(free.map((l) => l.id));
+      const list = normalizeZ([...screen.layers.filter((l) => !gone.has(l.id)), merged]);
+      const nextImages = new Map(get().images).set(imageId, { raw: made.raw });
+      set({
+        history: commit(history, label, (draft) => {
+          applyLayers(draft.screens[0].layers, list);
+          pruneGroups(draft.screens[0]); // a group left with fewer than two layers is dissolved
+        }),
+        images: nextImages,
+        selectedLayerIds: [id],
+        selectedPatchId: null,
+      });
+      return free.length;
     };
 
     const commitLayers = (label: string, next: readonly BitmapLayer[]) => {
@@ -965,6 +1048,73 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         return editLayer(layerId, "불투명도 변경", (l) => {
           l.opacity = v;
         });
+      },
+
+      rasterizeLayer(layerId) {
+        const { history } = get();
+        const screen = screenOf();
+        const layer = screen?.layers.find((l) => l.id === layerId);
+        if (!history || !screen || !layer || frozen()) return false;
+        if (layer.locked) {
+          set({ notice: "잠긴 레이어는 래스터화할 수 없습니다." });
+          return false;
+        }
+        if (!layer.content && !layer.effects) {
+          set({ notice: "이미 이미지 레이어이고 효과도 없습니다." });
+          return false;
+        }
+        const made = bakeLayers([{ ...layer, opacity: 1, blend: undefined }]); // opacity and blend stay on the layer: they are applied when it is drawn, not baked in twice
+        if (!made) {
+          set({ notice: "페이지 안에 보이는 부분이 없어 래스터화할 수 없습니다." });
+          return false;
+        }
+        const imageId = genId();
+        const nextImages = new Map(get().images).set(imageId, { raw: made.raw });
+        set({
+          history: commit(history, "래스터화", (draft) => {
+            const l = draft.screens[0].layers.find((d) => d.id === layerId);
+            if (!l) return;
+            delete l.content;
+            delete l.effects;
+            delete l.warp;
+            delete l.drawn;
+            l.imageId = imageId;
+            l.crop = { x: 0, y: 0, width: made.raw.width, height: made.raw.height };
+            l.transform = { x: made.x, y: made.y, scaleX: 1, scaleY: 1, rotation: 0 };
+          }),
+          images: nextImages,
+          selectedLayerIds: [layerId],
+        });
+        return true;
+      },
+
+      mergeSelected() {
+        const screen = screenOf();
+        if (!screen) return 0;
+        return mergeInto(screen.layers.filter((l) => get().selectedLayerIds.includes(l.id)), "병합");
+      },
+
+      mergeDown() {
+        const screen = screenOf();
+        const id = get().selectedLayerIds[0];
+        if (!screen || !id || get().selectedLayerIds.length !== 1) {
+          set({ notice: "아래와 병합은 레이어를 하나만 선택했을 때 쓸 수 있습니다." });
+          return 0;
+        }
+        const ordered = sortByZ(screen.layers);
+        const at = ordered.findIndex((l) => l.id === id);
+        const below = ordered.slice(0, at).reverse().find((l) => l.visible);
+        if (!below) {
+          set({ notice: "아래에 병합할 보이는 레이어가 없습니다." });
+          return 0;
+        }
+        return mergeInto([ordered[at], below], "아래와 병합");
+      },
+
+      mergeAll() {
+        const screen = screenOf();
+        if (!screen) return 0;
+        return mergeInto(screen.layers, "전체 병합");
       },
 
       setEffectsPreview: (effectsPreview) => set({ effectsPreview }),

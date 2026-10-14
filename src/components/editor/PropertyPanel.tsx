@@ -8,7 +8,7 @@ import { BitmapLayer, LayerContent, TextContent } from "@/lib/project/schema";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE } from "@/lib/image/text-layout";
 import { SHAPE_LABEL, maxCornerRadius } from "@/lib/image/vector";
 import { ColorField, WidthField } from "./StyleFields";
-import { AlignButtons, BlendSelect, EffectsFields, FlipButtons, OpacityField } from "./LayerToolsPanel";
+import { AlignButtons, BlendSelect, EffectsFields, FlipButtons, MergeButtons, OpacityField } from "./LayerToolsPanel";
 import { canStretch, selectionBox } from "@/features/free-transform/free-transform";
 import { ImageCache } from "@/store/images";
 import { useBindings } from "@/features/shortcuts/shortcut-store";
@@ -297,6 +297,7 @@ export default function PropertyPanel() {
         <div className="mt-2"><FreeTransformButton disabled={comparing} /></div>
         <FreeTransformFields layers={chosen} images={images} disabled={comparing} />
         <div className="mt-3"><AlignButtons disabled={comparing} /></div>
+        <div className="mt-3"><MergeButtons count={chosen.length} disabled={comparing} /></div>
         <p className="mb-0 mt-2 text-xs text-[var(--muted)]">이름·복제·복사는 레이어를 하나만 선택했을 때 쓸 수 있습니다.</p>
         {locked > 0 && <p className="mb-0 mt-2 text-xs text-[#8a5a12]">잠긴 레이어 {locked}개는 함께 움직이지 않고 지워지지도 않습니다.</p>}
       </section>
@@ -320,6 +321,7 @@ export default function PropertyPanel() {
           <FlipButtons layer={layer} disabled={comparing || layer.locked} />
           <EffectsFields layer={layer} disabled={comparing || layer.locked} />
           <AlignButtons disabled={comparing || layer.locked} />
+          <MergeButtons layer={layer} count={1} disabled={comparing || layer.locked} />
         </div>
         <dl className="m-0 grid grid-cols-2 gap-[7px]">
           <div className="col-span-2">

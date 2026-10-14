@@ -3,7 +3,7 @@ export type ShortcutAction =
   | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-shape" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "tool-warp" | "tool-finger" | "tool-liquify" | "tool-auto"
   | "select-all" | "deselect" | "invert-selection" | "group" | "ungroup" | "free-transform"
   | "zoom-fit" | "zoom-100" | "zoom-in" | "zoom-out"
-  | "layer-forward" | "layer-backward" | "layer-front" | "layer-back"
+  | "layer-forward" | "layer-backward" | "layer-front" | "layer-back" | "merge-down" | "merge-all"
   | "swap-colors" | "default-colors" | "brush-smaller" | "brush-bigger"
   | "save" | "open-project"
   | "candidate-extract" | "candidate-clear"
@@ -42,6 +42,8 @@ const COMMON = {
   "layer-backward": b("[", { ctrl: true }),
   "layer-front": b("]", { ctrl: true, shift: true }),
   "layer-back": b("[", { ctrl: true, shift: true }),
+  "merge-down": b("e", { ctrl: true }),
+  "merge-all": b("e", { ctrl: true, shift: true }),
   save: b("s", { ctrl: true }),
   "open-project": b("o", { ctrl: true }),
   "nudge-left": b("ArrowLeft"),
@@ -119,8 +121,6 @@ export const NOT_AVAILABLE: { keys: string; what: string }[] = [
   { keys: "L", what: "올가미 선택 (선택 영역 도구가 없습니다)" },
   { keys: "W", what: "마술봉 (선택 영역 도구가 없습니다; 변형 도구는 Shift+W)" },
   { keys: "Z", what: "확대 도구·Alt+클릭 축소 (대신 Ctrl++ / Ctrl+- 와 화면의 + − 버튼)" },
-  { keys: "Ctrl+E", what: "아래 레이어와 병합 (레이어 병합이 없습니다)" },
-  { keys: "Ctrl+Shift+E", what: "모든 레이어 병합 (레이어 병합이 없습니다)" },
 ];
 
 /** Keys the browser handles before the page sees them in an ordinary tab (new tab, new window, close tab). A page cannot cancel these;
@@ -152,6 +152,8 @@ export const ACTION_INFO: { id: ConfigurableAction; label: string; group: "편�
   { id: "layer-backward", label: "한 칸 뒤로", group: "레이어 순서" },
   { id: "layer-front", label: "맨 앞으로", group: "레이어 순서" },
   { id: "layer-back", label: "맨 뒤로", group: "레이어 순서" },
+  { id: "merge-down", label: "아래 레이어와 병합", group: "레이어 순서" },
+  { id: "merge-all", label: "모든 레이어 병합", group: "레이어 순서" },
   { id: "tool-select", label: "선택 도구", group: "도구" },
   { id: "tool-hand", label: "이동(손) 도구", group: "도구" },
   { id: "tool-rect", label: "영역 추출", group: "도구" },
@@ -180,7 +182,7 @@ export const ACTION_INFO: { id: ConfigurableAction; label: string; group: "편�
  *  the app already gives them a fixed meaning (paste is the browser's paste event; Enter and Esc finish or cancel a task; Tab moves focus).
  *  Ctrl+S, Ctrl+O, Ctrl+J, Ctrl+0/1, Ctrl++/-, Ctrl+Shift+I are NOT here: the page can take them (Photoshop's own keys use them). */
 export const RESERVED: { binding: Binding; why: string }[] = [
-  ...["t", "w", "n", "r", "l", "f", "p", "u", "h", "k", "e", "q", "v", "2", "3", "4", "5", "6", "7", "8", "9", "Tab"].map((k) => ({ binding: b(k, { ctrl: true }), why: "브라우저가 쓰는 키입니다" })),
+  ...["t", "w", "n", "r", "l", "f", "p", "u", "h", "k", "q", "v", "2", "3", "4", "5", "6", "7", "8", "9", "Tab"].map((k) => ({ binding: b(k, { ctrl: true }), why: "브라우저가 쓰는 키입니다" })),
   ...["t", "n", "w", "r", "j", "Delete", "b", "o", "a", "Tab"].map((k) => ({ binding: b(k, { ctrl: true, shift: true }), why: "브라우저가 쓰는 키입니다" })),
   ...["F1", "F3", "F5", "F6", "F7", "F10", "F11", "F12"].map((k) => ({ binding: b(k), why: "브라우저가 쓰는 키입니다" })),
   ...["F4", "ArrowLeft", "ArrowRight", "Tab"].map((k) => ({ binding: b(k, { alt: true }), why: "브라우저·시스템이 쓰는 키입니다" })),

@@ -122,6 +122,12 @@ export function useShortcuts() {
           else st.reorderLayerTo(layerId, action === "layer-front" ? "front" : "back");
           break;
         }
+        case "merge-down":
+          st.mergeDown();
+          break;
+        case "merge-all":
+          st.mergeAll();
+          break;
         case "tool-shape": {
           const order = ["line", "box", "ellipse"] as const; // the first press picks the line, each next press the next shape
           const at = order.indexOf(st.activeTool as (typeof order)[number]);

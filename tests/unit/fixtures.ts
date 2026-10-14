@@ -50,8 +50,8 @@ export const solidPage = (w: number, h: number): RawImage => solid(w, h, GRAY);
 
 export const CARD ={ x: 10, y: 10, width: 20, height: 10 };
 
-export function storeWith(raw: RawImage = pageWithCard(), fileName = "capture.png") {
-  const store = createEditorStore({ genId: sequentialIds() });
+export function storeWith(raw: RawImage = pageWithCard(), fileName = "capture.png", options: Parameters<typeof createEditorStore>[0] = {}) {
+  const store = createEditorStore({ genId: sequentialIds(), ...options });
   store.getState().newProject({ fileName, raw });
   return { store, get: () => store.getState(), layers: () => store.getState().history!.present.screens[0].layers, patches: () => store.getState().history!.present.screens[0].backgroundPatches };
 }

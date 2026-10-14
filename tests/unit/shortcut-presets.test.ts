@@ -72,9 +72,12 @@ describe("the Photoshop preset (the default)", () => {
     expect(ps(k("ㅁ", { code: "KeyA", ctrlKey: true }))).toBe("select-all");
   });
 
-  test("keys whose Photoshop function this app does not have are NOT registered: L, W, Z, Ctrl+E, Ctrl+Shift+E do nothing and are listed", () => {
-    for (const e of [k("l"), k("w"), k("z"), k("e", { ctrlKey: true }), k("E", { ctrlKey: true, shiftKey: true })]) expect(ps(e)).toBeNull();
-    expect(NOT_AVAILABLE.map((x) => x.keys)).toEqual(expect.arrayContaining(["L", "W", "Z", "Ctrl+E", "Ctrl+Shift+E"]));
+  test("keys whose Photoshop function this app does not have are NOT registered: L, W, Z do nothing and are listed", () => {
+    for (const e of [k("l"), k("w"), k("z")]) expect(ps(e)).toBeNull();
+    expect(NOT_AVAILABLE.map((x) => x.keys)).toEqual(expect.arrayContaining(["L", "W", "Z"]));
+    // Ctrl+E and Ctrl+Shift+E are connected now that layers can be merged
+    expect(ps(k("e", { ctrlKey: true }))).toBe("merge-down");
+    expect(ps(k("E", { ctrlKey: true, shiftKey: true }))).toBe("merge-all");
   });
 
   test("the shape tools without a key of their own are reached with U; line, rectangle and ellipse have no key here", () => {

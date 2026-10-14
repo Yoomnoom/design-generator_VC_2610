@@ -177,3 +177,32 @@ export function EffectsFields({ layer, disabled }: { layer: BitmapLayer; disable
     </details>
   );
 }
+/** Rasterize (a shape, text or effect layer becomes a bitmap), merge down and merge the selection. Each is one undo step. */
+export function MergeButtons({ layer, count, disabled }: { layer?: BitmapLayer; count: number; disabled: boolean }) {
+  const needsRaster = !!layer && (!!layer.content || !!layer.effects);
+  return (
+    <div data-testid="merge-panel" className="grid gap-1 text-xs">
+      <div className="font-bold">병합·래스터화</div>
+      <div className="grid grid-cols-2 gap-1">
+        {layer && (
+          <button type="button" data-testid="rasterize" className="btn mini" disabled={disabled || !needsRaster} title="도형·텍스트·효과가 있는 레이어를 이미지(비트맵)로 바꿉니다. 페이지 밖의 부분은 버려집니다." onClick={() => editorStore.getState().rasterizeLayer(layer.id)}>
+            래스터화
+          </button>
+        )}
+        {layer && (
+          <button type="button" data-testid="merge-down" className="btn mini" disabled={disabled} title="아래의 보이는 레이어와 하나의 이미지로 합칩니다" onClick={() => editorStore.getState().mergeDown()}>
+            아래와 병합
+          </button>
+        )}
+        {count > 1 && (
+          <button type="button" data-testid="merge-selected" className="btn mini col-span-2" disabled={disabled} title="선택한 레이어(보이고 잠기지 않은 것)를 하나의 이미지로 합칩니다" onClick={() => editorStore.getState().mergeSelected()}>
+            선택한 {count}개 병합
+          </button>
+        )}
+        <button type="button" data-testid="merge-all" className="btn mini col-span-2" disabled={disabled} title="모든 보이는 레이어를 하나의 이미지로 합칩니다 (원본 스크린샷과 배경 패치는 그대로)" onClick={() => editorStore.getState().mergeAll()}>
+          모든 레이어 병합
+        </button>
+      </div>
+    </div>
+  );
+}
