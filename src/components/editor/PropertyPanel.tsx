@@ -165,7 +165,7 @@ function RadiusField({ id, content, disabled }: { id: string; content: Extract<L
         />
         <span className="text-[var(--muted)]">px</span>
       </div>
-      <p className="m-0 pl-16 text-[11px] text-[var(--muted)]">0 ~ {max}px (짧은 변의 절반). 크기를 바꿔도 반지름은 같은 px로 유지되고, 상자가 작아지면 그만큼만 둥글어집니다.</p>
+      <p className="m-0 pl-16 text-[11px] text-[var(--muted)]">0 ~ {max}px (짧은 변의 절반). 크기를 바꿔도 반지름은 같은 px로 유지되고, 상자가 작아지면 그만큼만 둥글어집니다. 줄었다가 다시 키워도 원래 값으로 자동 복원되지는 않으며 실행 취소(Undo)로만 돌아갑니다.</p>
     </div>
   );
 }

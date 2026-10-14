@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatBinding } from "@/features/shortcuts/shortcuts";
 import { useBindings } from "@/features/shortcuts/shortcut-store";
+import { isGeneratedPage } from "@/lib/project/blank";
 import { panelRows, wholeGroupOf } from "@/features/groups/groups";
 import { sortByZ } from "@/features/layer-transform/order";
 import { RawImage } from "@/lib/image/raw-image";
@@ -130,7 +131,7 @@ export default function LayerPanel() {
         </p>
       )}
       {front.length === 0 ? (
-        <p className="text-xs text-[var(--muted)]">영역 추출 도구로 사각형을 드래그하면 레이어가 생깁니다.</p>
+        <p data-testid="layer-empty" className="text-xs text-[var(--muted)]">{isGeneratedPage(screen.source.fileName) ? "레이어가 없습니다. 왼쪽 소스·템플릿에서 부품을 넣거나, 사각형·원·선·텍스트·브러시로 직접 그려 보세요." : "영역 추출 도구로 사각형을 드래그하면 레이어가 생깁니다."}</p>
       ) : (
         <ul data-testid="layer-list" className="m-0 list-none p-0">
           {rows.map((row) => {
