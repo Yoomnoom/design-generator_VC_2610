@@ -114,7 +114,7 @@ describe("the file the previous build saved (version 9)", () => {
     const r = parseProjectFile(v9);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.file.project.version).toBe(11);
+    expect(r.file.project.version).toBe(12);
     expect(r.file.project.screens[0].layers).toEqual(before.screens[0].layers);
     expect(r.file.project.screens[0].groups).toEqual(before.screens[0].groups);
   });

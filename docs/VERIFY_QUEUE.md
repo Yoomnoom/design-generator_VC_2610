@@ -30,3 +30,4 @@
 | A2 래스터화·병합(Ctrl+E/Ctrl+Shift+E) | (A2 커밋) | 개발·프로덕션 E2E 전체; `shortcut-settings`·`shortcut-presets`(Ctrl+E가 이제 병합). 통과: `merge` 1 | 전체·프로덕션 실행 금지 |
 | A6 캔버스 크기 조정(여백 추가·자르기) | (A6 커밋) | 개발·프로덕션 E2E 전체. 통과: `canvas-size` 2 | 전체·프로덕션 실행 금지 |
 | A3 격자·색상 스와치(눈금자·가이드는 못 함) | (A3 커밋) | 개발·프로덕션 E2E 전체. 통과: `grid-swatches` 2 | 전체·프로덕션 실행 금지 |
+| A4 image adjustments (brightness, contrast, saturation, hue, blur, sharpen; schema v12) | (A4 commit) | full dev + production E2E; production `adjust` spec; large-image frame timing in a browser (unit timing only: 3600x2700 blur about 4.6 s, colour 0.15 s, 480px preview 50-85 ms). Passed: `adjust` 3 (DPR 1 and 2, screen = PNG within 1) | full / production runs not allowed (memory) |

@@ -53,6 +53,15 @@ const isRect = (v: unknown): v is Rect => isRec(v) && isNum(v.x) && isNum(v.y) &
 
 const isHex = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
 const inRange = (v: unknown, lo: number, hi: number): v is number => typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi;
+/** the adjustments of a bitmap layer: all six values, each within its range */
+export function adjustError(a: unknown): string | null {
+  if (!isRec(a)) return "adjust가 객체가 아닙니다";
+  const ranges: Record<string, [number, number]> = { brightness: [-100, 100], contrast: [-100, 100], saturation: [-100, 100], hue: [-180, 180], blur: [0, 50], sharpen: [0, 100] };
+  for (const k of Object.keys(a)) if (!(k in ranges)) return `adjust.${k}는 알 수 없는 값입니다`;
+  for (const [k, [lo, hi]] of Object.entries(ranges)) if (!inRange(a[k], lo, hi)) return `adjust.${k}가 ${lo}~${hi} 범위의 숫자가 아닙니다`;
+  return null;
+}
+
 /** the effects of a layer: only known effects, each with valid values */
 export function effectsError(e: unknown): string | null {
   if (!isRec(e)) return "effects가 객체가 아닙니다";
@@ -84,6 +93,11 @@ function layerError(l: unknown, i: number): string | null {
     if (e) return `${at}.${e}`;
   }
   if (l.blend !== undefined && !(BLEND_MODES as unknown[]).includes(l.blend)) return `${at}.blend가 올바르지 않습니다`;
+  if (l.adjust !== undefined) {
+    if (l.content !== undefined || l.imageId === undefined) return `${at}: 이미지 조정(adjust)은 비트맵 레이어에만 있을 수 있습니다`;
+    const e = adjustError(l.adjust);
+    if (e) return `${at}.${e}`;
+  }
   if (l.effects !== undefined) {
     const e = effectsError(l.effects);
     if (e) return `${at}.${e}`;

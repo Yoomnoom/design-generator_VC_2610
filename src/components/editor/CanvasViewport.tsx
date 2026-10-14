@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { effectTileFor } from "./effect-tile";
+import { adjustedForScreen, effectTileFor } from "./effect-tile";
 import { hasEffects } from "@/lib/image/layer-effects";
 import type Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
@@ -414,9 +414,11 @@ export default function CanvasViewport() {
   const grid = useEditorStore((s) => s.grid);
   const opacityPreview = useEditorStore((s) => s.opacityPreview);
   const effectsPreview = useEditorStore((s) => s.effectsPreview);
+  const adjustPreview = useEditorStore((s) => s.adjustPreview);
   const previewOf = (l0: BitmapLayer): BitmapLayer => {
     const l1 = opacityPreview?.layerId === l0.id ? { ...l0, opacity: opacityPreview.opacity } : l0; // the opacity slider is being dragged
-    const l = effectsPreview?.layerId === l0.id ? { ...l1, effects: effectsPreview.effects } : l1; // an effect value is being dragged
+    const l2 = effectsPreview?.layerId === l0.id ? { ...l1, effects: effectsPreview.effects } : l1; // an effect value is being dragged
+    const l = adjustPreview?.layerId === l0.id ? { ...l2, adjust: adjustPreview.adjust } : l2; // an adjustment slider is being dragged
     return ftPreview?.[l.id] ? { ...l, transform: ftPreview[l.id].transform, ...(ftPreview[l.id].content ? { content: ftPreview[l.id].content } : {}) } : l;
   };
   const ftOn = screen && tool === "select" && compare === "off" && (selectedIds.length >= 2 || (freeTransform && selectedIds.length >= 1));
@@ -573,6 +575,8 @@ export default function CanvasViewport() {
                   const fx = screen && hasEffects(layer.effects) && !comparing ? effectTileFor(layer, images, { width: screen.width, height: screen.height }) : null;
                   const node = (() => {
                   const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
+                  // the picture with the layer's adjustments (reduced while a slider is being dragged); `image` keeps the bitmap's own size
+                  const drawImage = image && layer.adjust ? adjustedForScreen(image, layer.adjust, adjustPreview?.layerId === layer.id && !layer.warp) : image;
                   // while the radius slider is dragged the shape shows the value at once (nothing is in the history yet)
                   const content = layer.content?.kind === "rect" && cornerPreview?.layerId === layer.id ? { ...layer.content, cornerRadius: cornerPreview.cornerRadius } : layer.content;
                   if (!image && !content) return null;
@@ -625,9 +629,9 @@ export default function CanvasViewport() {
                   if (content) return <VectorShape key={layer.id} content={content} {...shared} />;
                   if (warp) {
                     // warped: drawn by the shared rasteriser, placed on a whole pixel, scale and rotation already baked in
-                    return <WarpedShape key={layer.id} image={finger?.layerId === layer.id ? finger.raw : image!} rev={finger?.layerId === layer.id ? finger.rev : 0} warp={warp} placement={layer.transform} frame={{ x: -Math.round(at.x), y: -Math.round(at.y), width: screen.width, height: screen.height }} dragging={warpPreview?.layerId === layer.id || finger?.layerId === layer.id} {...shared} x={screen.x + Math.round(at.x)} y={screen.y + Math.round(at.y)} />;
+                    return <WarpedShape key={layer.id} image={finger?.layerId === layer.id ? finger.raw : drawImage!} rev={finger?.layerId === layer.id ? finger.rev : 0} warp={warp} placement={layer.transform} frame={{ x: -Math.round(at.x), y: -Math.round(at.y), width: screen.width, height: screen.height }} dragging={warpPreview?.layerId === layer.id || finger?.layerId === layer.id} {...shared} x={screen.x + Math.round(at.x)} y={screen.y + Math.round(at.y)} />;
                   }
-                  return <KImage key={layer.id} image={finger?.layerId === layer.id ? finger.canvas : rawToCanvas(image!)} width={image!.width} height={image!.height} {...shared} />;
+                  return <KImage key={layer.id} image={finger?.layerId === layer.id ? finger.canvas : rawToCanvas(drawImage!)} width={image!.width} height={image!.height} {...shared} />;
                 })();
                   if (!fx || !node) return node;
                   const off = placedAt(layer);

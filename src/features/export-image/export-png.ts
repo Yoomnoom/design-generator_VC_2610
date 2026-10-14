@@ -1,5 +1,6 @@
 import { ImageCodec } from "@/lib/image/codec";
 import { RawImage } from "@/lib/image/raw-image";
+import { adjustedPicture } from "@/lib/image/adjust";
 import { RenderLayer, renderComposite } from "@/lib/image/render-export";
 import { MemoOverlay, overlayMemos } from "@/lib/image/memo-raster";
 import { Rasterize, rasterizeVectorLayer } from "@/lib/image/vector-raster";
@@ -14,8 +15,9 @@ export function renderLayerOf(layer: Project["screens"][number]["layers"][number
     const r = rasterize(layer.content, layer.transform, frame);
     return r ? { image: r.image, x: r.x, y: r.y, zIndex: layer.zIndex, opacity: layer.opacity, blend: layer.blend, effects: layer.effects, visible: true } : null;
   }
-  const image = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
-  if (!image) throw new Error(`레이어 "${layer.name}"의 이미지가 로드되어 있지 않습니다`);
+  const original = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
+  if (!original) throw new Error(`레이어 "${layer.name}"의 이미지가 로드되어 있지 않습니다`);
+  const image = adjustedPicture(original, layer.adjust); // the layer's adjustments are applied to its pixels here, the same way on screen
   const { x, y, scaleX, scaleY, rotation } = layer.transform;
   return { image, x, y, scaleX, scaleY, rotation, warp: layer.warp, zIndex: layer.zIndex, opacity: layer.opacity, blend: layer.blend, effects: layer.effects, visible: layer.visible };
 }

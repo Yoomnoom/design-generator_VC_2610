@@ -28,8 +28,9 @@ import { renderLayerOf } from "@/features/export-image/export-png";
 import { RenderLayer, renderComposite } from "@/lib/image/render-export";
 import { Rasterize, rasterizeVectorLayer } from "@/lib/image/vector-raster";
 import { effectMargin } from "@/lib/image/layer-effects";
-import { effectsError } from "@/lib/project/parse";
-import { LayerEffects } from "@/lib/project/schema";
+import { adjustError, effectsError } from "@/lib/project/parse";
+import { hasAdjust } from "@/lib/image/adjust";
+import { LayerAdjust, LayerEffects } from "@/lib/project/schema";
 import { BLEND_MODES, BlendMode, BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode, MAX_GROUPS, MAX_GROUP_NAME } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
@@ -223,6 +224,11 @@ type EditorActions = {
   mergeDown(): number;
   /** every visible, unlocked layer becomes one bitmap (Ctrl+Shift+E); the capture and the background patches are not part of it */
   mergeAll(): number;
+  /** image adjustments of a bitmap layer (null removes them); one undo step. A shape or text layer, a locked layer, comparing and out-of-range values refuse. */
+  setLayerAdjust(layerId: string, adjust: LayerAdjust | null): boolean;
+  /** while an adjustment slider is dragged: shown on the canvas from a reduced copy, no history */
+  adjustPreview: { layerId: string; adjust: LayerAdjust } | null;
+  setAdjustPreview(preview: { layerId: string; adjust: LayerAdjust } | null): void;
   /** drop shadow, outline and colour overlay of a layer (null removes them all); one undo step. A locked layer, comparing or invalid values refuse. */
   setLayerEffects(layerId: string, effects: LayerEffects | null): boolean;
   /** while an effect slider is dragged: shown on the canvas, no history */
@@ -598,6 +604,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
       grid: { on: false, size: 16, snap: false },
       opacityPreview: null,
       effectsPreview: null,
+      adjustPreview: null,
       freeTransform: false,
       ftPreview: null,
       collapsedGroups: [],
@@ -633,6 +640,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
       grid: { on: false, size: 16, snap: false },
       opacityPreview: null,
       effectsPreview: null,
+      adjustPreview: null,
       freeTransform: false,
       ftPreview: null,
       collapsedGroups: [],
@@ -1114,7 +1122,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
           set({ notice: "잠긴 레이어는 래스터화할 수 없습니다." });
           return false;
         }
-        if (!layer.content && !layer.effects) {
+        if (!layer.content && !layer.effects && !layer.adjust) {
           set({ notice: "이미 이미지 레이어이고 효과도 없습니다." });
           return false;
         }
@@ -1131,6 +1139,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
             if (!l) return;
             delete l.content;
             delete l.effects;
+            delete l.adjust;
             delete l.warp;
             delete l.drawn;
             l.imageId = imageId;
@@ -1176,6 +1185,20 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         const next = { ...get().grid, ...change };
         const size = Number.isFinite(next.size) ? Math.min(Math.max(Math.round(next.size), 2), 512) : 16;
         set({ grid: { on: !!next.on, snap: !!next.snap, size } });
+      },
+
+      setAdjustPreview: (adjustPreview) => set({ adjustPreview }),
+
+      setLayerAdjust(layerId, adjust) {
+        const layer = screenOf()?.layers.find((l) => l.id === layerId);
+        if (!layer || layer.locked || layer.content || !layer.imageId) return false;
+        if (adjust !== null && adjustError(adjust)) return false;
+        const next = adjust && hasAdjust(adjust) ? adjust : null;
+        if (JSON.stringify(layer.adjust ?? null) === JSON.stringify(next)) return false;
+        return editLayer(layerId, "이미지 조정", (l) => {
+          if (next) l.adjust = { ...next };
+          else delete l.adjust;
+        });
       },
 
       setEffectsPreview: (effectsPreview) => set({ effectsPreview }),

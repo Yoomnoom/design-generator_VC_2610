@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AlignKind } from "@/features/align/align";
-import { BitmapLayer, BlendMode, LayerEffects } from "@/lib/project/schema";
+import { BitmapLayer, BlendMode, LayerAdjust, LayerEffects } from "@/lib/project/schema";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 
 /** Opacity: dragging the slider shows the result on the canvas without writing history; letting go (or Enter in the number box) is ONE undo step. */
@@ -204,5 +204,57 @@ export function MergeButtons({ layer, count, disabled }: { layer?: BitmapLayer; 
         </button>
       </div>
     </div>
+  );
+}
+const ADJ_FIELDS: { key: keyof LayerAdjust; label: string; min: number; max: number }[] = [
+  { key: "brightness", label: "밝기", min: -100, max: 100 },
+  { key: "contrast", label: "대비", min: -100, max: 100 },
+  { key: "saturation", label: "채도", min: -100, max: 100 },
+  { key: "hue", label: "색조", min: -180, max: 180 },
+  { key: "blur", label: "흐림", min: 0, max: 50 },
+  { key: "sharpen", label: "선명하게", min: 0, max: 100 },
+];
+
+/** Image adjustments of a bitmap layer (never changes its pixels). Dragging a slider shows the result from a reduced copy and writes no history;
+ *  letting go makes the full-size result and ONE undo step. */
+export function AdjustFields({ layer, disabled }: { layer: BitmapLayer; disabled: boolean }) {
+  const stored: LayerAdjust = layer.adjust ?? { brightness: 0, contrast: 0, saturation: 0, hue: 0, blur: 0, sharpen: 0 };
+  const [draft, setDraft] = useState<LayerAdjust>(stored);
+  const dirty = useRef(false);
+  const key = JSON.stringify(stored);
+  useEffect(() => {
+    setDraft(stored);
+    dirty.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the stored values
+  }, [key, layer.id]);
+  useEffect(() => () => editorStore.getState().setAdjustPreview(null), [layer.id]);
+  if (layer.content || !layer.imageId) return null;
+  const move = (k: keyof LayerAdjust, v: number) => {
+    const next = { ...draft, [k]: v };
+    setDraft(next);
+    dirty.current = true;
+    editorStore.getState().setAdjustPreview({ layerId: layer.id, adjust: next });
+  };
+  const commit = () => {
+    if (!dirty.current) return;
+    dirty.current = false;
+    const st = editorStore.getState();
+    st.setLayerAdjust(layer.id, draft);
+    st.setAdjustPreview(null);
+  };
+  return (
+    <details data-testid="adjust-panel" className="rounded border border-[var(--line)] bg-white px-2 py-1.5" open={!!layer.adjust}>
+      <summary className="cursor-pointer text-xs font-bold">이미지 조정 {layer.adjust ? "(켜짐)" : ""}</summary>
+      <div className="mt-2 grid gap-1.5">
+        {ADJ_FIELDS.map((f) => (
+          <label key={f.key} className="grid grid-cols-[52px_minmax(0,1fr)_32px] items-center gap-1.5 text-[11px]">
+            <span>{f.label}</span>
+            <input data-testid={`adj-${f.key}`} type="range" min={f.min} max={f.max} step={1} value={draft[f.key]} disabled={disabled} onChange={(e) => move(f.key, Number(e.target.value))} onPointerUp={commit} onKeyUp={commit} onBlur={commit} />
+            <span className="text-right tabular-nums text-[var(--muted)]">{draft[f.key]}</span>
+          </label>
+        ))}
+        <button type="button" data-testid="adj-reset" className="btn mini" disabled={disabled || !layer.adjust} onClick={() => editorStore.getState().setLayerAdjust(layer.id, null)}>조정 모두 지우기</button>
+      </div>
+    </details>
   );
 }

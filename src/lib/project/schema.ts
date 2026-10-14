@@ -9,8 +9,9 @@
  *  8: `groups` on a screen and `groupId` on a layer: layers that are selected and moved as one (one level, no nesting).
  *  9: `cornerRadius` on a rectangle layer's content: rounded corners (absent = square, as in every earlier file).
  *  10: `blend` on a layer: how it mixes with what is below it (absent = normal, as in every earlier file).
- *  11: `effects` on a layer: drop shadow, outline and colour overlay, as values (absent = none, as in every earlier file). */
-export const CURRENT_VERSION = 11 as const;
+ *  11: `effects` on a layer: drop shadow, outline and colour overlay, as values (absent = none, as in every earlier file).
+ *  12: `adjust` on a bitmap layer: brightness, contrast, saturation, hue, blur and sharpen, as values (absent = none, as in every earlier file). */
+export const CURRENT_VERSION = 12 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -55,6 +56,9 @@ export type StrokeEffect = { on: boolean; color: string; width: number; position
 export type OverlayEffect = { on: boolean; color: string; opacity: number };
 export type LayerEffects = { shadow?: ShadowEffect; stroke?: StrokeEffect; overlay?: OverlayEffect };
 
+/** Image adjustments of a bitmap layer (see lib/image/adjust.ts): the bitmap itself is never changed. */
+export type LayerAdjust = { brightness: number; contrast: number; saturation: number; hue: number; blur: number; sharpen: number };
+
 export type BitmapLayer = {
   id: string;
   name: string;
@@ -72,6 +76,8 @@ export type BitmapLayer = {
   blend?: BlendMode;
   /** absent = no effects (and in every file before version 11) */
   effects?: LayerEffects;
+  /** absent = none (and in every file before version 12). Only a bitmap layer has one. */
+  adjust?: LayerAdjust;
   /** Where the bitmap is placed. A bitmap pixel p lands at  T(x, y) · R(rotation) · S(scaleX, scaleY) · p,
    *  in frame pixels (original-image pixels, y down). So (x, y) is where the bitmap's top-left corner goes and is the
    *  centre of rotation; rotation is in degrees, clockwise on screen. */

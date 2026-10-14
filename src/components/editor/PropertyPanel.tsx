@@ -8,7 +8,7 @@ import { BitmapLayer, LayerContent, TextContent } from "@/lib/project/schema";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE } from "@/lib/image/text-layout";
 import { SHAPE_LABEL, maxCornerRadius } from "@/lib/image/vector";
 import { ColorField, WidthField } from "./StyleFields";
-import { AlignButtons, BlendSelect, EffectsFields, FlipButtons, MergeButtons, OpacityField } from "./LayerToolsPanel";
+import { AdjustFields, AlignButtons, BlendSelect, EffectsFields, FlipButtons, MergeButtons, OpacityField } from "./LayerToolsPanel";
 import { canStretch, selectionBox } from "@/features/free-transform/free-transform";
 import { ImageCache } from "@/store/images";
 import { useBindings } from "@/features/shortcuts/shortcut-store";
@@ -320,6 +320,7 @@ export default function PropertyPanel() {
           <BlendSelect layer={layer} disabled={comparing || layer.locked} />
           <FlipButtons layer={layer} disabled={comparing || layer.locked} />
           <EffectsFields layer={layer} disabled={comparing || layer.locked} />
+          <AdjustFields layer={layer} disabled={comparing || layer.locked} />
           <AlignButtons disabled={comparing || layer.locked} />
           <MergeButtons layer={layer} count={1} disabled={comparing || layer.locked} />
         </div>
