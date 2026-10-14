@@ -2,7 +2,10 @@
 
 import { useEffect } from "react";
 import { copyLayerToClipboard, writePngToSystemClipboard } from "@/features/layer-clipboard/layer-clipboard";
+import { wholeGroupOf } from "@/features/groups/groups";
 import { resolveShortcut } from "@/features/shortcuts/shortcuts";
+import { shortcutStore } from "@/features/shortcuts/shortcut-store";
+import { selectScreen } from "@/store/editor-store";
 import { canvasCodec } from "@/lib/image/canvas-codec";
 import { isTypingTarget } from "@/lib/dom";
 import { editorStore } from "@/store/use-editor-store";
@@ -15,8 +18,10 @@ export function useShortcuts() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isTypingTarget(e.target) || modalOpen()) return;
-      const action = resolveShortcut(e);
+      const action = resolveShortcut(e, shortcutStore.get());
       const st = editorStore.getState();
+      // Ctrl+G is "find next" in a browser: while the editor owns the keyboard it is always taken, project or not
+      if ((action === "group" || action === "ungroup") && !st.history) return void e.preventDefault();
       if (!action || !st.history) return;
       const layerId = st.selectedLayerIds[0];
 
@@ -39,8 +44,11 @@ export function useShortcuts() {
           if (!st.deleteSelectedLayers()) return; // every selected layer that is not locked
           break;
         case "duplicate":
-          if (st.selectedLayerIds.length > 1) st.setNotice("여러 레이어가 선택되어 있어 복제할 수 없습니다. 하나만 선택하세요.");
-          else if (layerId) st.duplicateLayer(layerId); // Ctrl+D is "bookmark this page" in a browser, so it is always taken
+          if (st.selectedLayerIds.length > 1) {
+            const whole = wholeGroupOf(selectScreen(st)?.layers ?? [], st.selectedLayerIds);
+            if (whole) st.duplicateGroup(whole);
+            else st.setNotice("여러 레이어가 선택되어 있어 복제할 수 없습니다. 하나만 선택하거나 그룹 전체를 선택하세요.");
+          } else if (layerId) st.duplicateLayer(layerId); // Ctrl+D is "bookmark this page" in a browser, so it is always taken
           break;
         case "copy":
           if (!layerId || window.getSelection()?.toString()) return; // with text selected, Ctrl+C is the normal copy
@@ -53,6 +61,12 @@ export function useShortcuts() {
           void copyLayerToClipboard({ layerId, store: editorStore, codec: canvasCodec, write: writePngToSystemClipboard }).then((r) => {
             editorStore.getState().setNotice(r.ok ? null : r.reason);
           });
+          break;
+        case "group":
+          st.groupSelected();
+          break;
+        case "ungroup":
+          st.ungroupSelected();
           break;
         case "tool-select":
           st.setTool("select");
@@ -102,8 +116,12 @@ export function useShortcuts() {
             st.finishWarp(false); // Esc: take back everything done with the warp tool
             break;
           }
-          if (!st.candidatePick) return;
-          st.clearCandidatePick();
+          if (st.candidatePick) {
+            st.clearCandidatePick();
+            break;
+          }
+          if (st.selectedLayerIds.length === 0) return; // Esc means nothing here otherwise
+          st.deselectAll();
           break;
         case "tool-memo":
           st.setTool("memo");

@@ -9,6 +9,9 @@ export type AssetLayer = {
   content?: LayerContent;
   imageKey?: string;
   drawn?: boolean;
+  /** layers of a bundle with the same key were one group; `groupName` is its name (the same on each of them). Two or more are needed to make a group. */
+  groupKey?: string;
+  groupName?: string;
   warp?: LayerWarp;
   transform: BitmapLayer["transform"];
   opacity: number;

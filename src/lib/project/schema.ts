@@ -5,8 +5,9 @@
  *  4: `drawn` marks a bitmap layer made with the brush (Phase 2).
  *  5: text layers (`content.kind` "text") (Phase 2).
  *  6: `memos` on a screen: notes pinned to points of the picture (Phase 2).
- *  7: `warp` on a bitmap layer: skew, perspective, distortion and mesh warping, stored as control points (Phase 2). */
-export const CURRENT_VERSION = 7 as const;
+ *  7: `warp` on a bitmap layer: skew, perspective, distortion and mesh warping, stored as control points (Phase 2).
+ *  8: `groups` on a screen and `groupId` on a layer: layers that are selected and moved as one (one level, no nesting). */
+export const CURRENT_VERSION = 8 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -50,6 +51,8 @@ export type BitmapLayer = {
   drawn?: boolean;
   /** absent = not warped (and in every file before version 7). Only a bitmap layer has one. */
   warp?: LayerWarp;
+  /** the group this layer belongs to (an id in the screen's `groups`); absent = in no group (and in every file before version 8) */
+  groupId?: string;
   /** Where the bitmap is placed. A bitmap pixel p lands at  T(x, y) · R(rotation) · S(scaleX, scaleY) · p,
    *  in frame pixels (original-image pixels, y down). So (x, y) is where the bitmap's top-left corner goes and is the
    *  centre of rotation; rotation is in degrees, clockwise on screen. */
@@ -72,6 +75,12 @@ export type Memo = { id: string; x: number; y: number; text: string };
 export const MAX_MEMOS = 200;
 export const MAX_MEMO_LENGTH = 1000;
 
+/** A set of layers selected and moved together. One level only: a layer is in one group or none, and a group holds layers, not groups.
+ *  It has no picture of its own, so it never changes the PNG. Whether it is folded open in the layer panel is UI state, not saved. */
+export type LayerGroup = { id: string; name: string };
+export const MAX_GROUPS = 100;
+export const MAX_GROUP_NAME = 60;
+
 export type ScreenNode = {
   id: string;
   name: string;
@@ -84,6 +93,8 @@ export type ScreenNode = {
   layers: BitmapLayer[];
   /** absent in files saved before version 6 */
   memos?: Memo[];
+  /** absent in files saved before version 8 */
+  groups?: LayerGroup[];
 };
 
 export type Project = {

@@ -34,6 +34,8 @@ const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
   5: (doc) => doc,
   /** 6 -> 7: `warp` is new and optional (a layer without it is not warped), so every version 6 file is already a valid version 7 file. */
   6: (doc) => doc,
+  /** 7 -> 8: `groups` and `groupId` are new and optional (a layer without a groupId is in no group), so every version 7 file is already a valid version 8 file. */
+  7: (doc) => doc,
 };
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };

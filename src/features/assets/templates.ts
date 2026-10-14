@@ -20,13 +20,15 @@ export const TEMPLATES: { id: TemplateId; label: string; note: string }[] = [
 const W = 390, H = 844;
 const shift = (l: AssetLayer, dx: number, dy: number): AssetLayer => ({ ...l, transform: { ...l.transform, x: l.transform.x + dx, y: l.transform.y + dy } });
 const at = (layers: AssetLayer[], x: number, y: number) => layers.map((l) => shift(l, x, y));
+/** these layers form a group in the template (they are selected and moved together) */
+const grp = (layers: AssetLayer[], key: string, name: string): AssetLayer[] => layers.map((l) => ({ ...l, groupKey: key, groupName: name }));
 
 function login(): AssetLayer[] {
-  const field = (label: string, hint: string, y: number) => [
+  const field = (label: string, hint: string, y: number) => grp([
     assetText(`${label} 이름`, 24, y, 342, label, 13, "#374151"),
     assetRect(`${label} 입력창`, 24, y + 22, 342, 48, { fill: "#ffffff", stroke: "#9ca3af", sw: 1 }),
     assetText(`${label} 안내`, 38, y + 36, 310, hint, 15, "#9ca3af"),
-  ];
+  ], `field-${label}`, `${label} 입력`);
   return [
     assetText("제목", 24, 120, 342, "로그인", 28, "#111827"),
     assetText("부제", 24, 164, 342, "계정에 로그인해 시작하세요.", 15, "#6b7280"),
@@ -37,14 +39,14 @@ function login(): AssetLayer[] {
   ];
 }
 function cards(): AssetLayer[] {
-  const card = (n: number, y: number): AssetLayer[] => [
+  const card = (n: number, y: number): AssetLayer[] => grp([
     assetRect(`카드 ${n} 그림자`, 20, y + 3, 350, 150, { fill: "#e5e7eb" }),
     assetRect(`카드 ${n}`, 20, y, 350, 150, { fill: "#ffffff", stroke: "#e5e7eb", sw: 1 }),
     assetText(`카드 ${n} 제목`, 36, y + 16, 250, `카드 제목 ${n}`, 18, "#111827"),
     assetText(`카드 ${n} 설명`, 36, y + 50, 318, "두 줄 정도의 짧은 설명이 들어갑니다. 내용은 자유롭게 바꾸세요.", 14, "#6b7280"),
     assetRect(`카드 ${n} 태그`, 36, y + 108, 56, 24, { fill: "#e0e7ff" }),
     assetText(`카드 ${n} 태그 글자`, 36, y + 112, 56, "태그", 12, "#3730a3", "center"),
-  ];
+  ], `card-${n}`, `카드 ${n}`);
   return [assetText("제목", 20, 72, 350, "목록", 26, "#111827"), assetRect("제목 줄", 20, 116, 350, 1, { fill: "#d1d5db" }), ...card(1, 140), ...card(2, 316), ...card(3, 492)];
 }
 function settings(): AssetLayer[] {
@@ -54,12 +56,12 @@ function settings(): AssetLayer[] {
     ...rows.flatMap((label, i): AssetLayer[] => {
       const y = 140 + i * 72;
       const on = i % 2 === 0;
-      return [
+      return grp([
         assetText(`${label} 이름`, 24, y + 20, 250, label, 16, "#111827"),
         assetRect(`${label} 스위치 바탕`, 306, y + 18, 60, 30, { fill: on ? "#4f46e5" : "#d1d5db" }),
         assetEllipse(`${label} 스위치 손잡이`, on ? 340 : 310, y + 22, 22, 22, { fill: "#ffffff" }),
         assetRect(`${label} 구분선`, 24, y + 64, 342, 1, { fill: "#e5e7eb" }),
-      ];
+      ], `row-${i}`, `${label} 줄`);
     }),
   ];
 }
@@ -85,10 +87,12 @@ export function buildTemplate(id: TemplateId, measure: MeasureFor = estimateMeas
   const c = hexToRgb(b.background)!;
   const source: RawImage = createRawImage(W, H, [c.r, c.g, c.b, 255]);
   const sourceId = crypto.randomUUID();
+  const groupIds = new Map<string, { id: string; name: string }>();
   const layers: BitmapLayer[] = b.layers().map((a, i) => {
+    if (a.groupKey && !groupIds.has(a.groupKey)) groupIds.set(a.groupKey, { id: crypto.randomUUID(), name: a.groupName ?? "그룹" });
     const content = { ...a.content! };
     if (content.kind === "text") content.height = fitHeight(content, measure);
-    return { id: crypto.randomUUID(), name: a.name, crop: { ...a.crop }, content, transform: { ...a.transform }, zIndex: i + 1, opacity: 1, visible: true, locked: false };
+    return { id: crypto.randomUUID(), name: a.name, crop: { ...a.crop }, content, transform: { ...a.transform }, zIndex: i + 1, opacity: 1, visible: true, locked: false, ...(a.groupKey ? { groupId: groupIds.get(a.groupKey)!.id } : {}) };
   });
   const label = TEMPLATES.find((t) => t.id === id)!.label;
   const project: Project = {
@@ -96,7 +100,7 @@ export function buildTemplate(id: TemplateId, measure: MeasureFor = estimateMeas
     name: label,
     version: CURRENT_VERSION,
     canvas: { zoom: 1, panX: 0, panY: 0 },
-    screens: [{ id: crypto.randomUUID(), name: "화면 1", x: 0, y: 0, width: W, height: H, source: { imageId: sourceId, fileName: templateFile(id) }, backgroundPatches: [], layers }],
+    screens: [{ id: crypto.randomUUID(), name: "화면 1", x: 0, y: 0, width: W, height: H, source: { imageId: sourceId, fileName: templateFile(id) }, backgroundPatches: [], layers, ...(groupIds.size ? { groups: [...groupIds.values()] } : {}) }],
   };
   return { project, images: new Map([[sourceId, { raw: source }]]) };
 }

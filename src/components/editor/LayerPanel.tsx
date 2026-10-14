@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { formatBinding } from "@/features/shortcuts/shortcuts";
+import { useBindings } from "@/features/shortcuts/shortcut-store";
+import { panelRows, wholeGroupOf } from "@/features/groups/groups";
 import { sortByZ } from "@/features/layer-transform/order";
 import { RawImage } from "@/lib/image/raw-image";
 import { selectScreen } from "@/store/editor-store";
@@ -89,9 +92,16 @@ export default function LayerPanel() {
   const selectedIds = useEditorStore((s) => s.selectedLayerIds);
   const selectedId = selectedIds[0];
   const comparing = useEditorStore((s) => s.compareMode !== "off");
+  const collapsed = useEditorStore((s) => s.collapsedGroups);
+  const bindings = useBindings();
+  const key = (a: keyof typeof bindings) => formatBinding(bindings[a]);
+  const [renamingGroup, setRenamingGroup] = useState<{ id: string; text: string } | null>(null);
   if (!screen) return null;
 
   const front = sortByZ(screen.layers).reverse(); // the layer on top of the canvas is first in the list
+  const rows = panelRows(screen.layers, screen.groups ?? [], new Set(collapsed));
+  const whole = wholeGroupOf(screen.layers, selectedIds); // the selection is exactly one group
+  const anyGrouped = front.some((l) => l.groupId && selectedIds.includes(l.id));
   const index = front.findIndex((l) => l.id === selectedId);
   const selected = front[index];
   const has = index >= 0;
@@ -107,8 +117,12 @@ export default function LayerPanel() {
       <div className="mb-2.5 grid grid-cols-4 gap-1.5">
         <button className="btn mini px-0" disabled={!has || multi || index === 0 || comparing} onClick={() => act.reorderLayer(selectedId, 1)}>앞으로</button>
         <button className="btn mini px-0" disabled={!has || multi || index === front.length - 1 || comparing} onClick={() => act.reorderLayer(selectedId, -1)}>뒤로</button>
-        <button className="btn mini px-0" disabled={!has || multi || comparing} title={multi ? "여러 레이어는 복제할 수 없습니다. 하나만 선택하세요" : "복제 (Ctrl+D)"} onClick={() => act.duplicateLayer(selectedId)}>복제</button>
-        <button className="btn mini px-0" disabled={!has || (multi ? unlockedSelected === 0 : selected?.locked) || comparing} title={multi ? "선택한 레이어를 모두 삭제합니다 (잠긴 것은 제외, Delete)" : selected?.locked ? "잠긴 레이어는 삭제할 수 없습니다" : "삭제 (Delete)"} onClick={() => (multi ? act.deleteSelectedLayers() : act.deleteLayer(selectedId))}>삭제</button>
+        <button className="btn mini px-0" disabled={!has || (multi && !whole) || comparing} title={multi && !whole ? "여러 레이어는 복제할 수 없습니다. 하나만 선택하거나 그룹 전체를 선택하세요" : `복제 (${key("duplicate")})`} onClick={() => (whole ? act.duplicateGroup(whole) : act.duplicateLayer(selectedId))}>복제</button>
+        <button className="btn mini px-0" disabled={!has || (multi ? unlockedSelected === 0 : selected?.locked) || comparing} title={multi ? `선택한 레이어를 모두 삭제합니다 (잠긴 것은 제외, ${key("delete")})` : selected?.locked ? "잠긴 레이어는 삭제할 수 없습니다" : `삭제 (${key("delete")})`} onClick={() => (multi ? act.deleteSelectedLayers() : act.deleteLayer(selectedId))}>삭제</button>
+      </div>
+      <div className="mb-2.5 grid grid-cols-2 gap-1.5">
+        <button data-testid="group-make" className="btn mini px-0" disabled={comparing || selectedIds.length < 2} title={`선택한 레이어를 하나의 그룹으로 묶습니다 (${key("group")})`} onClick={() => act.groupSelected()}>그룹 만들기</button>
+        <button data-testid="group-release" className="btn mini px-0" disabled={comparing || !anyGrouped} title={`선택한 레이어가 속한 그룹을 풉니다. 레이어는 그대로 남습니다 (${key("ungroup")})`} onClick={() => act.ungroupSelected()}>그룹 해제</button>
       </div>
       {multi && (
         <p data-testid="multi-note" className="mb-2 text-xs text-[var(--accent)]">
@@ -119,17 +133,57 @@ export default function LayerPanel() {
         <p className="text-xs text-[var(--muted)]">영역 추출 도구로 사각형을 드래그하면 레이어가 생깁니다.</p>
       ) : (
         <ul data-testid="layer-list" className="m-0 list-none p-0">
-          {front.map((layer) => {
+          {rows.map((row) => {
+            if (row.kind === "group") {
+              const g = row.group;
+              const ids = row.members.map((m) => m.id);
+              const active = ids.every((id) => selectedIds.includes(id));
+              const folded = collapsed.includes(g.id);
+              return (
+                <li key={`group-${g.id}`} data-testid="group-row" data-group-id={g.id} data-folded={folded ? "true" : undefined} className={`mb-0.5 mt-1 flex items-center rounded-[7px] ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "bg-[#f5f5f2]"}`}>
+                  <button type="button" data-testid="group-toggle" aria-expanded={!folded} aria-label={`${g.name} ${folded ? "펼치기" : "접기"}`} title={folded ? "펼치기" : "접기"} className={iconButton} onClick={() => act.toggleGroupCollapsed(g.id)}>
+                    {folded ? "▸" : "▾"}
+                  </button>
+                  {renamingGroup?.id === g.id ? (
+                    <form
+                      className="flex min-w-0 flex-1 gap-1 pr-1"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        act.renameGroup(g.id, renamingGroup.text);
+                        setRenamingGroup(null);
+                      }}
+                    >
+                      <input data-testid="group-rename-input" autoFocus maxLength={60} value={renamingGroup.text} onChange={(e) => setRenamingGroup({ id: g.id, text: e.target.value })} onBlur={() => setRenamingGroup(null)} onKeyDown={(e) => e.key === "Escape" && setRenamingGroup(null)} className="min-w-0 flex-1 rounded border border-[var(--line)] bg-white px-1 text-xs text-black" />
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid="group-item"
+                      aria-current={active ? "true" : undefined}
+                      title="클릭: 그룹 선택 · Ctrl+클릭: 선택에 더하기/빼기 · Shift+클릭: 범위 선택 · 더블클릭: 이름 변경"
+                      onClick={(e) => (e.shiftKey ? act.selectRange(ids[0]) : e.ctrlKey || e.metaKey ? act.toggleLayerSelection(ids[0], true) : act.selectGroup(g.id))}
+                      onDoubleClick={() => !comparing && setRenamingGroup({ id: g.id, text: g.name })}
+                      className="flex h-[32px] min-w-0 flex-1 cursor-pointer items-center gap-1 border-0 bg-transparent px-1 text-left text-xs font-bold text-inherit"
+                    >
+                      <span className="truncate">{g.name}</span>
+                      <span className="font-normal text-[#999]">{ids.length}</span>
+                    </button>
+                  )}
+                  <button type="button" data-testid="group-rename" disabled={comparing} className="btn mini mr-1 px-1" onClick={() => setRenamingGroup({ id: g.id, text: g.name })}>이름</button>
+                </li>
+              );
+            }
+            const layer = row.layer;
             const raw = layer.imageId ? images.get(layer.imageId)?.raw : undefined;
             const active = selectedIds.includes(layer.id);
             return (
-              <li key={layer.id} data-hidden={layer.visible ? undefined : "true"} data-locked={layer.locked ? "true" : undefined} className={`mb-0.5 flex items-center rounded-[7px] ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "hover:bg-[#f5f5f2]"}`}>
+              <li key={layer.id} data-hidden={layer.visible ? undefined : "true"} data-locked={layer.locked ? "true" : undefined} data-in-group={row.inGroup ? "true" : undefined} className={`mb-0.5 flex items-center rounded-[7px] ${row.inGroup ? "ml-5" : ""} ${active ? "bg-[var(--soft)] text-[var(--accent)]" : "hover:bg-[#f5f5f2]"}`}>
                 <button
                   type="button"
                   data-testid="layer-item"
                   data-layer-id={layer.id}
                   aria-current={active ? "true" : undefined}
-                  onClick={(e) => (e.shiftKey || e.ctrlKey || e.metaKey ? act.toggleLayerSelection(layer.id) : act.selectLayer(layer.id))}
+                  onClick={(e) => (e.shiftKey ? act.selectRange(layer.id) : e.ctrlKey || e.metaKey ? act.toggleLayerSelection(layer.id) : act.selectLayer(layer.id))}
                   className={`flex h-[38px] min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-1.5 text-left text-xs text-inherit ${layer.visible ? "" : "opacity-45"}`}
                 >
                   {layer.content ? <ContentThumb content={layer.content} /> : raw && <Thumb raw={raw} />}

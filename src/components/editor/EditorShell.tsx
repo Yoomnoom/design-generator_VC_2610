@@ -32,6 +32,7 @@ import SourcePanel from "./SourcePanel";
 import ToolRail from "./ToolRail";
 import Notices from "./Notices";
 import TopBar from "./TopBar";
+import ShortcutSettings from "./ShortcutSettings";
 import StartChoices, { CanvasSpec, NewCanvasDialog, StartDialog } from "./StartChoices";
 import { TemplateId, TEMPLATES, buildTemplate } from "@/features/assets/templates";
 import { canvasMeasureFor } from "@/lib/image/text-measure";
@@ -74,6 +75,7 @@ export default function EditorShell() {
   const [exporting, setExporting] = useState(false);
   const [dropping, setDropping] = useState(false);
   const [startOpen, setStartOpen] = useState(false); // the top bar's "new project" window
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false); // the blank-canvas size window
 
   const loadImage = async (file: File) => {
@@ -203,6 +205,7 @@ export default function EditorShell() {
         onSaveProject={() => void saveProject()}
         onExport={() => setExporting(true)}
         onNew={() => setStartOpen(true)}
+        onShortcuts={() => setShortcutsOpen(true)}
       />
       <Notices extra={<AutosaveBanners />} />
       <input ref={imageInput} data-testid="file-input" type="file" accept="image/png,image/jpeg" className="hidden" onChange={pickFrom("image")} />
@@ -274,6 +277,7 @@ export default function EditorShell() {
         />
       )}
       {canvasOpen && <NewCanvasDialog onClose={() => setCanvasOpen(false)} onCreate={(spec) => { setCanvasOpen(false); void request({ kind: "blank", spec }); }} />}
+      {shortcutsOpen && <ShortcutSettings onClose={() => setShortcutsOpen(false)} />}
       <RestorePrompt />
       <FillColorDialog />
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}

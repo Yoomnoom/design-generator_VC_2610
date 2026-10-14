@@ -137,7 +137,7 @@ function Mine({ canInsert, onInsert, setMessage }: { canInsert: boolean; onInser
     guard(async () => {
       const st = editorStore.getState();
       const layers = selectScreen(st)?.layers.filter((l) => st.selectedLayerIds.includes(l.id)) ?? [];
-      const bundle = captureBundle(name || layers[0]?.name || "내 소스", layers, st.images);
+      const bundle = captureBundle(name || layers[0]?.name || "내 소스", layers, st.images, selectScreen(st)?.groups ?? []);
       if (!bundle || !lib.current) return setMessage("저장할 레이어를 먼저 선택해 주세요.");
       const rec = await lib.current.add(bundle, name || bundle.name);
       setName("");

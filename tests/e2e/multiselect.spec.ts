@@ -47,10 +47,11 @@ async function click(page: Page, p: { x: number; y: number }, mods: ("Shift" | "
   await page.mouse.click(c.x, c.y);
   for (const m of [...mods].reverse()) await page.keyboard.up(m);
 }
-async function drag(page: Page, from: { x: number; y: number }, dx: number, dy: number, o: { hold?: boolean; alt?: boolean; shift?: boolean } = {}) {
+async function drag(page: Page, from: { x: number; y: number }, dx: number, dy: number, o: { hold?: boolean; alt?: boolean; shift?: boolean; ctrl?: boolean } = {}) {
   const a = await clientOf(page, from.x, from.y);
   const b = await clientOf(page, from.x + dx, from.y + dy);
   if (o.shift) await page.keyboard.down("Shift");
+  if (o.ctrl) await page.keyboard.down("Control");
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
   if (o.alt) await page.keyboard.down("Alt");
@@ -60,11 +61,12 @@ async function drag(page: Page, from: { x: number; y: number }, dx: number, dy: 
   await page.mouse.up();
   if (o.alt) await page.keyboard.up("Alt");
   if (o.shift) await page.keyboard.up("Shift");
+  if (o.ctrl) await page.keyboard.up("Control");
 }
 const guides = (page: Page) => page.evaluate(() => (window as any).__slc.getState().snapGuides as { x1: number; y1: number; x2: number; y2: number; kind: string; label?: string }[]);
 
 test.describe("choosing several layers", () => {
-  test("Shift+click on the canvas adds a layer to the selection and takes it out again; the panel counts them", async ({ page }) => {
+  test("Shift+click on the canvas adds a layer to the selection, Ctrl+click takes it out again; the panel counts them", async ({ page }) => {
     const { a, b, r } = await scene(page);
     await click(page, A);
     expect(await selected(page)).toEqual([a]);
@@ -74,7 +76,9 @@ test.describe("choosing several layers", () => {
     expect(await selected(page)).toEqual([a, b, r]);
     await expect(page.getByTestId("multi-note")).toContainText("3개 선택됨");
     await expect(page.getByTestId("multi-panel")).toContainText("선택 레이어 3개");
-    await click(page, B, ["Shift"]);
+    await click(page, B, ["Shift"]); // Shift only adds: B is already in, nothing changes
+    expect(await selected(page)).toEqual([a, b, r]);
+    await click(page, B, ["Control"]);
     expect(await selected(page)).toEqual([a, r]);
     await expect(page.locator('[data-testid="layer-item"][aria-current="true"]')).toHaveCount(2);
   });
@@ -92,12 +96,12 @@ test.describe("choosing several layers", () => {
     expect(a).not.toBe(b);
   });
 
-  test("the layer list does the same with Shift or Ctrl; a plain click chooses one", async ({ page }) => {
+  test("the layer list: Ctrl+click toggles, Shift+click selects the range from the last clicked layer; a plain click chooses one", async ({ page }) => {
     const { a, b, r } = await scene(page);
     const items = page.getByTestId("layer-item"); // front first: R, B, A
     await items.nth(2).click();
     expect(await selected(page)).toEqual([a]);
-    await items.nth(1).click({ modifiers: ["Shift"] });
+    await items.nth(1).click({ modifiers: ["Control"] });
     expect(await selected(page)).toEqual([a, b]);
     await items.nth(0).click({ modifiers: ["Control"] });
     expect(await selected(page)).toEqual([a, b, r]);
@@ -105,6 +109,11 @@ test.describe("choosing several layers", () => {
     expect(await selected(page)).toEqual([a, r]);
     await items.nth(1).click();
     expect(await selected(page)).toEqual([b]);
+    // Shift+click: the range from the last clicked layer (B) to this one, in the list's order (front first: R, B, A)
+    await items.nth(0).click({ modifiers: ["Shift"] });
+    expect((await selected(page)).sort()).toEqual([b, r].sort());
+    await items.nth(2).click({ modifiers: ["Shift"] });
+    expect((await selected(page)).sort()).toEqual([a, b].sort()); // from B to A
   });
 
   test("Ctrl+A selects every layer; typing in a field keeps Ctrl+A for the field", async ({ page }) => {
@@ -214,12 +223,12 @@ test.describe("moving a selection", () => {
     expect(await at(page, r)).toEqual([rx, ry]);
   });
 
-  test("Shift-dragging a layer that was in the selection takes it out and does not move it", async ({ page }) => {
+  test("Ctrl-dragging a layer that was in the selection takes it out and does not move it", async ({ page }) => {
     const { a, r } = await scene(page);
     await click(page, A);
     await click(page, R, ["Shift"]);
     const [rx, ry] = await at(page, r);
-    await drag(page, R, 25, 25, { shift: true });
+    await drag(page, R, 25, 25, { ctrl: true });
     expect(await at(page, r)).toEqual([rx, ry]);
     expect(await selected(page)).toEqual([a]);
   });

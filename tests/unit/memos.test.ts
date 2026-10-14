@@ -225,7 +225,7 @@ describe("the file format: memos (version 6)", () => {
     const opened = await loadProjectText(text, { blobs: await openBlobStore("b", new IDBFactory()), codec });
     if (!opened.ok) throw new Error(opened.error);
     expect(opened.project.screens[0].memos).toEqual(project.screens[0].memos);
-    expect(JSON.parse(text).project.version).toBe(7);
+    expect(JSON.parse(text).project.version).toBe(8);
     expect(JSON.stringify(project.screens[0].memos)).not.toMatch(/blob:|data:/);
   });
 
@@ -244,7 +244,7 @@ describe("the file format: memos (version 6)", () => {
     const before = JSON.parse(v5).project;
     const r = await loadProjectText(v5, { blobs: await openBlobStore("v5", new IDBFactory()), codec: pngCodec() });
     if (!r.ok) throw new Error(r.error);
-    expect(r.project.version).toBe(7);
+    expect(r.project.version).toBe(8);
     expect(r.project.screens[0].layers).toEqual(before.screens[0].layers);
     expect(r.project.screens[0].backgroundPatches).toEqual(before.screens[0].backgroundPatches);
     expect(r.project.screens[0].memos).toBeUndefined();
@@ -253,7 +253,7 @@ describe("the file format: memos (version 6)", () => {
   test("migrate takes version 5 to the current version without touching the screens", () => {
     const doc = JSON.parse(v5).project;
     const r = migrate(doc);
-    expect(r.ok && r.doc.version).toBe(7);
+    expect(r.ok && r.doc.version).toBe(8);
     expect(r.ok && (r.doc.screens as unknown[])).toEqual(doc.screens);
   });
 });

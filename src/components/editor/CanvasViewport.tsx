@@ -302,14 +302,19 @@ export default function CanvasViewport() {
 
   /** a press on a layer: with Shift/Ctrl it joins or leaves the selection (and a layer that left is not dragged); without, a member of a
    *  selection keeps the selection so the group can be dragged, and anything else becomes the selection */
-  const pressLayer = (id: string, additive: boolean, node: Konva.Node) => {
+  const pressLayer = (id: string, additive: boolean, node: Konva.Node, addOnly = false) => {
     const st = editorStore.getState();
+    if (additive && addOnly) {
+      // Shift+click adds (a layer already in the selection stays in it and can be dragged with the rest)
+      if (!st.selectedLayerIds.includes(id)) st.toggleLayerSelection(id, true);
+      return;
+    }
     if (additive) {
-      st.toggleLayerSelection(id);
+      st.toggleLayerSelection(id, true); // a layer in a group stands for the whole group
       if (!editorStore.getState().selectedLayerIds.includes(id)) node.stopDrag();
       return;
     }
-    if (!st.selectedLayerIds.includes(id)) st.selectLayer(id);
+    if (!st.selectedLayerIds.includes(id)) st.selectLayerWithGroup(id);
   };
 
   /** while dragging: where the layer (or the group) would land, pulled onto the lines of other layers and the frame unless Alt is held */
@@ -387,7 +392,7 @@ export default function CanvasViewport() {
           y={view.panY}
           scaleX={view.zoom}
           scaleY={view.zoom}
-          onMouseDown={(e) => e.target === e.target.getStage() && editorStore.getState().activeTool === "select" && editorStore.getState().selectLayer(null)}
+          onMouseDown={(e) => e.target === e.target.getStage() && editorStore.getState().activeTool === "select" && editorStore.getState().deselectAll()}
         >
           <Layer ref={layerRef} imageSmoothingEnabled={view.zoom < 1}>
             {screen && (
@@ -418,10 +423,10 @@ export default function CanvasViewport() {
                     visible: layer.visible && compare !== "original", // a hidden layer is neither drawn nor clickable; the original has no layers
                     draggable: movable && !layer.locked && !comparing,
                     listening: movable && layer.visible && !comparing,
-                    onMouseDown: (e: KonvaEventObject<MouseEvent>) => pressLayer(layer.id, e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey, e.target),
+                    onMouseDown: (e: KonvaEventObject<MouseEvent>) => pressLayer(layer.id, e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey, e.target, e.evt.shiftKey && !e.evt.ctrlKey && !e.evt.metaKey),
                     onTouchStart: (e: KonvaEventObject<TouchEvent>) => pressLayer(layer.id, false, e.target),
                     // a plain click (no drag) on a member of a selection narrows the selection to that layer
-                    onClick: (e: KonvaEventObject<MouseEvent>) => !(e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey) && editorStore.getState().selectedLayerIds.length > 1 && editorStore.getState().selectLayer(layer.id),
+                    onClick: (e: KonvaEventObject<MouseEvent>) => !(e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey) && editorStore.getState().selectedLayerIds.length > 1 && editorStore.getState().selectLayerWithGroup(layer.id),
                     onDblClick: () => layer.content?.kind === "text" && editorStore.getState().activeTool === "select" && editorStore.getState().beginTextEdit({ layerId: layer.id }),
                     onDblTap: () => layer.content?.kind === "text" && editorStore.getState().activeTool === "select" && editorStore.getState().beginTextEdit({ layerId: layer.id }),
                     onDragMove: (e: KonvaEventObject<DragEvent>) => dragMove(layer, e),

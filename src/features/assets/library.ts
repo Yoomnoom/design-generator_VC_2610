@@ -138,6 +138,7 @@ function layerError(l: unknown, images: Record<string, unknown>): string | null 
   const t = l.transform;
   if (!isRec(t) || ![t.x, t.y, t.scaleX, t.scaleY, t.rotation].every(num) || t.scaleX === 0 || t.scaleY === 0) return "레이어의 위치·크기가 올바르지 않습니다";
   if (!num(l.opacity) || l.opacity < 0 || l.opacity > 1) return "레이어의 투명도가 올바르지 않습니다";
+  if (l.groupKey !== undefined && (typeof l.groupKey !== "string" || typeof l.groupName !== "string")) return "레이어의 그룹 정보가 올바르지 않습니다";
   if (l.content !== undefined) {
     const e = contentError(l.content);
     return e ? `레이어 모양: ${e}` : null;

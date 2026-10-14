@@ -18,9 +18,10 @@ import { MESH_DEFAULT, MESH_MAX, MESH_MIN, identityQuad, isIdentityWarp, resizeM
 import { hexToRgb, normalizeHex } from "@/lib/image/color";
 import { RawImage } from "@/lib/image/raw-image";
 import { sampleBackground } from "@/lib/image/sample-background";
+import { MIN_GROUP_SIZE, expandToGroups, nextGroupName, panelRows, pruneGroups, rangeSelect, wholeGroupOf } from "@/features/groups/groups";
 import { BLANK_FILE, checkCanvasSize, isGeneratedPage } from "@/lib/project/blank";
 import { createRawImage } from "@/lib/image/raw-image";
-import { BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode } from "@/lib/project/schema";
+import { BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode, MAX_GROUPS, MAX_GROUP_NAME } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
 
@@ -169,8 +170,26 @@ type EditorActions = {
   /** Moves several layers by the same (dx, dy), the keyboard version of dragging a selection. A locked layer stays where it is (and when
    *  every one is locked nothing moves). Presses on the same set of layers close together are one undo step. */
   nudgeLayers(layerIds: readonly string[], dx: number, dy: number): boolean;
-  /** add the layer to the selection, or take it out when it is in */
-  toggleLayerSelection(layerId: string): void;
+  /** add the layer to the selection, or take it out when it is in. `whole`: a layer in a group stands for the whole group. */
+  toggleLayerSelection(layerId: string, whole?: boolean): void;
+  /** the layer a range selection (Shift+click in the panel) starts from: the last layer clicked */
+  selectionAnchor: string | null;
+  /** groups folded shut in the layer panel (UI only, not saved) */
+  collapsedGroups: string[];
+  /** a click on a layer in the canvas: the layer, or all of its group when it is in one */
+  selectLayerWithGroup(layerId: string): void;
+  /** Shift+click in the layer panel: every row from the anchor to this layer, in the panel's order (hidden and locked ones too) */
+  selectRange(layerId: string): void;
+  selectGroup(groupId: string): void;
+  deselectAll(): void;
+  /** Ctrl+G: the selected layers (two or more) become one group, as one undo step; the group's id */
+  groupSelected(): string | null;
+  /** Ctrl+Shift+G: every group that has a selected layer is dissolved (layers stay), one undo step; how many */
+  ungroupSelected(): number;
+  renameGroup(groupId: string, name: string): boolean;
+  toggleGroupCollapsed(groupId: string): void;
+  /** copies of every layer of the group, as a new group, one undo step */
+  duplicateGroup(groupId: string): string[] | null;
   /** every layer */
   selectAllLayers(): void;
   /** delete every selected layer that is not locked, as one undo step; the number deleted. Locked ones stay, with a notice. */
@@ -348,7 +367,12 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
     /** one undo step for an edit of the layer list */
     const commitLayers = (label: string, next: readonly BitmapLayer[]) => {
       const history = get().history!;
-      set({ history: commit(history, label, (draft) => applyLayers(draft.screens[0].layers, next)) });
+      set({
+        history: commit(history, label, (draft) => {
+          applyLayers(draft.screens[0].layers, next);
+          pruneGroups(draft.screens[0]); // a group left with fewer than two layers (deleted, or pasted away) is dissolved
+        }),
+      });
     };
 
     /** one undo step changing one layer; false (and no history entry) when nothing actually changes */
@@ -384,6 +408,8 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         selectedPatchId: null,
         pendingExtraction: null,
         layerClipboard: null, // it points at bitmaps of the project that was just replaced
+      selectionAnchor: null,
+      collapsedGroups: [],
         compareMode: "off",
         dragPreview: null,
         warpPreview: null,
@@ -411,6 +437,8 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
       candidatePick: null,
       candidateHover: null,
       snapEnabled: true,
+      selectionAnchor: null,
+      collapsedGroups: [],
       snapGuides: [],
       textEditing: null,
       selectedMemoId: null,
@@ -559,8 +587,10 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         const screen = screenOf();
         const source = screen?.layers.find((l) => l.id === layerId);
         if (!screen || !source) return null;
+        const { groupId: _g, ...plain } = source; // a copy of one layer belongs to no group
+        void _g;
         const copy: BitmapLayer = {
-          ...source,
+          ...plain,
           id: genId(),
           name: `${source.name} 복사`,
           visible: true, // a copy is a fresh layer: shown and free to move, whatever state the original is in
@@ -591,8 +621,10 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         if (!source.content && (!source.imageId || !images.has(source.imageId))) return null;
         // each paste lands one more step down and right, so repeated pastes do not hide each other
         const step = DUPLICATE_OFFSET * (layerClipboard.pastes + 1);
+        const { groupId: _g, ...plain } = source; // pasted alone: in no group
+        void _g;
         const copy: BitmapLayer = {
-          ...source,
+          ...plain,
           id: genId(),
           name: `${source.name} 복사`,
           visible: true,
@@ -737,16 +769,138 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         return true;
       },
 
-      toggleLayerSelection(layerId) {
-        if (!screenOf()?.layers.some((l) => l.id === layerId)) return;
+      toggleLayerSelection(layerId, whole = false) {
+        const screen = screenOf();
+        if (!screen?.layers.some((l) => l.id === layerId)) return;
         const current = get().selectedLayerIds;
-        set({ selectedLayerIds: current.includes(layerId) ? current.filter((id) => id !== layerId) : [...current, layerId], selectedPatchId: null, selectedMemoId: null });
+        const ids = whole ? expandToGroups(screen.layers, [layerId]) : [layerId];
+        const removing = current.includes(layerId);
+        set({
+          selectedLayerIds: removing ? current.filter((id) => !ids.includes(id)) : [...current, ...ids.filter((id) => !current.includes(id))],
+          selectionAnchor: layerId,
+          selectedPatchId: null,
+          selectedMemoId: null,
+        });
       },
+
+      selectLayerWithGroup(layerId) {
+        const screen = screenOf();
+        if (!screen?.layers.some((l) => l.id === layerId)) return;
+        set({ selectedLayerIds: expandToGroups(screen.layers, [layerId]), selectionAnchor: layerId, selectedPatchId: null, selectedMemoId: null });
+      },
+
+      selectRange(layerId) {
+        const screen = screenOf();
+        if (!screen?.layers.some((l) => l.id === layerId)) return;
+        const rows = panelRows(screen.layers, screen.groups ?? [], new Set(get().collapsedGroups));
+        set({ selectedLayerIds: rangeSelect(rows, get().selectionAnchor, layerId), selectedPatchId: null, selectedMemoId: null }); // the anchor stays, so the range can be widened
+      },
+
+      selectGroup(groupId) {
+        const screen = screenOf();
+        const ids = screen?.layers.filter((l) => l.groupId === groupId).map((l) => l.id) ?? [];
+        if (ids.length === 0) return;
+        set({ selectedLayerIds: ids, selectionAnchor: ids[0], selectedPatchId: null, selectedMemoId: null });
+      },
+
+      deselectAll: () => set({ selectedLayerIds: [], selectionAnchor: null, selectedPatchId: null, selectedMemoId: null }),
 
       selectAllLayers() {
         const screen = screenOf();
         if (!screen) return;
-        set({ selectedLayerIds: screen.layers.map((l) => l.id), selectedPatchId: null, selectedMemoId: null });
+        set({ selectedLayerIds: screen.layers.map((l) => l.id), selectionAnchor: null, selectedPatchId: null, selectedMemoId: null });
+      },
+
+      groupSelected() {
+        const { history } = get();
+        const screen = screenOf();
+        if (frozen() || !history || !screen) return null;
+        const ids = get().selectedLayerIds.filter((id) => screen.layers.some((l) => l.id === id));
+        if (ids.length < MIN_GROUP_SIZE) {
+          set({ notice: "그룹으로 만들려면 레이어를 두 개 이상 선택하세요." });
+          return null;
+        }
+        if ((screen.groups?.length ?? 0) >= MAX_GROUPS && !ids.some((id) => screen.layers.find((l) => l.id === id)?.groupId)) {
+          set({ notice: `그룹은 ${MAX_GROUPS}개까지 만들 수 있습니다.` });
+          return null;
+        }
+        const gid = genId();
+        const name = nextGroupName(screen.groups ?? []);
+        const next = commit(history, "그룹 만들기", (draft) => {
+          const s = draft.screens[0];
+          (s.groups ??= []).push({ id: gid, name });
+          // one level only: a layer that was in another group leaves it (and that group is dissolved if too few remain)
+          for (const l of s.layers) if (ids.includes(l.id)) l.groupId = gid;
+          pruneGroups(s);
+        });
+        set({ history: next, selectedLayerIds: ids, selectionAnchor: ids[0] });
+        return gid;
+      },
+
+      ungroupSelected() {
+        const { history } = get();
+        const screen = screenOf();
+        if (frozen() || !history || !screen) return 0;
+        const gids = new Set(screen.layers.filter((l) => get().selectedLayerIds.includes(l.id) && l.groupId).map((l) => l.groupId!));
+        if (gids.size === 0) {
+          set({ notice: "선택한 레이어 중에 그룹이 없습니다." });
+          return 0;
+        }
+        const next = commit(history, "그룹 해제", (draft) => {
+          const s = draft.screens[0];
+          for (const l of s.layers) if (l.groupId && gids.has(l.groupId)) delete l.groupId;
+          s.groups = (s.groups ?? []).filter((g) => !gids.has(g.id));
+          pruneGroups(s);
+        });
+        set({ history: next });
+        return gids.size;
+      },
+
+      renameGroup(groupId, name) {
+        const { history } = get();
+        const clean = name.trim().slice(0, MAX_GROUP_NAME);
+        if (frozen() || !history || !clean) return false;
+        if (!screenOf()?.groups?.some((g) => g.id === groupId && g.name !== clean)) return false;
+        set({
+          history: commit(history, "그룹 이름 변경", (draft) => {
+            const g = draft.screens[0].groups?.find((x) => x.id === groupId);
+            if (g) g.name = clean;
+          }),
+        });
+        return true;
+      },
+
+      toggleGroupCollapsed(groupId) {
+        const cur = get().collapsedGroups;
+        set({ collapsedGroups: cur.includes(groupId) ? cur.filter((g) => g !== groupId) : [...cur, groupId] });
+      },
+
+      duplicateGroup(groupId) {
+        const { history } = get();
+        const screen = screenOf();
+        if (frozen() || !history || !screen) return null;
+        const members = sortByZ(screen.layers.filter((l) => l.groupId === groupId)); // back to front
+        const group = screen.groups?.find((g) => g.id === groupId);
+        if (!group || members.length < MIN_GROUP_SIZE || (screen.groups?.length ?? 0) >= MAX_GROUPS) return null;
+        const gid = genId();
+        const copies: BitmapLayer[] = members.map((m) => ({
+          ...m,
+          id: genId(),
+          name: `${m.name} 복사`,
+          groupId: gid,
+          visible: true,
+          locked: false,
+          crop: { ...m.crop },
+          transform: { ...m.transform, x: m.transform.x + DUPLICATE_OFFSET, y: m.transform.y + DUPLICATE_OFFSET },
+        }));
+        let list: readonly BitmapLayer[] = screen.layers;
+        for (const c of copies) list = addOnTop(list, c); // back to front, so the copies keep their stacking
+        const next = commit(history, "그룹 복제", (draft) => {
+          applyLayers(draft.screens[0].layers, list);
+          (draft.screens[0].groups ??= []).push({ id: gid, name: `${group.name} 복사`.slice(0, MAX_GROUP_NAME) });
+        });
+        set({ history: next, selectedLayerIds: copies.map((c) => c.id), selectionAnchor: copies[0].id });
+        return copies.map((c) => c.id);
       },
 
       deleteSelectedLayers() {
@@ -912,6 +1066,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         if (frozen() || !history || !screen || bundle.layers.length === 0 || bundle.layers.length > 200) return null;
         const nextImages = new Map(images);
         const idOfKey = new Map<string, string>();
+        const groupIdOfKey = new Map<string, string>(); // the groups the source brings are new groups, with new ids
         const made: BitmapLayer[] = [];
         for (const a of bundle.layers) {
           let imageId: string | undefined;
@@ -937,6 +1092,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
             ...(content ? { content } : {}),
             ...(a.drawn ? { drawn: true } : {}),
             ...(a.warp ? { warp: JSON.parse(JSON.stringify(a.warp)) } : {}),
+            ...(a.groupKey ? { groupId: groupIdOfKey.get(a.groupKey) ?? (groupIdOfKey.set(a.groupKey, genId()), groupIdOfKey.get(a.groupKey)!) } : {}),
             transform: { ...a.transform },
             zIndex: 0,
             opacity: a.opacity,
@@ -958,7 +1114,15 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         let list: readonly BitmapLayer[] = screen.layers;
         for (const l of made) list = addOnTop(list, l);
         set({ images: nextImages });
-        commitLayers(bundle.layers.length > 1 ? `소스 삽입: ${bundle.name}` : `소스 삽입: ${bundle.name}`, list);
+        const newGroups = [...groupIdOfKey].map(([key, id]) => ({ id, name: (bundle.layers.find((a) => a.groupKey === key)?.groupName ?? "그룹").trim().slice(0, MAX_GROUP_NAME) || "그룹" })).slice(0, Math.max(0, MAX_GROUPS - (screen.groups?.length ?? 0))); // over the limit the extra groups just do not form
+        set({
+          history: commit(history, `소스 삽입: ${bundle.name}`, (draft) => {
+            const s = draft.screens[0];
+            applyLayers(s.layers, list);
+            if (newGroups.length) (s.groups ??= []).push(...newGroups);
+            pruneGroups(s); // a group of one layer is no group
+          }),
+        });
         const ids = made.map((l) => l.id);
         set({ selectedLayerIds: ids, selectedPatchId: null, selectedMemoId: null, activeTool: "select" });
         return ids;
@@ -1182,7 +1346,7 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         }
         set(activeTool === "auto" ? { activeTool, warpSession: null, warpPreview: null } : { activeTool, candidatePick: null, candidateHover: null, warpSession: null, warpPreview: null });
       },
-      selectLayer: (layerId) => set({ selectedMemoId: null, selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [], selectedPatchId: null }),
+      selectLayer: (layerId) => set({ selectionAnchor: layerId, selectedMemoId: null, selectedLayerIds: layerId && screenOf()?.layers.some((l) => l.id === layerId) ? [layerId] : [], selectedPatchId: null }),
       selectPatch: (patchId) => {
         const known = patchId && screenOf()?.backgroundPatches.some((p) => p.id === patchId);
         set({ selectedPatchId: known ? patchId : null, selectedLayerIds: [] });

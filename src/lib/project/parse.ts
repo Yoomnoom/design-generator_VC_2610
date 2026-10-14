@@ -1,5 +1,5 @@
 import { migrate } from "./migrate";
-import { BitmapLayer, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect } from "./schema";
+import { BitmapLayer, MAX_GROUPS, MAX_GROUP_NAME, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect } from "./schema";
 import { hexToRgb } from "../image/color";
 import { warpError } from "../image/warp";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE, MIN_TEXT_WIDTH } from "../image/text-layout";
@@ -98,6 +98,19 @@ function screenError(s: unknown): string | null {
     const id = (l as BitmapLayer).id;
     if (ids.has(id)) return `layers[${i}].id가 중복됩니다`;
     ids.add(id);
+  }
+  const groupIds = new Set<string>();
+  if (s.groups !== undefined) {
+    if (!Array.isArray(s.groups) || s.groups.length > MAX_GROUPS) return "groups가 올바르지 않습니다";
+    for (const [i, g] of s.groups.entries()) {
+      if (!isRec(g) || !isId(g.id) || !isStr(g.name) || g.name.length > MAX_GROUP_NAME) return `groups[${i}]이 올바르지 않습니다`;
+      if (groupIds.has(g.id)) return `groups[${i}].id가 중복됩니다`;
+      groupIds.add(g.id);
+    }
+  }
+  for (const [i, l] of s.layers.entries()) {
+    const gid = (l as BitmapLayer).groupId;
+    if (gid !== undefined && (typeof gid !== "string" || !groupIds.has(gid))) return `layers[${i}].groupId가 없는 그룹을 가리킵니다`;
   }
   if (s.memos !== undefined) {
     if (!Array.isArray(s.memos) || s.memos.length > MAX_MEMOS) return "memos가 올바르지 않습니다";

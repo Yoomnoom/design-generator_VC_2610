@@ -1,6 +1,8 @@
 "use client";
 
 import { Tool } from "@/store/editor-store";
+import { formatBinding, ConfigurableAction } from "@/features/shortcuts/shortcuts";
+import { useBindings } from "@/features/shortcuts/shortcut-store";
 import { isGeneratedPage } from "@/lib/project/blank";
 import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
@@ -27,13 +29,21 @@ const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
   { id: "eyedropper", icon: "💧", label: "스포이트", title: "화면의 색을 읽어 그리기 색으로 씁니다 (I)" },
 ];
 
+const ACTION_OF: Partial<Record<Tool, ConfigurableAction>> = { select: "tool-select", hand: "tool-hand", rect: "tool-rect", auto: "tool-auto", line: "tool-line", box: "tool-box", ellipse: "tool-ellipse", brush: "tool-brush", eraser: "tool-eraser", text: "tool-text", memo: "tool-memo", warp: "tool-warp", finger: "tool-finger", eyedropper: "tool-eyedropper" };
+/** the tool's tooltip with the key the user has set (the texts above end in the default key, which is replaced) */
+const titleWith = (t: { id: Tool; title: string }, bindings: ReturnType<typeof useBindings>) => {
+  const a = ACTION_OF[t.id];
+  return a ? `${t.title.replace(/\s*\([A-Za-z]\)$/, "")} (${formatBinding(bindings[a])})` : t.title;
+};
+
 export default function ToolRail({ enabled }: { enabled: boolean }) {
   const active = useEditorStore((s) => s.activeTool);
+  const bindings = useBindings();
   const plain = useEditorStore((s) => isGeneratedPage(selectScreen(s)?.source.fileName ?? ""));
   return (
     <nav aria-label="도구" className="overflow-auto border-r border-[var(--line)] bg-[var(--panel)] px-2 py-2.5">
       {TOOLS.map((t) => (
-        <button key={t.id} className="tool" aria-pressed={active === t.id} disabled={!enabled || (plain && NEEDS_SCREENSHOT.includes(t.id))} title={plain && NEEDS_SCREENSHOT.includes(t.id) ? `${t.label}: ${NO_SCREENSHOT}` : t.title} onClick={() => editorStore.getState().setTool(t.id)}>
+        <button key={t.id} className="tool" aria-pressed={active === t.id} disabled={!enabled || (plain && NEEDS_SCREENSHOT.includes(t.id))} title={plain && NEEDS_SCREENSHOT.includes(t.id) ? `${t.label}: ${NO_SCREENSHOT}` : titleWith(t, bindings)} onClick={() => editorStore.getState().setTool(t.id)}>
           <b aria-hidden>{t.icon}</b>
           <span>{t.label}</span>
         </button>
