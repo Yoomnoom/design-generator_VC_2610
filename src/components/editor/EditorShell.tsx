@@ -50,6 +50,7 @@ export default function EditorShell() {
   const screen = useEditorStore(selectScreen);
   const zoom = useEditorStore((s) => s.view.zoom);
   const tool = useEditorStore((s) => s.activeTool);
+  const selectedCount = useEditorStore((s) => s.selectedLayerIds.length);
 
   useShortcuts();
 
@@ -265,7 +266,7 @@ export default function EditorShell() {
           {tool === "select" ? "선택 도구 · 드래그로 레이어 이동" : tool === "hand" ? "이동 도구 · 드래그로 화면 이동" : tool === "rect" ? "영역 추출 · 드래그로 사각형 지정" : "배경 채움 · 패치를 클릭해 색 변경"}
         </span>
         <AutosaveFooter />
-        <span>{screen ? `화면 1 · 레이어 ${screen.layers.length} · ${Math.round(zoom * 100)}%` : "화면 없음"}</span>
+        <span data-testid="footer-info">{screen ? `화면 1 · 레이어 ${screen.layers.length}${selectedCount > 0 ? ` · ${selectedCount}개 선택됨` : ""} · ${Math.round(zoom * 100)}%` : "화면 없음"}</span>
       </footer>
 
       {startOpen && (

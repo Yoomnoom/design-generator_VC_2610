@@ -17,6 +17,7 @@ import { MAX_STROKE_POINTS } from "@/lib/image/brush-raster";
 import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
 import { Point, clientToImage, imageToClient } from "@/lib/geometry/coords";
+import { MARQUEE_MIN_SCREEN_DRAG, MarqueeMode, boxFromPoints, combineSelection, marqueeHits } from "@/features/marquee/marquee";
 import { selectionFromImagePoints } from "@/lib/geometry/rect";
 import { renderComposite } from "@/lib/image/render-export";
 import { View } from "@/lib/geometry/coords";
@@ -45,7 +46,9 @@ type Gesture =
   | { kind: "shape"; a: Point }
   | { kind: "brush"; points: Point[] }
   | { kind: "finger"; stroke: FingerStroke; imageData: ImageData; context: CanvasRenderingContext2D }
-  | { kind: "pan"; startX: number; startY: number; panX: number; panY: number };
+  | { kind: "pan"; startX: number; startY: number; panX: number; panY: number }
+  /** a box selection started on an empty place with the select tool; `moved` once the pointer has gone a few screen pixels */
+  | { kind: "pick"; a: Point; startX: number; startY: number; moved: boolean };
 
 /** The working canvas. Konva only draws. Every pointer position goes through lib/geometry/coords,
  *  so the rectangle you drag is computed in original-image pixels whatever the zoom, pan or devicePixelRatio. */
@@ -58,6 +61,33 @@ export default function CanvasViewport() {
   const [, setBrushTick] = useState(0);
   const drawStyle = useEditorStore((s) => s.drawStyle);
   const gesture = useRef<Gesture | null>(null);
+  /** the box being dragged for a box selection, and the layers it would select (shown before the button is released) */
+  const [pickDrag, setPickDrag] = useState<{ box: Box; hits: string[]; mode: MarqueeMode } | null>(null);
+  const space = useRef(false); // Space held: a temporary hand, whatever the tool
+  useEffect(() => {
+    const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ["TEXTAREA", "SELECT"].includes(t.tagName) || (t instanceof HTMLInputElement && !["checkbox", "radio", "button", "range", "color"].includes(t.type))); // a focused checkbox is not a text box
+    const down = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !typing(e.target) && !document.querySelector('[role="dialog"][aria-modal="true"]')) {
+        space.current = true;
+        if (e.target === document.body || (e.target instanceof HTMLElement && containerRef.current?.contains(e.target))) e.preventDefault();
+      } else if (e.key === "Escape" && gesture.current?.kind === "pick") {
+        // Esc cancels the box: nothing is selected or changed, and the other Esc meanings do not run
+        gesture.current = null;
+        setPickDrag(null);
+        e.stopPropagation();
+      }
+    };
+    const up = (e: KeyboardEvent) => e.code === "Space" && (space.current = false);
+    const blur = () => (space.current = false);
+    window.addEventListener("keydown", down, true);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down, true);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
   /** the finger stroke being made: its working picture (the canvas the layer shows meanwhile) and a counter that tells a warped layer to redraw */
   const [finger, setFinger] = useState<{ layerId: string; canvas: HTMLCanvasElement; raw: { width: number; height: number; data: Uint8ClampedArray }; rev: number } | null>(null);
 
@@ -160,7 +190,7 @@ export default function CanvasViewport() {
     if (!screen) return;
     const { view: v, activeTool } = editorStore.getState();
     if (editorStore.getState().compareMode !== "off" && e.button !== 1 && activeTool !== "hand") return; // comparing: only moving the view
-    if (e.button === 1 || (e.button === 0 && activeTool === "hand")) {
+    if (e.button === 1 || (e.button === 0 && (activeTool === "hand" || (space.current && activeTool !== "text")))) {
       gesture.current = { kind: "pan", startX: e.clientX, startY: e.clientY, panX: v.panX, panY: v.panY };
     } else if (e.button === 0 && activeTool === "fill") {
       const patch = patchAt(screen.backgroundPatches, toImage(e, v));
@@ -215,6 +245,15 @@ export default function CanvasViewport() {
     } else if (e.button === 0 && activeTool === "eyedropper") {
       pickColorAt(toImage(e, v));
       return;
+    } else if (e.button === 0 && activeTool === "select") {
+      // a press on a layer (or a handle) belongs to Konva: it moves or resizes it. A press on an empty place, the original picture
+      // included (it is never moved), starts a box selection.
+      const stage = layerRef.current?.getStage();
+      const r = containerRef.current!.getBoundingClientRect();
+      if (stage?.getIntersection({ x: e.clientX - r.left, y: e.clientY - r.top })) return;
+      gesture.current = { kind: "pick", a: toImage(e, v), startX: e.clientX, startY: e.clientY, moved: false };
+      // preventing the default below also stops the browser from moving focus off a field or checkbox, so do that here (shortcuts need the page to have focus)
+      if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) document.activeElement.blur();
     } else return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -243,13 +282,33 @@ export default function CanvasViewport() {
         else layerRef.current?.batchDraw();
       }
     } else if (g.kind === "shape") setShapeDrag({ a: g.a, b: roundPoint(toImage(e)) });
-    else setMarquee({ a: g.a, b: toImage(e) });
+    else if (g.kind === "pick") {
+      if (!g.moved && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < MARQUEE_MIN_SCREEN_DRAG) return;
+      g.moved = true;
+      const box = boxFromPoints(g.a, toImage(e));
+      const mode: MarqueeMode = e.altKey ? "contain" : "touch";
+      setPickDrag({ box, mode, hits: marqueeHits(screen.layers, (l) => boxOf(l), box, mode, !(e.ctrlKey || e.metaKey)) });
+    } else setMarquee({ a: g.a, b: toImage(e) });
   };
 
   const endGesture = (e: React.PointerEvent, commit: boolean) => {
     const g = gesture.current;
     gesture.current = null;
     if (!g || !screen) return;
+    if (g.kind === "pick") {
+      setPickDrag(null);
+      const st = editorStore.getState();
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (!commit) return;
+      if (!g.moved) {
+        if (!e.shiftKey && !ctrl) st.deselectAll(); // a click on an empty place clears the selection
+        return;
+      }
+      const box = boxFromPoints(g.a, toImage(e));
+      const hits = marqueeHits(screen.layers, (l) => boxOf(l), box, e.altKey ? "contain" : "touch", !ctrl);
+      st.setLayerSelection(combineSelection(st.selectedLayerIds, hits, ctrl ? "toggle" : e.shiftKey ? "add" : "replace"));
+      return;
+    }
     if (g.kind === "finger") {
       setFinger(null);
       if (commit) g.stroke.finish(); // one stroke is one undo step, and a new picture; a stroke that did not move records nothing
@@ -393,7 +452,7 @@ export default function CanvasViewport() {
           y={view.panY}
           scaleX={view.zoom}
           scaleY={view.zoom}
-          onMouseDown={(e) => e.target === e.target.getStage() && editorStore.getState().activeTool === "select" && editorStore.getState().deselectAll()}
+          
         >
           <Layer ref={layerRef} imageSmoothingEnabled={view.zoom < 1}>
             {screen && (
@@ -538,6 +597,16 @@ export default function CanvasViewport() {
                     }}
                   />
                 )}
+                {pickDrag && (
+                  <>
+                    <Rect x={screen.x + pickDrag.box.x} y={screen.y + pickDrag.box.y} width={pickDrag.box.width} height={pickDrag.box.height} stroke={ACCENT} strokeWidth={1} strokeScaleEnabled={false} dash={[5, 4]} fill="rgba(79,70,229,0.06)" listening={false} />
+                    {pickDrag.hits.map((id) => {
+                      const l = layers.find((x) => x.id === id);
+                      const b = l && boxOf(l);
+                      return b ? <Rect key={`pick-${id}`} x={screen.x + b.x} y={screen.y + b.y} width={b.width} height={b.height} stroke={ACCENT} strokeWidth={2} strokeScaleEnabled={false} dash={[3, 3]} listening={false} /> : null;
+                    })}
+                  </>
+                )}
                 {marqueeRect && (
                   <Rect x={screen.x + marqueeRect.x} y={screen.y + marqueeRect.y} width={marqueeRect.width} height={marqueeRect.height} stroke={MARQUEE} strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} fill="rgba(238,111,67,0.07)" listening={false} />
                 )}
@@ -566,6 +635,11 @@ export default function CanvasViewport() {
             </div>
           );
         })}
+      {pickDrag && screen && (
+        <div data-testid="pick-tag" data-hits={pickDrag.hits.join(",")} data-mode={pickDrag.mode} className="pointer-events-none absolute rounded bg-[#4f46e5] px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ left: imageToClient({ x: pickDrag.box.x, y: pickDrag.box.y }, { x: 0, y: 0 }, view, frameOrigin).x, top: imageToClient({ x: pickDrag.box.x, y: pickDrag.box.y }, { x: 0, y: 0 }, view, frameOrigin).y - 22 }}>
+          {pickDrag.hits.length}개 {pickDrag.mode === "contain" ? "(완전히 포함)" : "(닿으면)"}
+        </div>
+      )}
       {marqueeRect && tagAt && (
         <div data-testid="marquee-tag" className="pointer-events-none absolute rounded bg-[#ee6f43] px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ left: tagAt.x, top: tagAt.y - 22 }}>
           선택 영역 {marqueeRect.width} × {marqueeRect.height} px

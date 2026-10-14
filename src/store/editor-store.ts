@@ -181,6 +181,8 @@ type EditorActions = {
   /** Shift+click in the layer panel: every row from the anchor to this layer, in the panel's order (hidden and locked ones too) */
   selectRange(layerId: string): void;
   selectGroup(groupId: string): void;
+  /** the selection is exactly these layers (ids that are not in the screen are dropped): the result of a box selection */
+  setLayerSelection(layerIds: readonly string[]): void;
   deselectAll(): void;
   /** Ctrl+G: the selected layers (two or more) become one group, as one undo step; the group's id */
   groupSelected(): string | null;
@@ -811,6 +813,12 @@ export function createEditorStore({ imageBudget = IMAGE_VERSION_BUDGET, genId = 
         const ids = screen?.layers.filter((l) => l.groupId === groupId).map((l) => l.id) ?? [];
         if (ids.length === 0) return;
         set({ selectedLayerIds: ids, selectionAnchor: ids[0], selectedPatchId: null, selectedMemoId: null });
+      },
+
+      setLayerSelection(layerIds) {
+        const screen = screenOf();
+        const ids = [...new Set(layerIds)].filter((id) => screen?.layers.some((l) => l.id === id));
+        set({ selectedLayerIds: ids, selectionAnchor: ids[0] ?? null, selectedPatchId: null, selectedMemoId: null });
       },
 
       deselectAll: () => set({ selectedLayerIds: [], selectionAnchor: null, selectedPatchId: null, selectedMemoId: null }),

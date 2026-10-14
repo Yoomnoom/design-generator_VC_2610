@@ -19,3 +19,4 @@
 | 4 도형 둥근 모서리 (스키마 v9) | (이 기능의 커밋) | 개발 E2E 전체와 프로덕션 E2E 전체. 특히 버전 숫자 검사를 7→9로 고친 `brush`, `memo`, `text`, `transform`(이 넷은 고치기만 하고 안 돌림). 통과: `corner-radius.spec.ts` 8, `shapes-layer` 17, `assets` 6, `asset-preview` 4, `start-screen` 12 | 위 규칙 |
 | (보충) 3 이후 알게 된 것 | - | v8로 올릴 때 `brush`·`memo`·`shapes-layer`·`text`·`transform` E2E의 "버전 7" 검사가 깨졌는데 그때는 못 잡았다(4에서 9로 고침, `shapes-layer`만 돌려 통과). 나머지 spec을 돌려 확인해야 한다 | 같은 규칙 |
 | S2 그룹 선택 버그·소스 그룹 삽입·그룹 넣기/빼기 | (S2 커밋) | 개발·프로덕션 E2E 전체; 특히 `assets`(삽입이 그룹이 됨), `multiselect`(Ctrl 클릭 의미), `panels`. 통과: `group-edit` 9, `groups` 10 | 전체 실행 금지 |
+| S3 드래그 박스 선택·선택 개수·Space 손 | (S3 커밋) | 개발·프로덕션 E2E 전체; 특히 multiselect(Stage 빈 곳 mousedown 해제를 pointerup 클릭 해제로 옮김; 2개 재확인 통과, 나머지 23은 이전에 통과), compare, rush(Space 키). 통과: marquee 7, multiselect 25(일부 -g로) | 전체 실행 금지 |
