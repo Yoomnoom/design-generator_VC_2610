@@ -30,6 +30,10 @@ import LayerPanel from "./LayerPanel";
 import PropertyPanel from "./PropertyPanel";
 import RestorePrompt from "./RestorePrompt";
 import SourcePanel from "./SourcePanel";
+import PanelFrame, { PanelEdges, useViewportWidth } from "./PanelFrame";
+import { TOOL_RAIL_WIDTH, columnWidth, panelStore, usePanelLayout } from "@/features/panels/panel-layout";
+import { formatBinding } from "@/features/shortcuts/shortcuts";
+import { useBindings } from "@/features/shortcuts/shortcut-store";
 import ToolRail from "./ToolRail";
 import Notices from "./Notices";
 import TopBar from "./TopBar";
@@ -61,6 +65,14 @@ export default function EditorShell() {
   const hint = toolHint(tool, { screen, selected: screen ? screen.layers.filter((l) => hintSelected.includes(l.id)) : [], comparing: comparingNow, source: screen ? { selected: sourceSelected, locked: !screen.source.unlocked } : undefined });
 
   useShortcuts();
+  const panels = usePanelLayout();
+  const viewportWidth = useViewportWidth();
+  const keys = useBindings();
+  useEffect(() => {
+    const on = (e: Event) => panelStore.toggle((e as CustomEvent<"left" | "right">).detail, window.innerWidth);
+    window.addEventListener("slc-panel", on);
+    return () => window.removeEventListener("slc-panel", on);
+  }, []);
 
   // Temporary save: starts once; the page being hidden or closed saves at once instead of waiting for the delay.
   useEffect(() => {
@@ -248,8 +260,9 @@ export default function EditorShell() {
       <input ref={imageInput} data-testid="file-input" type="file" accept="image/png,image/jpeg" className="hidden" onChange={pickFrom("image")} />
       <input ref={projectInput} data-testid="project-input" type="file" accept=".json,application/json" className="hidden" onChange={pickFrom("project")} />
 
-      <main className="grid min-h-0 flex-1 grid-cols-[76px_248px_minmax(420px,1fr)_282px]">
+      <main data-testid="main-grid" className="relative grid min-h-0 flex-1" style={{ gridTemplateColumns: `${TOOL_RAIL_WIDTH}px ${columnWidth("left", panels.left, viewportWidth)}px minmax(0,1fr) ${columnWidth("right", panels.right, viewportWidth)}px` }}>
         <ToolRail enabled={!!project} />
+        <PanelFrame side="left" label="소스·템플릿" keyText={formatBinding(keys["toggle-source-panel"])}>
         <SourcePanel
           screen={screen}
           busy={busy}
@@ -262,6 +275,7 @@ export default function EditorShell() {
         >
           <AssetPanel />
         </SourcePanel>
+        </PanelFrame>
         <section
           className="relative min-h-0 min-w-0"
           onDragOver={(e) => {
@@ -296,7 +310,8 @@ export default function EditorShell() {
             </div>          )}
           {dropping && <div className="pointer-events-none absolute inset-2 rounded-xl border-2 border-dashed border-[var(--accent)] bg-[var(--soft)]/60" />}
         </section>
-        <aside aria-label="레이어와 속성" className="min-h-0 overflow-auto border-l border-[var(--line)] bg-[var(--panel)]">
+        <PanelFrame side="right" label="레이어·속성" keyText={formatBinding(keys["toggle-right-panel"])}>
+        <aside aria-label="레이어와 속성" className="min-h-0 overflow-auto bg-[var(--panel)]">
           <DrawStylePanel />
           <TextStylePanel />
           <WarpPanel />
@@ -306,6 +321,8 @@ export default function EditorShell() {
           <PropertyPanel />
           <MemoPanel />
         </aside>
+        </PanelFrame>
+        <PanelEdges toolWidth={TOOL_RAIL_WIDTH} />
       </main>
 
       <footer className="flex h-7 shrink-0 items-center border-t border-[var(--line)] bg-white px-3 text-[11px] text-[#71767d]">

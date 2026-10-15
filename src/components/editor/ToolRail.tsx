@@ -31,6 +31,15 @@ const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
   { id: "eyedropper", icon: "💧", label: "스포이트", title: "화면의 색을 읽어 그리기 색으로 씁니다 (I)" },
 ];
 
+/** the tools in the order of the tool bar, by kind (a divider between kinds): choosing, cutting out, drawing, reshaping. The free-transform
+ *  button follows as the last kind. Every tool is always visible: the bar is two icons wide instead of hiding tools behind others. */
+const RAIL_GROUPS: Tool[][] = [
+  ["select", "hand"],
+  ["rect", "auto", "fill"],
+  ["brush", "eraser", "line", "box", "ellipse", "text", "memo", "eyedropper"],
+  ["warp", "liquify", "finger"],
+];
+
 const ACTION_OF: Partial<Record<Tool, ConfigurableAction>> = { select: "tool-select", hand: "tool-hand", rect: "tool-rect", auto: "tool-auto", line: "tool-line", box: "tool-box", ellipse: "tool-ellipse", brush: "tool-brush", eraser: "tool-eraser", text: "tool-text", memo: "tool-memo", warp: "tool-warp", finger: "tool-finger", liquify: "tool-liquify", eyedropper: "tool-eyedropper" };
 /** the tool's tooltip with the key the user has set (the texts above end in the default key, which is replaced) */
 const titleWith = (t: { id: Tool; title: string }, bindings: ReturnType<typeof useBindings>) => {
@@ -53,18 +62,25 @@ export default function ToolRail({ enabled }: { enabled: boolean }) {
   const sourceSelected = useEditorStore((s) => s.sourceSelected);
   const hintState = { screen, selected: screen ? screen.layers.filter((l) => selectedIds.includes(l.id)) : [], comparing, source: screen ? { selected: sourceSelected, locked: !screen.source.unlocked } : undefined };
   const plain = useEditorStore((s) => isGeneratedPage(selectScreen(s)?.source.fileName ?? ""));
-  return (
-    <nav aria-label="도구" className="overflow-auto border-r border-[var(--line)] bg-[var(--panel)] px-2 py-2.5">
-      {TOOLS.map((t) => (
+  const button = (t: (typeof TOOLS)[number]) => (
         <button key={t.id} className="tool" aria-pressed={active === t.id} disabled={!enabled || (plain && NEEDS_SCREENSHOT.includes(t.id))} data-unusable={enabled && !toolHint(t.id, hintState).usable ? "true" : undefined} title={enabled && !toolHint(t.id, hintState).usable ? `${titleWith(t, bindings)} — 지금은 쓸 수 없음: ${toolHint(t.id, hintState).text}` : titleWith(t, bindings)} onClick={() => editorStore.getState().setTool(t.id)}>
           <b aria-hidden>{t.icon}</b>
           <span>{t.label}</span>
         </button>
+  );
+  return (
+    <nav aria-label="도구" data-testid="tool-rail" className="overflow-auto border-r border-[var(--line)] bg-[var(--panel)] px-1 py-2">
+      {RAIL_GROUPS.map((ids, gi) => (
+        <div key={gi} data-testid={`tool-group-${gi}`} className={gi > 0 ? "mt-1.5 border-t border-[var(--line)] pt-1.5" : ""}>
+          <div className="grid grid-cols-2 justify-items-center gap-1">{ids.map((id) => button(TOOLS.find((t) => t.id === id)!))}</div>
+        </div>
       ))}
+      <div data-testid="tool-group-free" className="mt-1.5 border-t border-[var(--line)] pt-1.5"><div className="grid grid-cols-2 justify-items-center gap-1">
       <button className="tool" data-testid="rail-free-transform" aria-pressed={freeTransform} disabled={!enabled} title={toolTooltip("free-transform", formatBinding(bindings["free-transform"]))} onClick={() => editorStore.getState().setFreeTransform(!freeTransform)}>
         <b aria-hidden>⤢</b>
         <span>자유 변형</span>
       </button>
+      </div></div>
     </nav>
   );
 }

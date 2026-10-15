@@ -170,6 +170,7 @@ test.describe("source previews", () => {
   test("a narrow window: the large preview still fits inside it", async ({ page }) => {
     await page.setViewportSize({ width: 760, height: 560 });
     await openApp(page);
+    await page.getByTestId("left-expand").click(); // a narrow window folds the side panels by itself: open the source panel by hand
     await uploadPng(page, pageWithCard());
     const thumb = page.getByTestId("asset-thumb").nth(12);
     await thumb.scrollIntoViewIfNeeded();
@@ -297,6 +298,7 @@ test.describe("source previews: ground and narrow windows", () => {
     test(`a ${width}px window: the large preview lies beside the panel (not over the list), inside the window, and closes when the pointer leaves`, async ({ page }) => {
       await page.setViewportSize({ width, height: 600 });
       await openApp(page);
+      await page.getByTestId("left-expand").click(); // a narrow window folds the side panels by itself: open the source panel by hand
       await uploadPng(page, pageWithCard());
       for (const idx of [12, 0]) {
         const thumb = page.getByTestId("asset-thumb").nth(idx);

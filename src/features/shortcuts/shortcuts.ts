@@ -2,7 +2,7 @@ export type ShortcutAction =
   | "undo" | "redo" | "delete" | "duplicate" | "copy" | "cut"
   | "tool-select" | "tool-hand" | "tool-rect" | "tool-line" | "tool-box" | "tool-ellipse" | "tool-shape" | "tool-eyedropper" | "tool-brush" | "tool-eraser" | "tool-text" | "tool-memo" | "tool-warp" | "tool-finger" | "tool-liquify" | "tool-auto"
   | "select-all" | "deselect" | "invert-selection" | "group" | "ungroup" | "free-transform"
-  | "zoom-fit" | "zoom-100" | "zoom-in" | "zoom-out"
+  | "zoom-fit" | "zoom-100" | "zoom-in" | "zoom-out" | "toggle-source-panel" | "toggle-right-panel"
   | "layer-forward" | "layer-backward" | "layer-front" | "layer-back" | "merge-down" | "merge-all"
   | "swap-colors" | "default-colors" | "brush-smaller" | "brush-bigger"
   | "save" | "open-project"
@@ -35,6 +35,8 @@ const COMMON = {
   ungroup: b("g", { ctrl: true, shift: true }),
   "free-transform": b("t", { shift: true }),
   "zoom-fit": b("0", { ctrl: true }),
+  "toggle-source-panel": b("\\"),
+  "toggle-right-panel": b("\\", { ctrl: true }),
   "zoom-100": b("1", { ctrl: true }),
   "zoom-in": b("=", { ctrl: true }),
   "zoom-out": b("-", { ctrl: true }),
@@ -141,6 +143,8 @@ export const ACTION_INFO: { id: ConfigurableAction; label: string; group: "편�
   { id: "ungroup", label: "그룹 해제", group: "선택·그룹" },
   { id: "free-transform", label: "자유 변형 (선택 전체의 크기·회전 상자)", group: "선택·그룹" },
   { id: "zoom-fit", label: "화면 맞춤", group: "이동·보기" },
+  { id: "toggle-source-panel", label: "소스 패널 접기·펴기 (왼쪽)", group: "이동·보기" },
+  { id: "toggle-right-panel", label: "레이어·속성 패널 접기·펴기 (오른쪽)", group: "이동·보기" },
   { id: "zoom-100", label: "100% 보기", group: "이동·보기" },
   { id: "zoom-in", label: "확대", group: "이동·보기" },
   { id: "zoom-out", label: "축소", group: "이동·보기" },

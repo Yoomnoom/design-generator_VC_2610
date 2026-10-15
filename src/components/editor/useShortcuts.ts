@@ -27,6 +27,11 @@ export function useShortcuts() {
         return;
       }
       if ((action === "group" || action === "ungroup" || action === "save") && !st.history) return void e.preventDefault();
+      if (action === "toggle-source-panel" || action === "toggle-right-panel") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("slc-panel", { detail: action === "toggle-source-panel" ? "left" : "right" }));
+        return;
+      }
       if (!action || !st.history) return;
       const layerId = st.selectedLayerIds[0];
 
