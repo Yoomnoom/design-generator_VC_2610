@@ -362,7 +362,7 @@ describe("saving, opening and the blob store", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.file.project.version).toBe(CURRENT_VERSION);
-    expect(CURRENT_VERSION).toBe(13);
+    expect(CURRENT_VERSION).toBe(14);
     const s = r.file.project.screens[0].source;
     expect(s.unlocked).toBeUndefined();
     expect(s.originalImageId).toBeUndefined();

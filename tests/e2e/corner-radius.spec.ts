@@ -125,7 +125,7 @@ test.describe("rectangle corner radius", () => {
     await expect.poll(async () => (await content(page, id)).cornerRadius).toBe(32);
     const before = await exportPngBytes(page);
     const file = await saveProjectFile(page);
-    expect(JSON.parse(file).project.version).toBe(13);
+    expect(JSON.parse(file).project.version).toBe(14);
     expect(JSON.parse(file).project.screens[0].layers[0].content.cornerRadius).toBe(32);
     await openProjectFile(page, file);
     await expect.poll(async () => { const l = (await editor(page)).layers[0]; return l ? (await content(page, l.id)).cornerRadius : null; }).toBe(32);

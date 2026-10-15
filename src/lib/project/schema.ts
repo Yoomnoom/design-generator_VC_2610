@@ -12,8 +12,9 @@
  *  11: `effects` on a layer: drop shadow, outline and colour overlay, as values (absent = none, as in every earlier file).
  *  12: `adjust` on a bitmap layer: brightness, contrast, saturation, hue, blur and sharpen, as values (absent = none, as in every earlier file).
  *  13: `source.unlocked` and `source.originalImageId`: the original picture can be unlocked and edited (absent = locked and never edited, as in
- *      every earlier file); the picture that was first uploaded is kept in `originalImageId` once the original has been edited. */
-export const CURRENT_VERSION = 13 as const;
+ *      every earlier file); the picture that was first uploaded is kept in `originalImageId` once the original has been edited.
+ *  14: `hidden` on a background patch: the patch is kept but not drawn (absent = drawn, as in every earlier file). */
+export const CURRENT_VERSION = 14 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -21,6 +22,8 @@ export type BackgroundPatch = {
   id: string;
   rect: Rect;
   fill: string; // "#rrggbb"
+  /** true = not drawn (neither on screen nor in the PNG) but kept; absent = drawn (and in every file before version 14) */
+  hidden?: boolean;
 };
 
 /** What a vector layer draws, in the layer's own pixels with its top-left at (0, 0). A vector layer is resized by changing

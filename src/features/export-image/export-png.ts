@@ -1,3 +1,4 @@
+import { visiblePatches } from "@/features/source-edit/source-edit";
 import { ImageCodec } from "@/lib/image/codec";
 import { RawImage } from "@/lib/image/raw-image";
 import { adjustedPicture } from "@/lib/image/adjust";
@@ -34,7 +35,7 @@ export function renderProjectRaw(project: Project, images: ImageCache, rasterize
     return r ? [r] : [];
   });
 
-  return renderComposite({ width: screen.width, height: screen.height, source, patches: screen.backgroundPatches, layers });
+  return renderComposite({ width: screen.width, height: screen.height, source, patches: visiblePatches(screen.backgroundPatches), layers });
 }
 
 /** Renders the screen at its original pixel size and encodes it as PNG. Independent of zoom, pan and devicePixelRatio:

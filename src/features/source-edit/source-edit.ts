@@ -1,4 +1,5 @@
-﻿import { BitmapLayer, ScreenNode } from "@/lib/project/schema";
+import { RawImage } from "@/lib/image/raw-image";
+import { BackgroundPatch, BitmapLayer, Rect, ScreenNode } from "@/lib/project/schema";
 
 /* The original picture (the screen's `source`) as something that can be edited. It is locked by default. Unlocked, the brush, finger,
  * liquify and the colour adjustments work on it like on a bitmap layer: the result is a NEW imageId on `source.imageId` (one undo step, the
@@ -36,3 +37,30 @@ export function sourceAsLayer(screen: ScreenNode): BitmapLayer {
 
 /** the layer with this id, or the original's stand-in for SOURCE_LAYER_ID */
 export const targetLayerOf = (screen: ScreenNode | null | undefined, id: string): BitmapLayer | undefined => (!screen ? undefined : id === SOURCE_LAYER_ID ? sourceAsLayer(screen) : screen.layers.find((l) => l.id === id));
+
+/** the patches that are drawn (a hidden patch is kept in the project but neither shown nor exported) */
+export const visiblePatches = (patches: readonly BackgroundPatch[]): BackgroundPatch[] => (patches.some((p) => p.hidden) ? patches.filter((p) => !p.hidden) : (patches as BackgroundPatch[]));
+
+/** The smallest box holding every pixel that differs between two pictures of the same size (null: none differ, or the sizes differ). */
+export function changedBox(a: RawImage, b: RawImage): Rect | null {
+  if (a.width !== b.width || a.height !== b.height) return null;
+  const w = a.width, h = a.height;
+  const A = new Uint32Array(a.data.buffer, a.data.byteOffset, w * h), B = new Uint32Array(b.data.buffer, b.data.byteOffset, w * h);
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      if (A[row + x] !== B[row + x]) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        y1 = y;
+      }
+    }
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 };
+}
+
+/** the drawn patches that lie over any of `box`: an edit there is hidden under them */
+export const patchesOver = (patches: readonly BackgroundPatch[], box: Rect | null): BackgroundPatch[] =>
+  !box ? [] : visiblePatches(patches).filter((p) => p.rect.x < box.x + box.width && p.rect.x + p.rect.width > box.x && p.rect.y < box.y + box.height && p.rect.y + p.rect.height > box.y);

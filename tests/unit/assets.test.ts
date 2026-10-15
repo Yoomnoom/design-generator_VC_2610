@@ -248,7 +248,7 @@ describe("templates", () => {
       const text = serializeProject(project);
       const parsed = parseProject(text);
       expect(parsed.ok).toBe(true);
-      expect(project.version).toBe(13);
+      expect(project.version).toBe(14);
       const sc = project.screens[0];
       expect([sc.width, sc.height]).toEqual([390, 844]);
       expect(sc.layers.length).toBeGreaterThan(5);

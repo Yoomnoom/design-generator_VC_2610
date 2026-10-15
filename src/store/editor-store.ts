@@ -34,7 +34,7 @@ import { LayerAdjust, LayerEffects } from "@/lib/project/schema";
 import { BLEND_MODES, BlendMode, BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode, MAX_GROUPS, MAX_GROUP_NAME } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
-import { SOURCE_LAYER_ID } from "@/features/source-edit/source-edit";
+import { SOURCE_LAYER_ID, changedBox, patchesOver } from "@/features/source-edit/source-edit";
 
 /** where a duplicated layer lands relative to its original, in original pixels */
 export const DUPLICATE_OFFSET = 16;
@@ -305,6 +305,12 @@ type EditorActions = {
    *  imageId, and the old picture stays for undo; the history holds only the imageId change. One undo step. Refused (false) for a locked or
    *  vector layer, while comparing, or when the size differs. Old versions are released by the memory budget (IMAGE_VERSION_BUDGET). */
   commitSmudge(layerId: string, raw: RawImage, label?: string): boolean;
+  /** the drawn patches that lie over the last edit of the original (it is hidden under them); [] when none. UI only. */
+  sourceEditCovered: string[];
+  /** hide or show one background patch (one undo step). Refused while comparing and while the original is locked. */
+  setPatchHidden(patchId: string, hidden: boolean): boolean;
+  /** delete background patches (one undo step for all of them). Refused while comparing and while the original is locked; the number deleted. */
+  deletePatches(patchIds: readonly string[]): number;
   /** select the original picture as the target of the brush, finger, liquify and image adjustments (no layer or patch is then selected) */
   selectSource(): void;
   /** lock or unlock the original (one undo step). Locked is the default: every tool refuses it. Refused while comparing. */
@@ -418,6 +424,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         selectedMemoId: get().selectedMemoId && (screen.memos ?? []).some((m) => m.id === get().selectedMemoId) ? get().selectedMemoId : null,
         pendingExtraction: null,
         dragPreview: null,
+        sourceEditCovered: [],
       });
     };
 
@@ -609,6 +616,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         snapGuides: [],
         selectedLayerIds: [],
         sourceSelected: false,
+        sourceEditCovered: [],
         selectedPatchId: null,
         pendingExtraction: null,
         layerClipboard: null, // it points at bitmaps of the project that was just replaced
@@ -663,6 +671,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
       dragPreview: null,
       fingerStyle: DEFAULT_FINGER_STYLE,
       sourceSelected: false,
+      sourceEditCovered: [],
       liquifyStyle: DEFAULT_LIQUIFY_STYLE,
       liquifyBase: null,
       warpUi: DEFAULT_WARP_UI,
@@ -1795,6 +1804,39 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         return true;
       },
 
+      setPatchHidden(patchId, hidden) {
+        const { history } = get();
+        const screen = screenOf();
+        const patch = screen?.backgroundPatches.find((p) => p.id === patchId);
+        if (!history || !screen || !patch || frozen() || !screen.source.unlocked || !!patch.hidden === hidden) return false;
+        set({
+          history: commit(history, hidden ? "패치 숨기기" : "패치 보이기", (draft) => {
+            const p = draft.screens[0].backgroundPatches.find((x) => x.id === patchId);
+            if (!p) return;
+            if (hidden) p.hidden = true;
+            else delete p.hidden;
+          }),
+          sourceEditCovered: get().sourceEditCovered.filter((id) => id !== patchId || !hidden),
+        });
+        return true;
+      },
+
+      deletePatches(patchIds) {
+        const { history } = get();
+        const screen = screenOf();
+        const ids = new Set(patchIds);
+        const count = screen ? screen.backgroundPatches.filter((p) => ids.has(p.id)).length : 0;
+        if (!history || !screen || count === 0 || frozen() || !screen.source.unlocked) return 0;
+        set({
+          history: commit(history, count === 1 ? "패치 삭제" : "패치 삭제 (여러 개)", (draft) => {
+            draft.screens[0].backgroundPatches = draft.screens[0].backgroundPatches.filter((p) => !ids.has(p.id));
+          }),
+          selectedPatchId: get().selectedPatchId && ids.has(get().selectedPatchId!) ? null : get().selectedPatchId,
+          sourceEditCovered: get().sourceEditCovered.filter((id) => !ids.has(id)),
+        });
+        return count;
+      },
+
       selectSource() {
         if (!screenOf()) return;
         set({ sourceSelected: true, selectedLayerIds: [], selectionAnchor: null, selectedPatchId: null, selectedMemoId: null });
@@ -1827,7 +1869,9 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
           s.imageId = imageId; // only ids change: the history never holds pixels
         });
         const kept = trimImageVersions(next, new Map(images).set(imageId, { raw }), get().layerClipboard, imageBudget);
-        set({ history: kept.history, images: kept.images, selectedPatchId: null });
+        const covered = patchesOver(screen.backgroundPatches, changedBox(old, raw)).map((p) => p.id);
+        set({ history: kept.history, images: kept.images, selectedPatchId: null, sourceEditCovered: covered });
+        if (covered.length > 0) set({ notice: `수정한 자리를 배경 패치 ${covered.length}개가 덮고 있어 화면과 PNG에는 보이지 않습니다. 레이어 패널의 "배경(원본)" 아래에서 패치를 숨기거나 삭제할 수 있습니다.` });
         return true;
       },
 

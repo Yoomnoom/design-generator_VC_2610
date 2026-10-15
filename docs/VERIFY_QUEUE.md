@@ -50,3 +50,9 @@
 
 - [x] 단위 테스트 전체(1151)·`tsc`, `layout-panels`(새, 12), `asset-preview`(좁은 창 테스트는 패널을 직접 펴도록 고침), `start-screen`, `help`, `shortcuts`, `source-edit`, `tool-hints` 통과. 변이 검사 3건(드래그 방향, 접힌 폭, 도구 누락)이 잡힘.
 - [ ] 검증 대기: 개발·프로덕션 E2E 전체(규칙상 안 돌림; 나머지 spec 중 도구 막대 선택자나 패널 폭에 기대는 것이 더 있을 수 있음), 프로덕션 빌드의 `layout-panels`, 실제 브라우저 창(Firefox·Safari)에서의 `\`·`Ctrl+\` 키.
+
+## 2026-10-16 원본 수정 후속: 패치 관리·조정 미리보기 (스키마 v14)
+
+- [x] 단위 테스트 전체(1163)·`tsc`, `source-patches`(새, 8)·`source-edit`·`compare`·`help`·`tool-hints`·`handoff-9steps`·`lock-hide-rename`·`fill-quality`·`adjust`·`layout-panels` 통과. 변이 검사 4건(숨김 무시, 덮음 알림 제거, 잠금 중 삭제 허용, 라이브 미리보기 제거)이 잡힘.
+- [x] 측정: 3600×2700 원본의 색 조정 0.6초·흐림 20 5.9초(Worker), 계산 중 100ms 넘는 프레임 1개(`source-adjust-perf`, 개발 서버).
+- [ ] 검증 대기: 개발·프로덕션 E2E 전체(규칙상 안 돌림), 프로덕션 빌드의 `source-patches`·`source-adjust-perf`, 프로덕션 빌드에서 Worker 번들 동작(개발 서버에서만 확인), 메모리 실측(힙 수치는 버퍼를 세지 않음), 실제 Firefox·Safari.

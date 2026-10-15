@@ -225,7 +225,7 @@ describe("the file the previous build saved (version 10)", () => {
     const r = parseProjectFile(v10);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.file.project.version).toBe(13);
+    expect(r.file.project.version).toBe(14);
     expect(r.file.project.screens[0].layers).toEqual(before.screens[0].layers);
   });
 });

@@ -116,6 +116,7 @@ function patchError(p: unknown, i: number): string | null {
   const at = `backgroundPatches[${i}]`;
   if (!isRec(p) || !isId(p.id) || !isRect(p.rect)) return `${at}가 올바르지 않습니다`;
   if (!isStr(p.fill) || !hexToRgb(p.fill)) return `${at}.fill이 색상이 아닙니다`;
+  if (p.hidden !== undefined && typeof p.hidden !== "boolean") return `${at}.hidden이 올바르지 않습니다`;
   return null;
 }
 

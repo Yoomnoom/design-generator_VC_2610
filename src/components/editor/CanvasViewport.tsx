@@ -16,7 +16,7 @@ import { SHAPE_TOOLS } from "@/store/editor-store";
 import { applyStroke } from "@/features/brush/brush";
 import { FingerStroke, bitmapMapper, startFingerStroke } from "@/features/smudge/finger";
 import { startLiquifyStroke } from "@/features/liquify/liquify";
-import { SOURCE_HOW_TO, SOURCE_LAYER_ID, pureOriginalId } from "@/features/source-edit/source-edit";
+import { SOURCE_HOW_TO, SOURCE_LAYER_ID, pureOriginalId, visiblePatches } from "@/features/source-edit/source-edit";
 import { MAX_STROKE_POINTS } from "@/lib/image/brush-raster";
 import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
@@ -207,7 +207,7 @@ export default function CanvasViewport() {
     if (e.button === 1 || (e.button === 0 && (activeTool === "hand" || (space.current && activeTool !== "text")))) {
       gesture.current = { kind: "pan", startX: e.clientX, startY: e.clientY, panX: v.panX, panY: v.panY };
     } else if (e.button === 0 && activeTool === "fill") {
-      const patch = patchAt(screen.backgroundPatches, toImage(e, v));
+      const patch = patchAt(visiblePatches(screen.backgroundPatches), toImage(e, v));
       editorStore.getState().selectPatch(patch?.id ?? null);
       return;
     } else if (e.button === 0 && activeTool === "rect") {
@@ -401,13 +401,17 @@ export default function CanvasViewport() {
   // The source with its background patches painted in, as one bitmap: patches drawn as separate shapes
   // would anti-alias at fractional zoom and let a hairline of the original show through.
   const sourceRaw = screen && images.get(screen.source.imageId)?.raw;
-  const patches = screen?.backgroundPatches; // same array until a patch changes, so moving a layer does not repaint this
+  const allPatches = screen?.backgroundPatches; // same array until a patch changes, so moving a layer does not repaint this
+  const patches = useMemo(() => (allPatches ? visiblePatches(allPatches) : undefined), [allPatches]); // a hidden patch is not drawn
   const baseCanvas = useMemo(
     () => (sourceRaw && patches && screen ? rawToCanvas(renderComposite({ width: screen.width, height: screen.height, source: sourceRaw, patches, layers: [] })) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- width/height come from the screen, which only changes with the source
     [sourceRaw, patches],
   );
 
+  // an adjustment slider of the original is being dragged: the picture adjusted on a reduced copy (the finished one is made on "apply")
+  const sourceAdjustPreview = useEditorStore((s) => (s.adjustPreview?.layerId === SOURCE_LAYER_ID ? s.adjustPreview.adjust : null));
+  const sourcePreviewCanvas = useMemo(() => (sourceAdjustPreview && sourceRaw ? rawToCanvas(adjustedForScreen(sourceRaw, sourceAdjustPreview, true)) : null), [sourceAdjustPreview, sourceRaw]);
   // the comparison view's "original" is the picture as it was uploaded (the kept one once the original has been edited)
   const originalRaw = screen && images.get(pureOriginalId(screen.source))?.raw;
   const originalCanvas = useMemo(() => (originalRaw ? rawToCanvas(originalRaw) : null), [originalRaw]);
@@ -565,11 +569,11 @@ export default function CanvasViewport() {
             {screen && (
               <>
                 <Rect x={screen.x} y={screen.y} width={screen.width} height={screen.height} fill="#ffffff" shadowColor="#191e23" shadowOpacity={0.18} shadowBlur={24} shadowOffsetY={8} listening={false} />
-                {compare !== "original" && baseCanvas && (finger?.layerId === SOURCE_LAYER_ID ? (
+                {compare !== "original" && baseCanvas && (finger?.layerId === SOURCE_LAYER_ID || sourcePreviewCanvas ? (
                   // a finger or liquify stroke on the original: its working picture, with the background patches drawn over it as they are in the real picture
                   <>
-                    <KImage image={finger.canvas} x={screen.x} y={screen.y} width={screen.width} height={screen.height} listening={false} />
-                    {screen.backgroundPatches.map((p) => <Rect key={p.id} x={screen.x + p.rect.x} y={screen.y + p.rect.y} width={p.rect.width} height={p.rect.height} fill={p.fill} listening={false} />)}
+                    <KImage image={finger?.layerId === SOURCE_LAYER_ID ? finger.canvas : sourcePreviewCanvas!} x={screen.x} y={screen.y} width={screen.width} height={screen.height} listening={false} />
+                    {visiblePatches(screen.backgroundPatches).map((p) => <Rect key={p.id} x={screen.x + p.rect.x} y={screen.y + p.rect.y} width={p.rect.width} height={p.rect.height} fill={p.fill} listening={false} />)}
                   </>
                 ) : <KImage image={baseCanvas} x={screen.x} y={screen.y} width={screen.width} height={screen.height} listening={false} />)}
                 {compare !== "off" && originalCanvas && (

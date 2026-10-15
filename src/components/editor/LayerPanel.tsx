@@ -96,6 +96,8 @@ export default function LayerPanel() {
   const comparing = useEditorStore((s) => s.compareMode !== "off");
   const collapsed = useEditorStore((s) => s.collapsedGroups);
   const sourceSelected = useEditorStore((s) => s.sourceSelected);
+  const selectedPatchId = useEditorStore((s) => s.selectedPatchId);
+  const covered = useEditorStore((s) => s.sourceEditCovered);
   const bindings = useBindings();
   const key = (a: keyof typeof bindings) => formatBinding(bindings[a]);
   const dragIds = useRef<string[]>([]); // the layers being dragged in the list (HTML drag and drop)
@@ -235,6 +237,45 @@ export default function LayerPanel() {
             <button type="button" data-testid="source-lock" disabled={comparing} className={iconButton} aria-pressed={locked} aria-label={locked ? `${SOURCE_NAME} 잠금 해제` : `${SOURCE_NAME} 잠그기`} title={locked ? "잠긴 원본입니다. 눌러서 잠금 해제" : "잠금이 풀려 있습니다. 눌러서 다시 잠그기"} onClick={() => act.setSourceLocked(!locked)}>
               {locked ? <LockIcon /> : <UnlockIcon />}
             </button>
+          </div>
+        );
+      })()}
+      {screen.backgroundPatches.length > 0 && (() => {
+        // the patches: what extraction filled the cut-out places with. Each can be hidden or deleted (the original must be unlocked: they cover it).
+        const locked = isSourceLocked(screen.source);
+        const off = comparing || locked;
+        const why = comparing ? "비교 보기 중에는 바꿀 수 없습니다" : locked ? "잠긴 원본입니다. 잠금을 풀면 패치를 숨기거나 삭제할 수 있습니다" : "";
+        const coveredNow = screen.backgroundPatches.filter((p) => !p.hidden && covered.includes(p.id));
+        return (
+          <div>
+          {coveredNow.length > 0 && (
+            <div data-testid="source-covered" className="mt-1 rounded border border-[#ead9a2] bg-[#fff9e8] p-2 text-[11px] text-[#75601b]">
+              <p data-testid="source-covered-warning" className="m-0 mb-1.5 font-bold">방금 수정한 자리를 배경 패치 {coveredNow.length}개가 덮고 있어 화면과 PNG에 보이지 않습니다.</p>
+              <button type="button" data-testid="patch-delete-here" className="btn mini" disabled={off} title={off ? why : "그 자리를 덮은 패치를 지웁니다(실행 취소 가능)"} onClick={() => act.deletePatches(coveredNow.map((p) => p.id))}>
+                이 자리 패치 삭제
+              </button>
+            </div>
+          )}
+          <details data-testid="patch-list" className="mt-1 rounded-[7px] border border-[var(--line)] bg-white px-2 py-1 text-xs">
+            <summary className="cursor-pointer font-bold">배경 패치 {screen.backgroundPatches.length}개</summary>
+            <p className="my-1 text-[11px] text-[var(--muted)]">영역 추출이 비운 자리를 채운 사각형입니다. 원본 위에 덮여 있어서, 그 자리의 원본을 고쳐도 패치가 있으면 보이지 않습니다.{off ? ` (${why})` : ""}</p>
+            <ul className="m-0 list-none p-0">
+              {screen.backgroundPatches.map((p, i) => (
+                <li key={p.id} data-testid="patch-item" data-patch-id={p.id} data-hidden={p.hidden ? "true" : undefined} className={`flex items-center rounded ${p.id === selectedPatchId ? "bg-[var(--soft)] text-[var(--accent)]" : "hover:bg-[#f5f5f2]"}`}>
+                  <button type="button" data-testid="patch-select" className={`flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-1 text-left text-[11px] text-inherit ${p.hidden ? "opacity-50" : ""}`} onClick={() => act.selectPatch(p.id)} title={`패치 ${i + 1}: ${p.rect.width}×${p.rect.height} · (${p.rect.x}, ${p.rect.y}) · ${p.fill}`}>
+                    <span aria-hidden className="inline-block h-4 w-4 shrink-0 rounded border border-[var(--line)]" style={{ background: p.fill }} />
+                    <span className={`truncate ${p.hidden ? "line-through" : ""}`}>패치 {i + 1} · {p.rect.width}×{p.rect.height} @ {p.rect.x},{p.rect.y}</span>
+                  </button>
+                  <button type="button" data-testid="patch-hide" disabled={off} className={iconButton} aria-pressed={!!p.hidden} aria-label={p.hidden ? `패치 ${i + 1} 보이기` : `패치 ${i + 1} 숨기기`} title={off ? why : p.hidden ? "보이기" : "숨기기"} onClick={() => act.setPatchHidden(p.id, !p.hidden)}>
+                    {p.hidden ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                  <button type="button" data-testid="patch-delete" disabled={off} className="btn mini h-7 px-1.5" aria-label={`패치 ${i + 1} 삭제`} title={off ? why : "패치를 지웁니다(실행 취소 가능). 원본이 그대로 드러납니다"} onClick={() => act.deletePatches([p.id])}>
+                    삭제
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
           </div>
         );
       })()}

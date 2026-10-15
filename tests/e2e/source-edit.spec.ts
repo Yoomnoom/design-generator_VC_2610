@@ -47,7 +47,7 @@ test.describe("the original picture: lock", () => {
     await expect(page.getByTestId("source-lock")).toHaveAttribute("aria-pressed", "false");
     const file = await saveProjectFile(page);
     const doc = JSON.parse(file);
-    expect(doc.project.version).toBe(13);
+    expect(doc.project.version).toBe(14);
     expect(doc.project.screens[0].source.unlocked).toBe(true);
     expect(doc.project.screens[0].source.originalImageId).toBeUndefined(); // never edited: no second picture
 
