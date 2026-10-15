@@ -16,7 +16,7 @@ async function withLayer(page: Page) {
   await pickTool(page, "선택");
 }
 const eye = (page: Page) => page.getByRole("button", { name: /숨기기|보이기/ });
-const lock = (page: Page) => page.getByRole("button", { name: /잠그기|잠금 해제/ });
+const lock = (page: Page) => page.getByRole("button", { name: /잠그기|잠금 해제/ }).and(page.locator(":not([data-testid=source-lock])")); // a layer's lock (the original's lock has its own row)
 
 /** the exported PNG's pixel, decoded by the browser */
 async function exportedPixel(page: Page, x: number, y: number) {

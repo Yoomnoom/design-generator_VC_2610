@@ -22,12 +22,12 @@ const TOOLS: { id: Tool; icon: string; label: string; title: string }[] = [
   { id: "box", icon: "□", label: "사각형", title: "드래그해서 사각형을 그립니다 (M)" },
   { id: "ellipse", icon: "○", label: "원", title: "드래그해서 원·타원을 그립니다 (O)" },
   { id: "brush", icon: "🖌", label: "브러시", title: "드래그해서 자유롭게 그립니다. 새 비트맵 레이어에 그려집니다 (B)" },
-  { id: "eraser", icon: "⌫", label: "지우개", title: "브러시로 그린 레이어의 그림을 지웁니다. 원본과 다른 레이어는 지울 수 없습니다 (E)" },
+  { id: "eraser", icon: "⌫", label: "지우개", title: "브러시로 그린 레이어의 그림을 지웁니다. 원본(구멍이 생깁니다)과 도형·텍스트는 지울 수 없습니다 (E)" },
   { id: "text", icon: "T", label: "텍스트", title: "클릭하고 글자를 입력해 텍스트 상자를 만듭니다. 두 번 클릭하면 고칩니다 (T)" },
   { id: "memo", icon: "💬", label: "메모", title: "클릭해서 메모 핀을 꽂습니다. 편집용이며 PNG에는 기본으로 들어가지 않습니다 (N)" },
   { id: "warp", icon: "◩", label: "변형", title: "선택한 이미지 레이어의 모서리·격자점을 끌어 기울이기·원근·왜곡·뒤틀기를 합니다. 원본 픽셀은 바뀌지 않습니다. Enter로 확정, Esc로 취소합니다 (W)" },
   { id: "liquify", icon: "≋", label: "유동화", title: "" },
-  { id: "finger", icon: "☝", label: "손가락", title: "이미지 레이어 위에서 끌면 시작한 자리의 색이 끄는 방향으로 번집니다. 크기·강도·부드러움을 정할 수 있고, 원본 스크린샷과 도형·텍스트 레이어는 바뀌지 않습니다 (F)" },
+  { id: "finger", icon: "☝", label: "손가락", title: "이미지 레이어 위에서 끌면 시작한 자리의 색이 끄는 방향으로 번집니다. 크기·강도·부드러움을 정할 수 있고, 도형·텍스트 레이어는 바뀌지 않고, 원본은 기본으로 잠겨 있습니다('배경(원본)' 잠금을 풀고 선택하면 쓸 수 있습니다) (F)" },
   { id: "eyedropper", icon: "💧", label: "스포이트", title: "화면의 색을 읽어 그리기 색으로 씁니다 (I)" },
 ];
 
@@ -50,7 +50,8 @@ export default function ToolRail({ enabled }: { enabled: boolean }) {
   const screen = useEditorStore(selectScreen);
   const selectedIds = useEditorStore((s) => s.selectedLayerIds);
   const comparing = useEditorStore((s) => s.compareMode !== "off");
-  const hintState = { screen, selected: screen ? screen.layers.filter((l) => selectedIds.includes(l.id)) : [], comparing };
+  const sourceSelected = useEditorStore((s) => s.sourceSelected);
+  const hintState = { screen, selected: screen ? screen.layers.filter((l) => selectedIds.includes(l.id)) : [], comparing, source: screen ? { selected: sourceSelected, locked: !screen.source.unlocked } : undefined };
   const plain = useEditorStore((s) => isGeneratedPage(selectScreen(s)?.source.fileName ?? ""));
   return (
     <nav aria-label="도구" className="overflow-auto border-r border-[var(--line)] bg-[var(--panel)] px-2 py-2.5">

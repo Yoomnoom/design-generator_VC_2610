@@ -190,7 +190,7 @@ describe("who the finger can work on", () => {
   test("a bitmap layer; not nothing, a vector layer, a locked or hidden layer", () => {
     const ok = { id: "l", name: "l", crop: { x: 0, y: 0, width: 4, height: 4 }, imageId: "i", transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }, zIndex: 0, opacity: 1, visible: true, locked: false };
     expect(fingerTargetProblem(ok, true)).toBeNull();
-    expect(fingerTargetProblem(undefined, false)).toContain("원본 스크린샷");
+    expect(fingerTargetProblem(undefined, false)).toContain("배경(원본)");
     expect(fingerTargetProblem({ ...ok, imageId: undefined, content: { kind: "rect", width: 1, height: 1, stroke: "#000000", strokeWidth: 1, fill: null } } as never, false)).toContain("이미지(비트맵)");
     expect(fingerTargetProblem({ ...ok, locked: true }, true)).toContain("잠긴");
     expect(fingerTargetProblem({ ...ok, visible: false }, true)).toContain("숨긴");

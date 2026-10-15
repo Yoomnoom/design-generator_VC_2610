@@ -86,7 +86,7 @@ describe("the radius in the file", () => {
     const ctx = storeWith(solid(300, 200, [255, 255, 255, 255]));
     const id = ctx.get().addVectorLayer(rect({ cornerRadius: 12 }), 10, 10)!;
     const text = serializeProject(ctx.get().snapshotProject()!);
-    expect(JSON.parse(text).version).toBe(12);
+    expect(JSON.parse(text).version).toBe(13);
     const back = parseProject(text);
     expect(back.ok && (back.project.screens[0].layers.find((l) => l.id === id)!.content as { cornerRadius?: number }).cornerRadius).toBe(12);
   });
@@ -107,14 +107,14 @@ describe("older files: version 8 opens as version 9 with nothing changed", () =>
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const { project } = r.file;
-    expect(project.version).toBe(12);
+    expect(project.version).toBe(13);
     expect(project.screens[0].layers).toEqual(before.screens[0].layers);
     expect(project.screens[0].groups).toEqual(before.screens[0].groups);
     expect(project.name).toBe(before.name);
     expect(project.canvas).toEqual(before.canvas);
     expect(project.screens[0].layers.filter((l) => l.content?.kind === "rect").every((l) => cornerRadiusOf(l.content!) === 0)).toBe(true);
     const m = migrate(before);
-    expect(m.ok && m.doc.version).toBe(12);
+    expect(m.ok && m.doc.version).toBe(13);
   });
 });
 
@@ -235,7 +235,7 @@ describe("built-in sources and templates are rounded", () => {
     for (const a of BUILTIN_ASSETS) for (const l of a.build().layers) expect(contentError(l.content), `${a.id}/${l.name}`).toBeNull();
     for (const t of TEMPLATES) {
       const { project } = buildTemplate(t.id);
-      expect(project.version).toBe(12);
+      expect(project.version).toBe(13);
       const rounded = project.screens[0].layers.filter((l) => l.content && cornerRadiusOf(l.content) > 0);
       expect(rounded.length, t.id).toBeGreaterThanOrEqual(3);
       if (t.id === "cards") expect(project.screens[0].layers.filter((l) => /^카드 \d$/.test(l.name)).map((l) => cornerRadiusOf(l.content!))).toEqual([12, 12, 12]);

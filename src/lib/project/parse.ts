@@ -124,6 +124,8 @@ function screenError(s: unknown): string | null {
   if (!isId(s.id) || !isStr(s.name) || !isNum(s.x) || !isNum(s.y)) return "screens[0]의 id/name/x/y가 올바르지 않습니다";
   if (!isNum(s.width) || !isNum(s.height) || s.width < 1 || s.height < 1) return "screens[0]의 width/height가 올바르지 않습니다";
   if (!isRec(s.source) || !isImageId(s.source.imageId) || !isStr(s.source.fileName)) return "screens[0].source가 올바르지 않습니다";
+  if (s.source.originalImageId !== undefined && !isImageId(s.source.originalImageId)) return "screens[0].source.originalImageId가 올바르지 않습니다";
+  if (s.source.unlocked !== undefined && typeof s.source.unlocked !== "boolean") return "screens[0].source.unlocked가 올바르지 않습니다";
   if (!Array.isArray(s.backgroundPatches) || !Array.isArray(s.layers)) return "screens[0]의 backgroundPatches/layers가 배열이 아닙니다";
   for (const [i, p] of s.backgroundPatches.entries()) {
     const e = patchError(p, i);

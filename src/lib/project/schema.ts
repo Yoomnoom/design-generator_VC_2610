@@ -10,8 +10,10 @@
  *  9: `cornerRadius` on a rectangle layer's content: rounded corners (absent = square, as in every earlier file).
  *  10: `blend` on a layer: how it mixes with what is below it (absent = normal, as in every earlier file).
  *  11: `effects` on a layer: drop shadow, outline and colour overlay, as values (absent = none, as in every earlier file).
- *  12: `adjust` on a bitmap layer: brightness, contrast, saturation, hue, blur and sharpen, as values (absent = none, as in every earlier file). */
-export const CURRENT_VERSION = 12 as const;
+ *  12: `adjust` on a bitmap layer: brightness, contrast, saturation, hue, blur and sharpen, as values (absent = none, as in every earlier file).
+ *  13: `source.unlocked` and `source.originalImageId`: the original picture can be unlocked and edited (absent = locked and never edited, as in
+ *      every earlier file); the picture that was first uploaded is kept in `originalImageId` once the original has been edited. */
+export const CURRENT_VERSION = 13 as const;
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -113,7 +115,10 @@ export type ScreenNode = {
   y: number;
   width: number; // original image width
   height: number; // original image height
-  source: { imageId: string; fileName: string };
+  /** `imageId`: the original picture as it is now (it changes when the unlocked original is edited). `originalImageId`: the picture as it was
+   *  uploaded, kept for the comparison view and "back to the original"; absent while the original has never been edited (then it is `imageId`).
+   *  `unlocked`: the original may be edited; absent = locked (the default, and every file before version 13). */
+  source: { imageId: string; fileName: string; originalImageId?: string; unlocked?: boolean };
   backgroundPatches: BackgroundPatch[];
   layers: BitmapLayer[];
   /** absent in files saved before version 6 */

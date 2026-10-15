@@ -16,6 +16,7 @@ import { SHAPE_TOOLS } from "@/store/editor-store";
 import { applyStroke } from "@/features/brush/brush";
 import { FingerStroke, bitmapMapper, startFingerStroke } from "@/features/smudge/finger";
 import { startLiquifyStroke } from "@/features/liquify/liquify";
+import { SOURCE_HOW_TO, SOURCE_LAYER_ID, pureOriginalId } from "@/features/source-edit/source-edit";
 import { MAX_STROKE_POINTS } from "@/lib/image/brush-raster";
 import { patchAt } from "@/features/background-fill/patch-at";
 import { sortByZ } from "@/features/layer-transform/order";
@@ -225,6 +226,7 @@ export default function CanvasViewport() {
     } else if (e.button === 0 && (activeTool === "finger" || activeTool === "liquify")) {
       const st = editorStore.getState();
       let target = st.selectedLayerIds.length === 1 ? st.selectedLayerIds[0] : undefined;
+      if (!target && st.sourceSelected) target = SOURCE_LAYER_ID; // the original picture is the selected thing (locked: the tool says so)
       if (!target) {
         // nothing chosen yet: the layer under the pointer is taken, so the first drag on a picture just works
         const at = toImage(e, v);
@@ -242,7 +244,7 @@ export default function CanvasViewport() {
       const name = activeTool === "liquify" ? "유동화" : "손가락";
       const started = activeTool === "liquify" ? startLiquifyStroke(editorStore, target ?? "") : startFingerStroke(editorStore, target ?? "");
       if (!started.ok) {
-        st.setNotice(target ? started.reason : `${name} 도구는 이미지 레이어 위에서 쓸 수 있습니다. 이미지 레이어를 선택하거나 그 위를 끌어 보세요. 원본 스크린샷은 바꿀 수 없습니다.`);
+        st.setNotice(target ? started.reason : `${name} 도구는 이미지 레이어 위에서 쓸 수 있습니다. 이미지 레이어를 선택하거나 그 위를 끌어 보세요. ${SOURCE_HOW_TO}`);
         return;
       }
       const { raw } = started.stroke;
@@ -406,7 +408,9 @@ export default function CanvasViewport() {
     [sourceRaw, patches],
   );
 
-  const originalCanvas = useMemo(() => (sourceRaw ? rawToCanvas(sourceRaw) : null), [sourceRaw]);
+  // the comparison view's "original" is the picture as it was uploaded (the kept one once the original has been edited)
+  const originalRaw = screen && images.get(pureOriginalId(screen.source))?.raw;
+  const originalCanvas = useMemo(() => (originalRaw ? rawToCanvas(originalRaw) : null), [originalRaw]);
   const layers = useMemo(() => (screen ? sortByZ(screen.layers) : []), [screen]);
   // free transform: one box around the selection (always with two or more layers; for one layer only when switched on)
   const freeTransform = useEditorStore((s) => s.freeTransform);
@@ -561,7 +565,13 @@ export default function CanvasViewport() {
             {screen && (
               <>
                 <Rect x={screen.x} y={screen.y} width={screen.width} height={screen.height} fill="#ffffff" shadowColor="#191e23" shadowOpacity={0.18} shadowBlur={24} shadowOffsetY={8} listening={false} />
-                {compare !== "original" && baseCanvas && <KImage image={baseCanvas} x={screen.x} y={screen.y} width={screen.width} height={screen.height} listening={false} />}
+                {compare !== "original" && baseCanvas && (finger?.layerId === SOURCE_LAYER_ID ? (
+                  // a finger or liquify stroke on the original: its working picture, with the background patches drawn over it as they are in the real picture
+                  <>
+                    <KImage image={finger.canvas} x={screen.x} y={screen.y} width={screen.width} height={screen.height} listening={false} />
+                    {screen.backgroundPatches.map((p) => <Rect key={p.id} x={screen.x + p.rect.x} y={screen.y + p.rect.y} width={p.rect.width} height={p.rect.height} fill={p.fill} listening={false} />)}
+                  </>
+                ) : <KImage image={baseCanvas} x={screen.x} y={screen.y} width={screen.width} height={screen.height} listening={false} />)}
                 {compare !== "off" && originalCanvas && (
                   <>
                     {compare === "split" && <Rect x={originalX} y={screen.y} width={screen.width} height={screen.height} fill="#ffffff" shadowColor="#191e23" shadowOpacity={0.18} shadowBlur={24} shadowOffsetY={8} listening={false} />}

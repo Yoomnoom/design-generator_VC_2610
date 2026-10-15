@@ -34,6 +34,7 @@ import { LayerAdjust, LayerEffects } from "@/lib/project/schema";
 import { BLEND_MODES, BlendMode, BitmapLayer, CURRENT_VERSION, LayerContent, LayerWarp, MAX_MEMOS, MAX_MEMO_LENGTH, Project, Rect, ScreenNode, MAX_GROUPS, MAX_GROUP_NAME } from "@/lib/project/schema";
 import { History, canRedo, canUndo, commit, createHistory, redo, undo } from "./history";
 import { ImageCache } from "./images";
+import { SOURCE_LAYER_ID } from "@/features/source-edit/source-edit";
 
 /** where a duplicated layer lands relative to its original, in original pixels */
 export const DUPLICATE_OFFSET = 16;
@@ -141,6 +142,8 @@ type EditorState = {
   warpSession: WarpSession | null;
   /** a warp drag in progress: shown live, recorded only by commitWarpPreview */
   warpPreview: { layerId: string; warp: LayerWarp } | null;
+  /** the original picture ("배경(원본)" row of the layer panel) is the thing selected (no layer, no patch). UI only, never saved. */
+  sourceSelected: boolean;
 };
 
 type EditorActions = {
@@ -302,6 +305,15 @@ type EditorActions = {
    *  imageId, and the old picture stays for undo; the history holds only the imageId change. One undo step. Refused (false) for a locked or
    *  vector layer, while comparing, or when the size differs. Old versions are released by the memory budget (IMAGE_VERSION_BUDGET). */
   commitSmudge(layerId: string, raw: RawImage, label?: string): boolean;
+  /** select the original picture as the target of the brush, finger, liquify and image adjustments (no layer or patch is then selected) */
+  selectSource(): void;
+  /** lock or unlock the original (one undo step). Locked is the default: every tool refuses it. Refused while comparing. */
+  setSourceLocked(locked: boolean): boolean;
+  /** Puts `raw` (the size of the page) on the unlocked original as its new picture under a NEW imageId, one undo step. The first time, the picture
+   *  that was uploaded is kept as `source.originalImageId`. Refused (false) while locked or comparing, or when the size differs. */
+  commitSourceEdit(raw: RawImage, label: string): boolean;
+  /** "back to the original": the original is the picture that was uploaded again, all the edits of it in ONE undo step. Needs the original unlocked and edited. */
+  revertSource(): boolean;
   setDrawStyle(change: Partial<DrawStyle>): void;
   setTextStyle(change: Partial<TextStyle>): void;
   /** a new text box with its top-left at (x, y), in the current text style; one undo step. Empty text makes nothing. */
@@ -389,7 +401,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
   /** how many outside pictures were added since the project was opened, for the staggering of repeated pastes */
   let externalPastes = 0;
   let lastNudge: { layerId: string; at: number; entry: unknown; dx: number; dy: number } | null = null;
-  return createStore<EditorStore>()((set, get) => {
+  const store = createStore<EditorStore>()((set, get) => {
     const screenOf = () => get().history?.present.screens[0] ?? null;
     /** true while comparing: every edit refuses, however it was asked for */
     const frozen = () => get().compareMode !== "off";
@@ -596,6 +608,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         candidateHover: null,
         snapGuides: [],
         selectedLayerIds: [],
+        sourceSelected: false,
         selectedPatchId: null,
         pendingExtraction: null,
         layerClipboard: null, // it points at bitmaps of the project that was just replaced
@@ -649,6 +662,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
       selectedMemoId: null,
       dragPreview: null,
       fingerStyle: DEFAULT_FINGER_STYLE,
+      sourceSelected: false,
       liquifyStyle: DEFAULT_LIQUIFY_STYLE,
       liquifyBase: null,
       warpUi: DEFAULT_WARP_UI,
@@ -940,7 +954,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         if (!screen) return;
         const chosen = get().selectedLayerIds;
         const ids = screen.layers.filter((l) => !chosen.includes(l.id)).map((l) => l.id);
-        set({ selectedLayerIds: ids, selectionAnchor: ids[0] ?? null, selectedPatchId: null, selectedMemoId: null });
+        set({ selectedLayerIds: ids, selectionAnchor: ids[0] ?? null, selectedPatchId: null, selectedMemoId: null, sourceSelected: false });
       },
 
       transformLayer(layerId, transform) {
@@ -1095,6 +1109,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
             s.width = size.width;
             s.height = size.height;
             s.source.imageId = imageId;
+            delete s.source.originalImageId; // the new page is the baseline: "the original" is now the resized picture (the uploaded one has another size)
             // the patches belong to the picture: they move with it and are cut to the new page
             s.backgroundPatches = s.backgroundPatches.flatMap((p) => {
               const x0 = Math.max(p.rect.x + dx, 0), y0 = Math.max(p.rect.y + dy, 0), x1 = Math.min(p.rect.x + dx + p.rect.width, size.width), y1 = Math.min(p.rect.y + dy + p.rect.height, size.height);
@@ -1334,10 +1349,10 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
       setLayerSelection(layerIds) {
         const screen = screenOf();
         const ids = [...new Set(layerIds)].filter((id) => screen?.layers.some((l) => l.id === id));
-        set({ selectedLayerIds: ids, selectionAnchor: ids[0] ?? null, selectedPatchId: null, selectedMemoId: null });
+        set({ selectedLayerIds: ids, selectionAnchor: ids[0] ?? null, selectedPatchId: null, selectedMemoId: null, sourceSelected: false });
       },
 
-      deselectAll: () => set({ selectedLayerIds: [], selectionAnchor: null, selectedPatchId: null, selectedMemoId: null }),
+      deselectAll: () => set({ selectedLayerIds: [], selectionAnchor: null, selectedPatchId: null, selectedMemoId: null, sourceSelected: false }),
 
       selectAllLayers() {
         const screen = screenOf();
@@ -1765,6 +1780,7 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
       setLiquifyBase: (liquifyBase) => set({ liquifyBase }),
 
       commitSmudge(layerId, raw, label = "손가락 번짐") {
+        if (layerId === SOURCE_LAYER_ID) return get().commitSourceEdit(raw, label);
         const { history, images } = get();
         const layer = screenOf()?.layers.find((l) => l.id === layerId);
         const old = layer?.imageId ? images.get(layer.imageId)?.raw : undefined;
@@ -1776,6 +1792,57 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
         });
         const kept = trimImageVersions(next, new Map(images).set(imageId, { raw }), get().layerClipboard, imageBudget);
         set({ history: kept.history, images: kept.images, selectedLayerIds: [layerId], selectedPatchId: null });
+        return true;
+      },
+
+      selectSource() {
+        if (!screenOf()) return;
+        set({ sourceSelected: true, selectedLayerIds: [], selectionAnchor: null, selectedPatchId: null, selectedMemoId: null });
+      },
+
+      setSourceLocked(locked) {
+        const { history } = get();
+        const screen = screenOf();
+        if (!history || !screen || frozen()) return false;
+        if (!!screen.source.unlocked === !locked) return false;
+        set({
+          history: commit(history, locked ? "원본 잠금" : "원본 잠금 해제", (draft) => {
+            if (locked) delete draft.screens[0].source.unlocked;
+            else draft.screens[0].source.unlocked = true;
+          }),
+        });
+        return true;
+      },
+
+      commitSourceEdit(raw, label) {
+        const { history, images } = get();
+        const screen = screenOf();
+        const old = screen ? images.get(screen.source.imageId)?.raw : undefined;
+        if (!history || !screen || !old || frozen() || !screen.source.unlocked || old.width !== raw.width || old.height !== raw.height) return false;
+        const imageId = genId();
+        const before = screen.source.imageId;
+        const next = commit(history, label, (draft) => {
+          const s = draft.screens[0].source;
+          if (!s.originalImageId) s.originalImageId = before; // the first edit keeps the picture that was uploaded; the later ones keep it where it is
+          s.imageId = imageId; // only ids change: the history never holds pixels
+        });
+        const kept = trimImageVersions(next, new Map(images).set(imageId, { raw }), get().layerClipboard, imageBudget);
+        set({ history: kept.history, images: kept.images, selectedPatchId: null });
+        return true;
+      },
+
+      revertSource() {
+        const { history, images } = get();
+        const screen = screenOf();
+        const original = screen?.source.originalImageId;
+        if (!history || !screen || !original || frozen() || !screen.source.unlocked || original === screen.source.imageId || !images.has(original)) return false;
+        const next = commit(history, "원본으로 되돌리기", (draft) => {
+          const s = draft.screens[0].source;
+          s.imageId = original;
+          delete s.originalImageId; // unedited again: the original is the source itself
+        });
+        const kept = trimImageVersions(next, images, get().layerClipboard, imageBudget);
+        set({ history: kept.history, images: kept.images });
         return true;
       },
 
@@ -1984,4 +2051,11 @@ export function createEditorStore({ rasterize = rasterizeVectorLayer, imageBudge
       },
     };
   });
+  // the original is selected only while nothing else is: choosing a layer or a patch (any change of what is selected) lets it go
+  store.subscribe((s, prev) => {
+    if (!s.sourceSelected || !prev.sourceSelected) return;
+    const same = s.selectedLayerIds.length === prev.selectedLayerIds.length && s.selectedLayerIds.every((id, i) => id === prev.selectedLayerIds[i]);
+    if (!same || s.selectedPatchId !== prev.selectedPatchId) store.setState({ sourceSelected: false });
+  });
+  return store;
 }

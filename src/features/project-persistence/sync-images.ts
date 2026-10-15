@@ -3,11 +3,12 @@ import { Project } from "@/lib/project/schema";
 import { BlobStore } from "@/lib/storage/blob-store";
 import { ImageCache } from "@/store/images";
 
-/** every imageId the project points at: the source image and each layer bitmap, once each */
+/** every imageId the project points at: the source image, the picture first uploaded (once the source was edited) and each layer bitmap, once each */
 export function referencedImageIds(project: Project): string[] {
   const ids = new Set<string>();
   for (const screen of project.screens) {
     ids.add(screen.source.imageId);
+    if (screen.source.originalImageId) ids.add(screen.source.originalImageId);
     for (const layer of screen.layers) if (layer.imageId) ids.add(layer.imageId);
   }
   return [...ids];

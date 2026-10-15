@@ -7,6 +7,7 @@ import { isGeneratedPage } from "@/lib/project/blank";
 import { panelRows, wholeGroupOf } from "@/features/groups/groups";
 import { sortByZ } from "@/features/layer-transform/order";
 import { RawImage } from "@/lib/image/raw-image";
+import { SOURCE_NAME, isSourceEdited, isSourceLocked } from "@/features/source-edit/source-edit";
 import { selectScreen } from "@/store/editor-store";
 import { editorStore, useEditorStore } from "@/store/use-editor-store";
 import { LayerContent } from "@/lib/project/schema";
@@ -94,6 +95,7 @@ export default function LayerPanel() {
   const selectedId = selectedIds[0];
   const comparing = useEditorStore((s) => s.compareMode !== "off");
   const collapsed = useEditorStore((s) => s.collapsedGroups);
+  const sourceSelected = useEditorStore((s) => s.sourceSelected);
   const bindings = useBindings();
   const key = (a: keyof typeof bindings) => formatBinding(bindings[a]);
   const dragIds = useRef<string[]>([]); // the layers being dragged in the list (HTML drag and drop)
@@ -220,6 +222,22 @@ export default function LayerPanel() {
           })}
         </ul>
       )}
+      {(() => {
+        // the original picture, always the last row (it is under every layer): select it to edit it, and its lock (locked by default)
+        const locked = isSourceLocked(screen.source);
+        const sourceRaw = images.get(screen.source.imageId)?.raw;
+        return (
+          <div data-testid="source-row" data-locked={locked ? "true" : "false"} data-selected={sourceSelected ? "true" : undefined} className={`mt-1.5 flex items-center rounded-[7px] border-t border-[var(--line)] pt-1 ${sourceSelected ? "bg-[var(--soft)] text-[var(--accent)]" : "hover:bg-[#f5f5f2]"}`}>
+            <button type="button" data-testid="source-item" aria-current={sourceSelected ? "true" : undefined} onClick={() => act.selectSource()} className="flex h-[38px] min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-1.5 text-left text-xs text-inherit" title="원본 그림을 고르면 브러시·손가락·유동화·이미지 조정을 쓸 수 있습니다(잠금을 풀어야 합니다)">
+              {sourceRaw && <Thumb raw={sourceRaw} />}
+              <span className="flex-1 truncate">{SOURCE_NAME}{isSourceEdited(screen.source) ? " · 수정됨" : ""}</span>
+            </button>
+            <button type="button" data-testid="source-lock" disabled={comparing} className={iconButton} aria-pressed={locked} aria-label={locked ? `${SOURCE_NAME} 잠금 해제` : `${SOURCE_NAME} 잠그기`} title={locked ? "잠긴 원본입니다. 눌러서 잠금 해제" : "잠금이 풀려 있습니다. 눌러서 다시 잠그기"} onClick={() => act.setSourceLocked(!locked)}>
+              {locked ? <LockIcon /> : <UnlockIcon />}
+            </button>
+          </div>
+        );
+      })()}
     </section>
   );
 }

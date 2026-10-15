@@ -37,7 +37,7 @@ export default function LiquifyPanel() {
         {field("strength", "강도", 1, 100, "%", "한 번에 얼마나 움직일지입니다. 높을수록 포인터를 더 따라 움직입니다.")}
         {field("softness", "부드러움", 0, 100, "%", "가장자리의 부드러움입니다. 0이면 가장자리까지 같은 힘, 100이면 중심에서 서서히 약해집니다.")}
       </div>
-      <p className="mb-0 mt-2 text-[11px] text-[var(--muted)]">{MODE_HINT[style.mode]} 이미지 레이어 하나에만 쓰고 원본 스크린샷은 바뀌지 않습니다. 레이어 밖으로 밀려난 부분은 사라집니다. 손가락은 색을 번지게 하고 유동화는 모양을 밀어 바꿉니다.</p>
+      <p className="mb-0 mt-2 text-[11px] text-[var(--muted)]">{MODE_HINT[style.mode]} 이미지 레이어 하나에 쓰고, 원본은 기본으로 잠겨 있어 바뀌지 않습니다('배경(원본)'의 잠금을 풀고 선택하면 원본에도 쓸 수 있습니다). 레이어 밖으로 밀려난 부분은 사라집니다. 손가락은 색을 번지게 하고 유동화는 모양을 밀어 바꿉니다.</p>
     </section>
   );
 }

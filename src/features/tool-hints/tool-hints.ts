@@ -2,13 +2,20 @@ import { liquifyTargetProblem } from "@/features/liquify/liquify";
 import { strokeTargetProblem } from "@/features/brush/brush";
 import { isGeneratedPage } from "@/lib/project/blank";
 import { BitmapLayer, ScreenNode } from "@/lib/project/schema";
+import { SOURCE_ERASER_MESSAGE, SOURCE_HOW_TO, SOURCE_LOCKED_MESSAGE } from "@/features/source-edit/source-edit";
 import type { Tool } from "@/store/editor-store";
 
 /* One line for the status bar and the tool's tooltip: what the tool does now, or - when it cannot be used in this state - why not and what
  * to do next. Pure: the state in, a sentence out. */
 
 export type ToolHint = { usable: boolean; text: string };
-export type HintState = { screen: ScreenNode | null; selected: BitmapLayer[]; comparing: boolean };
+export type HintState = {
+  screen: ScreenNode | null;
+  selected: BitmapLayer[];
+  comparing: boolean;
+  /** the original picture ("배경(원본)") is the selected thing: and whether it is still locked (the default) */
+  source?: { selected: boolean; locked: boolean };
+};
 
 const NEEDS_EDIT: Tool[] = ["liquify", "rect", "fill", "line", "box", "ellipse", "brush", "eraser", "text", "memo", "auto", "warp", "finger"];
 
@@ -34,8 +41,10 @@ export function toolHint(tool: Tool, s: HintState): ToolHint {
     case "ellipse":
       return ok("드래그해서 그립니다. 색과 굵기는 오른쪽 위 그리기 설정에서 정합니다");
     case "brush":
+      if (s.source?.selected) return s.source.locked ? no(`브러시: ${SOURCE_LOCKED_MESSAGE}.`) : ok("브러시 · 원본 그림에 직접 그립니다(실행 취소 1단계, 처음 올린 그림은 보존됩니다)");
       return ok("브러시 · 드래그로 그립니다. 새 레이어에 그려지고, 방금 그린 브러시 레이어를 선택해 두면 거기에 이어집니다");
     case "eraser": {
+      if (s.source?.selected) return no(`지우개: ${SOURCE_ERASER_MESSAGE}`);
       const problem = strokeTargetProblem(one, true);
       return problem ? no(`지우개: ${problem}`) : ok("지우개 · 선택한 이미지 레이어의 그림을 지웁니다 (새 그림으로 바뀌어 실행 취소가 됩니다)");
     }
@@ -51,11 +60,13 @@ export function toolHint(tool: Tool, s: HintState): ToolHint {
       if (one.locked) return no("변형: 잠긴 레이어입니다. 잠금을 풀고 다시 시도하세요.");
       return ok("변형 · 모서리·격자점을 끌어 기울이기·원근·왜곡을 합니다. Enter 확정, Esc 취소");
     case "liquify": {
+      if (!one && s.source?.selected) return s.source.locked ? no(`유동화: ${SOURCE_LOCKED_MESSAGE}.`) : ok("유동화 · 원본 그림의 모양을 밀고 부풀리고 오므립니다(실행 취소 1단계)");
       const problem = liquifyTargetProblem(one, !!one?.imageId);
       return problem ? no(`유동화: ${problem}`) : ok("유동화 · 끌어서 모양을 밀고, 부풀리고, 오므립니다. 위쪽 설정에서 방식·크기·강도를 고릅니다");
     }
     case "finger": {
-      if (!one) return no("손가락: 이미지 레이어를 하나만 선택하세요. 원본 스크린샷은 바꿀 수 없습니다.");
+      if (!one && s.source?.selected) return s.source.locked ? no(`손가락: ${SOURCE_LOCKED_MESSAGE}.`) : ok("손가락 · 원본 그림을 끄는 방향으로 번지게 합니다(실행 취소 1단계)");
+      if (!one) return no(`손가락: 이미지 레이어를 하나만 선택하세요. ${SOURCE_HOW_TO}`);
       if (one.content || !one.imageId) return no("손가락: 도형·텍스트 레이어는 번지게 할 수 없습니다. 이미지 레이어를 선택하세요.");
       if (one.locked) return no("손가락: 잠긴 레이어입니다. 잠금을 풀고 다시 시도하세요.");
       if (!one.visible) return no("손가락: 숨긴 레이어입니다. 먼저 보이게 하세요.");

@@ -8,6 +8,7 @@ import { BitmapLayer, LayerContent, TextContent } from "@/lib/project/schema";
 import { MAX_FONT_SIZE, MAX_TEXT_LENGTH, MIN_FONT_SIZE } from "@/lib/image/text-layout";
 import { SHAPE_LABEL, maxCornerRadius } from "@/lib/image/vector";
 import { ColorField, WidthField } from "./StyleFields";
+import SourceEditPanel from "./SourceEditPanel";
 import { AdjustFields, AlignButtons, BlendSelect, EffectsFields, FlipButtons, MergeButtons, OpacityField } from "./LayerToolsPanel";
 import { canStretch, selectionBox } from "@/features/free-transform/free-transform";
 import { ImageCache } from "@/store/images";
@@ -285,7 +286,10 @@ export default function PropertyPanel() {
   const patchId = useEditorStore((s) => s.selectedPatchId);
   const preview = useEditorStore((s) => s.dragPreview);
   const comparing = useEditorStore((s) => s.compareMode !== "off");
+  const sourceSelected = useEditorStore((s) => s.sourceSelected);
   if (!screen) return null;
+
+  if (sourceSelected && selectedCount === 0) return <SourceEditPanel />;
 
   if (selectedCount > 1) {
     const chosen = screen.layers.filter((l) => selectedIds.includes(l.id));

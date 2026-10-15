@@ -2,11 +2,13 @@ import { bitmapMapper, FingerStroke } from "@/features/smudge/finger";
 import { LiquifyMode, createLiquify } from "@/lib/image/liquify";
 import { RawImage } from "@/lib/image/raw-image";
 import { BitmapLayer } from "@/lib/project/schema";
+import { SOURCE_HOW_TO, SOURCE_LAYER_ID, SOURCE_LOCKED_MESSAGE, targetLayerOf } from "@/features/source-edit/source-edit";
 import { EditorStoreApi, LiquifyStyle, selectScreen } from "@/store/editor-store";
 
 /** why liquify cannot work on this layer (in words for the user), or null when it can */
 export function liquifyTargetProblem(layer: BitmapLayer | undefined, hasPicture: boolean): string | null {
-  if (!layer) return "유동화는 이미지 레이어를 하나 선택한 뒤 쓸 수 있습니다. 원본 스크린샷과 도형·텍스트·메모는 바꿀 수 없습니다.";
+  if (!layer) return `유동화는 이미지 레이어를 하나 선택한 뒤 쓸 수 있습니다. ${SOURCE_HOW_TO}`;
+  if (layer.id === SOURCE_LAYER_ID && layer.locked) return SOURCE_LOCKED_MESSAGE;
   if (layer.content || !layer.imageId || !hasPicture) return "유동화는 이미지(비트맵) 레이어에만 쓸 수 있습니다. 도형·텍스트 레이어는 대상이 아닙니다.";
   if (layer.warp) return "변형(warp)한 레이어에는 유동화를 쓸 수 없습니다. 속성 패널의 '변형 초기화'를 먼저 누르세요.";
   if (layer.locked) return "잠긴 레이어는 유동화할 수 없습니다. 잠금을 풀어 주세요.";
@@ -22,7 +24,7 @@ export const LIQUIFY_MODE_LABEL: Record<LiquifyMode, string> = { push: "밀기",
 export function startLiquifyStroke(store: EditorStoreApi, layerId: string): { ok: true; stroke: FingerStroke } | { ok: false; reason: string | null } {
   const state = store.getState();
   if (state.compareMode !== "off") return { ok: false, reason: null };
-  const layer = selectScreen(state)?.layers.find((l) => l.id === layerId);
+  const layer = targetLayerOf(selectScreen(state), layerId);
   const picture = layer?.imageId ? state.images.get(layer.imageId)?.raw : undefined;
   const problem = liquifyTargetProblem(layer, !!picture);
   if (problem || !layer || !picture) return { ok: false, reason: problem };

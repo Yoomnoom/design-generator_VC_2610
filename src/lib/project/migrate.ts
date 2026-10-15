@@ -44,6 +44,8 @@ const MIGRATIONS: Record<number, (doc: Doc) => Doc> = {
   10: (doc) => doc,
   /** 11 -> 12: `adjust` is new and optional (a layer without it is not adjusted), so every version 11 file is already a valid version 12 file. */
   11: (doc) => doc,
+  /** 12 -> 13: `source.unlocked` and `source.originalImageId` are new and optional (a source without them is locked and was never edited), so every version 12 file is already a valid version 13 file. */
+  12: (doc) => doc,
 };
 
 export type MigrateResult = { ok: true; doc: Record<string, unknown> } | { ok: false; error: string };

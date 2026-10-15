@@ -1,6 +1,7 @@
 import { isOnlyMoved } from "@/lib/geometry/layer-transform";
 import { MAX_BRUSH_SIZE, MAX_STROKE_POINTS, MIN_BRUSH_SIZE, PaintStroke, Pt, paintStroke } from "@/lib/image/brush-raster";
 import { BitmapLayer } from "@/lib/project/schema";
+import { SOURCE_ERASER_MESSAGE, SOURCE_LAYER_ID, SOURCE_LOCKED_MESSAGE } from "@/features/source-edit/source-edit";
 import { EditorStoreApi, selectScreen } from "@/store/editor-store";
 
 export type StrokeOutcome = { status: "painted"; layerId: string } | { status: "nothing" } | { status: "refused"; reason: string };
@@ -29,6 +30,26 @@ export function applyStroke(args: { store: EditorStoreApi; tool: "brush" | "eras
   if (state.compareMode !== "off") return { status: "nothing" }; // nothing can be edited while comparing
 
   const erase = tool === "eraser";
+  if (state.sourceSelected) {
+    // the original picture is the target: locked it refuses, the eraser never works on it (it would punch holes in it), the brush paints it
+    // as one new picture (a new imageId, one undo step)
+    const refuse = (reason: string): StrokeOutcome => {
+      state.setNotice(`${erase ? "지우개" : "브러시"}를 쓸 수 없습니다. ${reason}`);
+      return { status: "refused", reason };
+    };
+    if (erase) return refuse(SOURCE_ERASER_MESSAGE);
+    if (!screen.source.unlocked) return refuse(SOURCE_LOCKED_MESSAGE);
+    const picture = state.images.get(screen.source.imageId)?.raw;
+    if (!picture) return { status: "nothing" };
+    const painted = paint(
+      { raw: picture, x: 0, y: 0 },
+      { points: args.points.slice(0, MAX_STROKE_POINTS), size: Math.min(Math.max(Math.round(state.drawStyle.strokeWidth), MIN_BRUSH_SIZE), MAX_BRUSH_SIZE), color: state.drawStyle.stroke, erase: false },
+      { width: screen.width, height: screen.height },
+    );
+    if (!painted) return { status: "nothing" };
+    if (painted.x !== 0 || painted.y !== 0 || painted.raw.width !== picture.width || painted.raw.height !== picture.height) return refuse("그릴 수 없는 상태입니다.");
+    return state.commitSourceEdit(painted.raw, "브러시 획(원본)") ? { status: "painted", layerId: SOURCE_LAYER_ID } : refuse("그릴 수 없는 상태입니다.");
+  }
   const selected = screen.layers.find((l) => l.id === state.selectedLayerIds[0]);
   const problem = strokeTargetProblem(selected, erase);
   if (erase && problem) {

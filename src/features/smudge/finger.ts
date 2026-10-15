@@ -4,11 +4,13 @@ import { RawImage } from "@/lib/image/raw-image";
 import { Smudge, SmudgeOptions, createSmudge } from "@/lib/image/smudge";
 import { effectiveWarp, warpInverse } from "@/lib/image/warp";
 import { BitmapLayer } from "@/lib/project/schema";
+import { SOURCE_HOW_TO, SOURCE_LAYER_ID, SOURCE_LOCKED_MESSAGE, targetLayerOf } from "@/features/source-edit/source-edit";
 import { EditorStoreApi, FingerStyle, selectScreen } from "@/store/editor-store";
 
 /** why the finger tool cannot work on this layer (in words for the user), or null when it can */
 export function fingerTargetProblem(layer: BitmapLayer | undefined, hasPicture: boolean): string | null {
-  if (!layer) return "손가락 도구는 이미지 레이어를 선택한 뒤 쓸 수 있습니다. 원본 스크린샷은 바꿀 수 없습니다.";
+  if (!layer) return `손가락 도구는 이미지 레이어를 선택한 뒤 쓸 수 있습니다. ${SOURCE_HOW_TO}`;
+  if (layer.id === SOURCE_LAYER_ID && layer.locked) return SOURCE_LOCKED_MESSAGE;
   if (layer.content || !layer.imageId || !hasPicture) return "손가락 도구는 이미지(비트맵) 레이어에만 쓸 수 있습니다. 도형·텍스트 레이어는 대상이 아닙니다.";
   if (layer.locked) return "잠긴 레이어는 번지게 할 수 없습니다. 잠금을 풀어 주세요.";
   if (!layer.visible) return "숨긴 레이어는 번지게 할 수 없습니다. 먼저 보이게 해 주세요.";
@@ -47,7 +49,7 @@ export const smudgeOptions = (style: FingerStyle): SmudgeOptions => ({ size: sty
 export function startFingerStroke(store: EditorStoreApi, layerId: string): { ok: true; stroke: FingerStroke } | { ok: false; reason: string | null } {
   const state = store.getState();
   if (state.compareMode !== "off") return { ok: false, reason: null }; // nothing can be edited while comparing
-  const layer = selectScreen(state)?.layers.find((l) => l.id === layerId);
+  const layer = targetLayerOf(selectScreen(state), layerId);
   const source = layer?.imageId ? state.images.get(layer.imageId)?.raw : undefined;
   const problem = fingerTargetProblem(layer, !!source);
   if (problem || !layer || !source) return { ok: false, reason: problem };

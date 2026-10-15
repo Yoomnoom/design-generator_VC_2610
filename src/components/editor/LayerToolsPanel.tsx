@@ -206,7 +206,7 @@ export function MergeButtons({ layer, count, disabled }: { layer?: BitmapLayer; 
     </div>
   );
 }
-const ADJ_FIELDS: { key: keyof LayerAdjust; label: string; min: number; max: number }[] = [
+export const ADJ_FIELDS: { key: keyof LayerAdjust; label: string; min: number; max: number }[] = [
   { key: "brightness", label: "밝기", min: -100, max: 100 },
   { key: "contrast", label: "대비", min: -100, max: 100 },
   { key: "saturation", label: "채도", min: -100, max: 100 },

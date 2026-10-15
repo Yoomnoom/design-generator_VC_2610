@@ -25,7 +25,7 @@ describe("help content", () => {
   });
 
   test("the tools that can be blocked say why: eraser (what it works on), warp (reset first for the brush), finger, region extraction", () => {
-    expect(TOOL_HELP.eraser.stuck).toContain("원본 스크린샷");
+    expect(TOOL_HELP.eraser.stuck).toContain("원본");
     expect(TOOL_HELP.warp.stuck).toContain("변형 초기화");
     expect(TOOL_HELP.finger.stuck).toBeTruthy();
     expect(TOOL_HELP.rect.stuck).toContain("스크린샷이 없");

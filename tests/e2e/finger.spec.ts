@@ -119,7 +119,7 @@ test.describe("finger tool", () => {
     await page.evaluate(() => { const s = (window as any).__slc.getState(); s.selectLayer(null); });
     // with nothing chosen a drag that starts on a picture takes that layer (so it works at once); one over the bare capture says why not
     await dragImageRect(page, { x: CARD.x + 10, y: CARD.y + 220 }, { x: CARD.x + 150, y: CARD.y + 220 });
-    expect(await notice(page)).toContain("원본 스크린샷");
+    expect(await notice(page)).toContain("배경(원본)"); // the original is locked by default: the message says how to unlock it
     await page.evaluate(() => { const s = (window as any).__slc.getState(); s.setNotice(null); const id = s.history.present.screens[0].layers[0].id; s.selectLayer(id); s.setLayerLocked(id, true); });
     const pastLocked = (await editor(page)).past;
     await drag();

@@ -57,7 +57,8 @@ export default function EditorShell() {
   const selectedCount = useEditorStore((s) => s.selectedLayerIds.length);
   const hintSelected = useEditorStore((s) => s.selectedLayerIds);
   const comparingNow = useEditorStore((s) => s.compareMode !== "off");
-  const hint = toolHint(tool, { screen, selected: screen ? screen.layers.filter((l) => hintSelected.includes(l.id)) : [], comparing: comparingNow });
+  const sourceSelected = useEditorStore((s) => s.sourceSelected);
+  const hint = toolHint(tool, { screen, selected: screen ? screen.layers.filter((l) => hintSelected.includes(l.id)) : [], comparing: comparingNow, source: screen ? { selected: sourceSelected, locked: !screen.source.unlocked } : undefined });
 
   useShortcuts();
 
