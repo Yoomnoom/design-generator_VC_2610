@@ -1,0 +1,14 @@
+﻿{
+  "$comment": "DRAFT, not active (vercel.json at the repo root is what Vercel reads). Needs no secrets. A default Next.js deploy works without any config; this only adds headers. To use: copy to vercel.json.",
+  "framework": "nextjs",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Permissions-Policy", "value": "clipboard-read=(self), clipboard-write=(self), camera=(), microphone=(), geolocation=()" }
+      ]
+    }
+  ]
+}

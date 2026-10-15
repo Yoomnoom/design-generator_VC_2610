@@ -2,7 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 // PW_PROD=1 runs the suite against a production build served by `next start`
 // (build it first with NEXT_PUBLIC_E2E=1, which is what lets the tests read the editor store).
-const prod = process.env.PW_PROD === "1";
+const staticSite = process.env.PW_STATIC === "1"; // the STATIC_EXPORT build in out/, served by tests/static-server.mjs
+const prod = process.env.PW_PROD === "1" || staticSite;
 const port = prod ? 3100 : 3000;
 
 export default defineConfig({
@@ -12,6 +13,6 @@ export default defineConfig({
   workers: 1, // one browser at a time: this machine runs short of memory with several
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  webServer: { command: prod ? `npx next start -p ${port}` : "npm run dev", url: `http://localhost:${port}`, reuseExistingServer: !prod },
+  webServer: { command: staticSite ? `node tests/static-server.mjs ${port}` : prod ? `npx next start -p ${port}` : "npm run dev", url: `http://localhost:${port}`, reuseExistingServer: !prod },
   use: { baseURL: `http://localhost:${port}` },
 });

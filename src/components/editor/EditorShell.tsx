@@ -287,6 +287,10 @@ export default function EditorShell() {
                   </div>
                 )}
                 <StartChoices onUpload={() => imageInput.current?.click()} onBlank={() => setCanvasOpen(true)} onTemplate={(id) => void request({ kind: "template", id })} />
+                <div data-testid="start-note" className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs text-[var(--muted)]">
+                  <span>작업은 이 브라우저에만 저장되며 프로젝트 파일(.slc.json)로 공유합니다.</span>
+                  <button data-testid="start-example" className="btn mini" title="예시 화면(모바일 로그인 템플릿)을 새 프로젝트로 엽니다" onClick={() => void request({ kind: "template", id: "login" })}>예시 열기</button>
+                </div>
               </div>
             </div>          )}
           {dropping && <div className="pointer-events-none absolute inset-2 rounded-xl border-2 border-dashed border-[var(--accent)] bg-[var(--soft)]/60" />}

@@ -32,6 +32,14 @@ test.describe("start screen", () => {
     await expect(page.getByTestId("start-choices")).toHaveCount(0);
   });
 
+  test("the first screen says where work is kept, and the example button opens a project", async ({ page }) => {
+    await openApp(page);
+    await expect(page.getByTestId("start-note")).toContainText("작업은 이 브라우저에만 저장되며 프로젝트 파일");
+    await page.getByTestId("start-example").click();
+    await expect.poll(async () => (await editor(page)).screen).toMatchObject({ width: 390, height: 844 });
+    await expect(page.getByTestId("start-choices")).toHaveCount(0);
+  });
+
   test("a template card opens that template as a project", async ({ page }) => {
     await openApp(page);
     await page.getByTestId("start-template-settings").click();

@@ -89,3 +89,22 @@ Node 22 이상. 프로젝트 파일(`*.slc.json`)과 임시저장은 브라우�
 - 프로젝트는 **화면 1개**만 다룹니다(다중 화면은 범위 밖).
 - 이미지 한 변은 8192px까지입니다.
 - Chromium에서 검증했습니다. Firefox·Safari·터치 입력은 확인하지 못했습니다.
+
+## 지원 브라우저
+
+데스크톱 브라우저 기준입니다. **실제로 확인한 것**은 Playwright의 Chromium(헤드리스, Windows)뿐입니다(전체 E2E, 개발 서버·프로덕션 빌드·정적 내보내기 모두). 그 밖은 확인하지 못했고, 필요한 기능이 있는지로만 추정한 것입니다.
+
+| 브라우저 | 상태 |
+|---|---|
+| Chrome·Edge (최신) | Chromium으로 확인. 실제 Chrome·Edge 창에서의 수동 확인은 하지 않음 |
+| Firefox | 확인하지 못함. 클립보드에 이미지를 쓰는 기능(`ClipboardItem`)이 막혀 있으면 레이어 복사의 시스템 클립보드 쓰기는 안내 줄로 거절됨(나머지는 동작할 것으로 추정) |
+| Safari (macOS) | 확인하지 못함. OffscreenCanvas·Web Locks·IndexedDB가 필요(없으면 임시저장·다중 탭 보호가 꺼질 수 있음) |
+| 휴대폰·태블릿 | 대상 아님(마우스·키보드 편집기), 확인하지 못함 |
+
+필요한 기능: IndexedDB, Web Locks, Web Worker, Canvas·OffscreenCanvas, Clipboard(붙여넣기는 `paste` 이벤트, 복사는 `ClipboardItem`; HTTPS 또는 localhost에서만). 작업은 이 브라우저에만 저장되며(임시저장·IndexedDB) 다른 컴퓨터와는 프로젝트 파일(`.slc.json`)로 공유합니다.
+
+## 배포 준비 (아직 배포하지 않음)
+
+- 서버가 필요 없는 정적 사이트로 빌드됩니다: `STATIC_EXPORT=1 npm run build` → `out/`(`output: "export"`). 기본 `npm run build`는 그대로입니다.
+- `out/`을 서버 없이 띄워(`tests/static-server.mjs`) `PW_STATIC=1 npx playwright test <spec>`으로 업로드·붙여넣기·임시저장(다중 탭 포함)·소스 라이브러리·템플릿·Web Worker(자동 후보·변형)를 확인했습니다.
+- Vercel은 기본 설정(Next.js 자동 감지)으로 배포됩니다. 헤더만 더하는 초안이 `docs/vercel.draft.json`에 있으며 **활성화하지 않았습니다**(쓰려면 저장소 루트의 `vercel.json`으로 복사). 비밀값·환경 변수는 필요 없습니다.
