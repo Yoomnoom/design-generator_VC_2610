@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { BUILTIN_ASSETS } from "@/features/assets/builtin";
 import { captureBundle } from "@/features/assets/capture";
 import { openAssetLibrary } from "@/features/assets/library";
+import { BUBBLE_MARGIN, placeBubble } from "@/features/assets/bubble";
 import { PreviewCache, previewFrame, renderBundle, shrinkToFit } from "@/features/assets/preview";
 import { TEMPLATES, buildTemplate, templateBundle, templateFrame } from "@/features/assets/templates";
 import { renderProjectRaw } from "@/features/export-image/export-png";
@@ -127,5 +128,99 @@ describe("my sources: previews follow the library", () => {
     const broken = { ...bundle, layers: [{ ...bundle.layers[0], content: undefined, imageKey: "gone" }] };
     expect(renderBundle(broken, { rasterize: fake })).toBeNull();
     lib.close();
+  });
+});
+
+describe("large preview: drawn again at its own size", () => {
+  const scaledFake = (k: number): Rasterize => (content, t) => {
+    // a block as big as the shape times k, positioned where the scaled layer sits: what the real scaled rasteriser covers
+    const key = JSON.stringify(content);
+    let h = 7;
+    for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return { image: solid(Math.max(1, Math.ceil(content.width * k)), Math.max(1, Math.ceil(content.height * k)), [h & 255, (h >> 8) & 255, (h >> 16) & 255, 255]), x: Math.round(t.x), y: Math.round(t.y) };
+  };
+
+  test("scale 1 or none is the same picture byte for byte", () => {
+    for (const a of BUILTIN_ASSETS.slice(0, 8)) {
+      const plain = renderBundle(a.build(), { rasterize: fake })!;
+      const one = renderBundle(a.build(), { rasterize: fake, scale: 1, scaledRasterize: scaledFake })!;
+      expect(Buffer.from(one.data).equals(Buffer.from(plain.data)), a.id).toBe(true);
+    }
+  });
+
+  test("scale k makes the frame k times as big and puts every shape at k times its place", () => {
+    for (const id of ["button-fill-rest", "card", "divider"]) {
+      const bundle = BUILTIN_ASSETS.find((x) => x.id === id)!.build();
+      const plain = renderBundle(bundle, { rasterize: fake })!;
+      const big = renderBundle(bundle, { rasterize: fake, scale: 3, scaledRasterize: scaledFake })!;
+      expect(big.width).toBe(plain.width * 3);
+      expect(big.height).toBe(plain.height * 3);
+      // the shape's own pixels are where 3x the plain ones are: every non-transparent plain pixel's centre is non-transparent in the big one
+      let checked = 0;
+      for (let y = 0; y < plain.height; y += 2) for (let x = 0; x < plain.width; x += 2) {
+        if (plain.data[(y * plain.width + x) * 4 + 3] === 0) continue;
+        expect(big.data[((y * 3 + 1) * big.width + x * 3 + 1) * 4 + 3], `${id} ${x},${y}`).toBeGreaterThan(0);
+        checked++;
+      }
+      expect(checked).toBeGreaterThan(0);
+    }
+  });
+
+  test("a template drawn at scale 2 keeps its page colour and doubles in size", () => {
+    const frame = templateFrame("login");
+    const big = renderBundle(templateBundle("login"), { frame, rasterize: fake, scale: 2, scaledRasterize: scaledFake })!;
+    expect([big.width, big.height]).toEqual([frame.width * 2, frame.height * 2]);
+  });
+});
+
+describe("placeBubble: the large preview card is always inside the window, beside the panel", () => {
+  const vp = { width: 1280, height: 720 };
+  const size = { width: 340, height: 380 };
+  const inside = (p: { x: number; y: number }, s = size, v = vp) => p.x >= BUBBLE_MARGIN && p.y >= BUBBLE_MARGIN && p.x + s.width <= v.width - BUBBLE_MARGIN && p.y + s.height <= v.height - BUBBLE_MARGIN;
+
+  test("beside the panel on the canvas side, level with the card", () => {
+    const p = placeBubble({ left: 1000, right: 1280, top: 200 }, size, vp); // a right-hand panel: the canvas is on its left
+    expect(p.side).toBe("left");
+    expect(p.x + size.width).toBeLessThanOrEqual(1000 - 8);
+    expect(p.y).toBe(200);
+    expect(inside(p)).toBe(true);
+    const q = placeBubble({ left: 76, right: 312, top: 200 }, size, vp); // a left-hand panel: the canvas is on its right
+    expect(q.side).toBe("right");
+    expect(q.x).toBe(312 + 8);
+    expect(inside(q)).toBe(true);
+  });
+
+  test("a card at the top or bottom edge of the window is moved to stay inside", () => {
+    expect(placeBubble({ left: 1000, right: 1280, top: -30 }, size, vp).y).toBe(BUBBLE_MARGIN);
+    const low = placeBubble({ left: 1000, right: 1280, top: 700 }, size, vp);
+    expect(low.y).toBe(720 - BUBBLE_MARGIN - size.height);
+    expect(inside(low)).toBe(true);
+  });
+
+  test("no room on the canvas side: it goes to the other side of the panel; no room anywhere: it is kept inside, over the panel", () => {
+    const wide = { width: 480, height: 720 };
+    const other = placeBubble({ left: 100, right: 360, top: 50 }, size, wide); // 340 wide card: right of the panel would end at 708 > 472, left has no room
+    expect(other.side).toBe("over"); // neither side has room: kept inside the window, over the panel
+    expect(inside(other, size, wide)).toBe(true);
+    const flip = placeBubble({ left: 900, right: 1180, top: 50 }, { width: 900, height: 300 }, vp); // far too wide on the left, fits nowhere
+    expect(flip.side).toBe("over");
+    expect(inside(flip, { width: 900, height: 300 })).toBe(true);
+    const narrow = { width: 420, height: 720 };
+    const over = placeBubble({ left: 100, right: 420, top: 50 }, size, narrow);
+    expect(over.side).toBe("over");
+    expect(inside(over, size, narrow)).toBe(true);
+  });
+
+  test("a card taller than the window starts at the top margin; a window narrower than the card still starts at the margin", () => {
+    expect(placeBubble({ left: 1000, right: 1280, top: 300 }, { width: 300, height: 900 }, vp).y).toBe(BUBBLE_MARGIN);
+    expect(placeBubble({ left: 100, right: 300, top: 10 }, { width: 340, height: 100 }, { width: 300, height: 400 }).x).toBe(BUBBLE_MARGIN);
+  });
+
+  test("every panel position and card height keeps the card inside the window", () => {
+    for (const left of [0, 50, 300, 700, 1000, 1200]) for (const top of [-50, 0, 300, 650, 900]) for (const h of [100, 380, 600]) {
+      const s = { width: 340, height: h };
+      const p = placeBubble({ left, right: left + 280, top }, s, vp);
+      expect(inside(p, s), `${left},${top},${h}`).toBe(true);
+    }
   });
 });

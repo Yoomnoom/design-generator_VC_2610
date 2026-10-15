@@ -2,7 +2,7 @@ import { renderProjectRaw } from "@/features/export-image/export-png";
 import { layerBox } from "@/features/snap/layer-box";
 import { RawImage, createRawImage } from "@/lib/image/raw-image";
 import { MeasureFor, estimateMeasure, fitHeight } from "@/lib/image/text-measure";
-import { Rasterize, rasterizeVectorLayer } from "@/lib/image/vector-raster";
+import { Rasterize, rasterizeVectorLayer, rasterizeVectorLayerAt } from "@/lib/image/vector-raster";
 import { BitmapLayer, CURRENT_VERSION, LayerContent, Project } from "@/lib/project/schema";
 import { AssetBundle } from "./types";
 
@@ -17,6 +17,11 @@ export type PreviewOptions = {
   rasterize?: Rasterize;
   /** margin around the bundle's box, in pixels (not used with `frame`) */
   margin?: number;
+  /** draw at this many times the size (> 1), for a sharp large preview: the frame, positions and bitmap sizes are multiplied, and shapes
+   *  are drawn by the same drawContent under a scale (`scaledRasterize`). 1 or none: the size the layers have when inserted. */
+  scale?: number;
+  /** the rasteriser for `scale` > 1 (tests); the default draws on an OffscreenCanvas */
+  scaledRasterize?: (k: number) => Rasterize;
 };
 
 const MAX_SIDE = 4096;
@@ -89,6 +94,15 @@ export function renderBundle(bundle: AssetBundle, options: PreviewOptions = {}):
     const { dx, dy } = f;
     for (const l of layers) l.transform = { ...l.transform, x: Math.round((l.transform.x + dx) * 100) / 100, y: Math.round((l.transform.y + dy) * 100) / 100 };
   }
+  const k = options.scale && options.scale > 1 ? options.scale : 1;
+  if (k > 1) {
+    width = Math.ceil(width * k);
+    height = Math.ceil(height * k);
+    for (const l of layers) {
+      const bitmap = !!l.imageId;
+      l.transform = { ...l.transform, x: l.transform.x * k, y: l.transform.y * k, ...(bitmap ? { scaleX: l.transform.scaleX * k, scaleY: l.transform.scaleY * k } : {}) };
+    }
+  }
   if (!(width >= 1 && height >= 1 && width <= MAX_SIDE && height <= MAX_SIDE)) return null;
 
   const sourceId = "page";
@@ -101,7 +115,7 @@ export function renderBundle(bundle: AssetBundle, options: PreviewOptions = {}):
     screens: [{ id: "s", name: "s", x: 0, y: 0, width, height, source: { imageId: sourceId, fileName: "preview.png" }, backgroundPatches: [], layers }],
   };
   try {
-    return renderProjectRaw(project, images, options.rasterize ?? rasterizeVectorLayer);
+    return renderProjectRaw(project, images, k > 1 ? (options.scaledRasterize ?? rasterizeVectorLayerAt)(k) : (options.rasterize ?? rasterizeVectorLayer));
   } catch {
     return null;
   }

@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { PreviewOptions, previewCache, renderBundle, shrinkToFit } from "@/features/assets/preview";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { BubbleAnchor, placeBubble } from "@/features/assets/bubble";
+import { PreviewCache, PreviewOptions, previewCache, renderBundle, shrinkToFit } from "@/features/assets/preview";
 import { AssetBundle } from "@/features/assets/types";
 import { canvasMeasureFor } from "@/lib/image/text-measure";
 import { RawImage } from "@/lib/image/raw-image";
 
-/* One preview picture: the bundle drawn by the export's own renderer (renderBundle), shrunk to fit, on a checkerboard that is only a
- * display aid. It is drawn when it scrolls into view, one at a time, so a long list never blocks the panel. */
+/* One preview picture: the bundle drawn by the export's own renderer (renderBundle), shrunk to fit, on a plain light grey that is only a
+ * display aid (no checkerboard: it was noisy, and nothing is ever added to the pixels). It is drawn when it scrolls into view, one at a
+ * time, so a long list never blocks the panel. The large preview is drawn again at its own size by the same renderer (not a stretched
+ * thumbnail), in a card of its own that is placed beside the panel (see bubble.ts). */
+
+const GROUND = "#eceef1";
+/** a thumbnail canvas is at least this big (CSS px), so a thin line or underline stays a visible, centred mark */
+const MIN_THUMB = 14;
+const dprNow = () => (typeof window === "undefined" ? 1 : Math.max(1, window.devicePixelRatio || 1));
+const bigCache = new PreviewCache(24);
 
 let queue: Promise<void> = Promise.resolve();
 /** runs jobs one after another, each in its own task, so the page keeps painting between them */
@@ -32,21 +42,14 @@ async function previewOf(key: string, build: () => Promise<AssetBundle | null> |
   return raw;
 }
 
-function paint(canvas: HTMLCanvasElement, raw: RawImage) {
-  canvas.width = raw.width;
-  canvas.height = raw.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const tile = 6;
-  for (let y = 0; y < raw.height; y += tile) for (let x = 0; x < raw.width; x += tile) {
-    ctx.fillStyle = ((x / tile + y / tile) & 1) === 0 ? "#ffffff" : "#e5e7eb";
-    ctx.fillRect(x, y, tile, tile);
-  }
-  const layer = document.createElement("canvas");
-  layer.width = raw.width;
-  layer.height = raw.height;
-  layer.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(raw.data), raw.width, raw.height), 0, 0);
-  ctx.drawImage(layer, 0, 0);
+/** puts `raw` in the middle of a canvas of at least minCss CSS px, one canvas pixel per device pixel; the canvas has no background */
+function paint(canvas: HTMLCanvasElement, raw: RawImage, dpr: number, minCss = 0) {
+  const cw = Math.max(raw.width, Math.ceil(minCss * dpr)), ch = Math.max(raw.height, Math.ceil(minCss * dpr));
+  canvas.width = cw;
+  canvas.height = ch;
+  canvas.style.width = `${cw / dpr}px`;
+  canvas.style.height = `${ch / dpr}px`;
+  canvas.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(raw.data), raw.width, raw.height), Math.floor((cw - raw.width) / 2), Math.floor((ch - raw.height) / 2));
 }
 
 type Props = {
@@ -56,18 +59,18 @@ type Props = {
   options?: PreviewOptions;
   width: number;
   height: number;
-  /** size of the larger preview shown on hover */
+  /** longer side (CSS px) of the large preview shown on hover */
   bigSide?: number;
   label: string;
   testId?: string;
 };
 
-export default function AssetThumb({ cacheKey, build, options = {}, width, height, bigSide = 280, label, testId = "asset-thumb" }: Props) {
+export default function AssetThumb({ cacheKey, build, options = {}, width, height, bigSide = 320, label, testId = "asset-thumb" }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const small = useRef<HTMLCanvasElement>(null);
   const [state, setState] = useState<"waiting" | "ready" | "none">("waiting");
   const [visible, setVisible] = useState(false);
-  const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<BubbleAnchor | null>(null);
 
   useEffect(() => {
     const el = host.current;
@@ -84,7 +87,8 @@ export default function AssetThumb({ cacheKey, build, options = {}, width, heigh
     void previewOf(cacheKey, build, options).then(async (raw) => {
       if (!live) return;
       if (!raw || !small.current) return setState("none");
-      paint(small.current, shrinkToFit(raw, width, height));
+      const dpr = dprNow();
+      paint(small.current, shrinkToFit(raw, width * dpr, height * dpr), dpr, MIN_THUMB);
       setState("ready");
     });
     return () => {
@@ -93,41 +97,111 @@ export default function AssetThumb({ cacheKey, build, options = {}, width, heigh
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the key says when the item changed
   }, [visible, cacheKey, width, height]);
 
+  const open = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const panel = el.closest("aside")?.getBoundingClientRect(); // beside the panel when the card is in one, else beside the card itself
+    setHover({ left: panel?.left ?? r.left, right: panel?.right ?? r.right, top: r.top });
+  };
+
   return (
     <div
       ref={host}
       data-testid={testId}
       data-state={state}
       title={label}
-      className="relative flex items-center justify-center overflow-hidden rounded border border-[var(--line)] bg-[#f3f4f6]"
-      style={{ width, height }}
-      onMouseEnter={(e) => state === "ready" && setHover({ x: e.currentTarget.getBoundingClientRect().right + 8, y: e.currentTarget.getBoundingClientRect().top })}
+      className="relative flex items-center justify-center overflow-hidden rounded border border-[var(--line)]"
+      style={{ width, height, background: GROUND }}
+      onMouseEnter={(e) => state === "ready" && open(e.currentTarget)}
       onMouseLeave={() => setHover(null)}
     >
-      <canvas ref={small} aria-label={`${label} 미리보기`} className={state === "ready" ? "block max-h-full max-w-full" : "hidden"} />
+      <canvas ref={small} aria-label={`${label} 미리보기`} className={state === "ready" ? "block" : "hidden"} />
       {state === "waiting" && <span className="text-[10px] text-[var(--muted)]">…</span>}
       {state === "none" && <span className="px-1 text-center text-[10px] leading-tight text-[var(--muted)]">미리보기 없음</span>}
-      {hover && <BigPreview cacheKey={cacheKey} at={hover} side={bigSide} label={label} />}
+      {hover && <BigPreview cacheKey={cacheKey} build={build} options={options} anchor={hover} side={bigSide} label={label} onClose={() => setHover(null)} />}
     </div>
   );
 }
 
-/** the larger preview next to the card: the same cached full-size picture, shrunk less */
-function BigPreview({ cacheKey, at, side, label }: { cacheKey: string; at: { x: number; y: number }; side: number; label: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
+const TEXT_BLOCK = 40; // name line + size line under the picture
+const PAD = 8;
+
+/** the large preview, in a card of its own on the page (a portal: it is not a child of the list card, so it takes nothing from it: no
+ *  clipping, no dimming of a disabled button), opaque, fully inside the window, closed as soon as the pointer leaves the thumbnail */
+function BigPreview({ cacheKey, build, options, anchor, side, label, onClose }: { cacheKey: string; build: Props["build"]; options: PreviewOptions; anchor: BubbleAnchor; side: number; label: string; onClose: () => void }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [made, setMade] = useState<{ width: number; height: number; size: string } | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number; side: string } | null>(null);
+
   useEffect(() => {
-    const raw = previewCache.get(cacheKey)?.value;
-    if (!raw || !ref.current) return;
-    paint(ref.current, shrinkToFit(raw, side, side));
-    // a small source is shown larger (up to 4x) so the hover preview is worth looking at
-    const k = Math.min(4, side / raw.width, side / raw.height);
-    ref.current.style.width = k > 1 ? `${Math.round(raw.width * k)}px` : "";
+    const close = () => onClose();
+    window.addEventListener("blur", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("blur", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const raw = previewCache.get(cacheKey)?.value;
+      if (!raw) return;
+      const dpr = dprNow();
+      const margin = options.margin ?? 4;
+      const logical = options.frame ? { w: options.frame.width, h: options.frame.height } : { w: raw.width - 2 * margin, h: raw.height - 2 * margin };
+      const target = Math.min(side, window.innerHeight - 2 * PAD - TEXT_BLOCK - 16, window.innerWidth / 2) * dpr; // the card always fits the window
+      const k = Math.min(8, target / Math.max(raw.width, raw.height));
+      let big: RawImage | null = null;
+      if (k > 1.001) {
+        // drawn again at the preview's own size with the same renderer, so it is sharp (a thumbnail stretched would be soft)
+        const key = `${cacheKey}|${k.toFixed(3)}`;
+        const hit = bigCache.get(key);
+        if (hit) big = hit.value;
+        else {
+          try {
+            const bundle = await build();
+            big = bundle ? await later(() => renderBundle(bundle, { measure: canvasMeasureFor, ...options, scale: k })) : null;
+          } catch {
+            big = null;
+          }
+          bigCache.set(key, big);
+        }
+      } else big = shrinkToFit(raw, target, target);
+      if (!live || !big || !canvas.current) return;
+      paint(canvas.current, big, dpr);
+      setMade({ width: big.width / dpr, height: big.height / dpr, size: `${logical.w}×${logical.h}` });
+    })();
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- drawn once per hover
   }, [cacheKey, side]);
-  const top = Math.max(8, Math.min(at.y, (typeof window === "undefined" ? 800 : window.innerHeight) - side - 48));
-  return (
-    <div data-testid="asset-big-preview" role="presentation" className="pointer-events-none fixed z-50 rounded border border-[var(--line)] bg-white p-1.5 shadow-lg" style={{ left: at.x, top }}>
-      <canvas ref={ref} aria-label={`${label} 큰 미리보기`} className="block" />
-      <div className="mt-1 max-w-[280px] truncate text-[11px] text-[var(--muted)]">{label}</div>
-    </div>
+
+  const cardW = made ? Math.max(made.width, 132) + 2 * PAD : 0;
+  const cardH = made ? made.height + 2 * PAD + TEXT_BLOCK : 0;
+  useLayoutEffect(() => {
+    if (!made) return;
+    setPos(placeBubble(anchor, { width: cardW, height: cardH }, { width: window.innerWidth, height: window.innerHeight }));
+  }, [made, anchor, cardW, cardH]);
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      data-testid="asset-big-preview"
+      data-side={pos?.side}
+      role="presentation"
+      className="pointer-events-none fixed z-50 rounded-[10px] border border-[var(--line)] bg-white shadow-lg"
+      style={{ left: pos?.x ?? 0, top: pos?.y ?? 0, width: cardW || undefined, padding: PAD, visibility: pos ? "visible" : "hidden", opacity: 1 }}
+    >
+      <div className="grid place-items-center rounded" style={{ background: GROUND, minHeight: made?.height }}>
+        <canvas ref={canvas} aria-label={`${label} 큰 미리보기`} className="block" />
+      </div>
+      <div className="mt-1.5 truncate text-xs font-bold text-[var(--text,#111)]">{label}</div>
+      <div data-testid="asset-big-size" className="text-[11px] text-[var(--muted)]">{made?.size}</div>
+    </div>,
+    document.body,
   );
 }

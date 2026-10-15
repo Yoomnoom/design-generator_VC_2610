@@ -35,3 +35,24 @@ export const rasterizeVectorLayer: Rasterize = (content, t, frame) => {
   const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   return { image: { width, height, data }, x: x0, y: y0 };
 };
+
+/** The same drawing as `rasterizeVectorLayer`, at `k` times the size (a sharper picture, not a stretched one): `t` is already in the
+ *  k-times frame, the shape is drawn with the same drawContent under a scale of k. For a preview only; k = 1 is the function above. */
+export const rasterizeVectorLayerAt = (k: number): Rasterize => (content, t, frame) => {
+  const b = vectorFrameBounds(content, { ...t, x: 0, y: 0 });
+  const x0 = Math.max(0, Math.floor(t.x + b.x * k));
+  const y0 = Math.max(0, Math.floor(t.y + b.y * k));
+  const x1 = Math.min(frame.width, Math.ceil(t.x + (b.x + b.width) * k));
+  const y1 = Math.min(frame.height, Math.ceil(t.y + (b.y + b.height) * k));
+  if (x1 <= x0 || y1 <= y0) return null;
+  const canvas = new OffscreenCanvas(x1 - x0, y1 - y0);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("2D canvas is not available");
+  const { cos, sin } = cosSin(t.rotation);
+  ctx.setTransform(1, 0, 0, 1, -x0, -y0);
+  ctx.transform(cos, sin, -sin, cos, t.x, t.y);
+  ctx.scale(k, k);
+  drawContent(ctx as unknown as DrawCtx, content);
+  const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return { image: { width, height, data }, x: x0, y: y0 };
+};

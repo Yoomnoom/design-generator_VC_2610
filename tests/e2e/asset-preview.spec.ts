@@ -3,17 +3,62 @@ import { CARD, dragImageRect, editor, openApp, pageWithCard, pickTool, uploadPng
 
 const tab = (page: Page, id: "builtin" | "mine" | "template") => page.getByTestId(`asset-tab-${id}`).click();
 
-/** how many pixels of a thumbnail canvas are neither of the two checkerboard greys: i.e. the source's own drawing */
+/** how many pixels of a thumbnail canvas are drawn (alpha > 0): i.e. the source's own drawing; the grey ground is CSS, not pixels */
 const inkOf = (page: Page, testId: string, nth = 0) =>
   page.getByTestId(testId).nth(nth).locator("canvas").evaluate((c: HTMLCanvasElement) => {
     const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
     let ink = 0;
     for (let i = 0; i < d.length; i += 4) {
-      const grey = (d[i] === 255 && d[i + 1] === 255 && d[i + 2] === 255) || (d[i] === 229 && d[i + 1] === 231 && d[i + 2] === 235);
-      if (!grey) ink++;
+      if (d[i + 3] > 0) ink++;
     }
     return { ink, width: c.width, height: c.height };
   });
+
+/** where the ink is in a canvas (bounding box of alpha > 0) and how it compares with another canvas drawn at another size: both are
+ *  reduced to the same small grid over their ink boxes, composited on the same ground, and compared pixel by pixel */
+const compareInk = (page: Page, smallUrl: string, bigUrl: string) =>
+  page.evaluate(
+    async ([a, b]) => {
+      const load = (u: string) => new Promise<HTMLImageElement>((res) => { const i = new Image(); i.onload = () => res(i); i.src = u; });
+      const [ia, ib] = await Promise.all([load(a), load(b)]);
+      const box = (img: HTMLImageElement) => {
+        const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
+        const x = c.getContext("2d")!; x.drawImage(img, 0, 0);
+        const d = x.getImageData(0, 0, c.width, c.height).data;
+        let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+        for (let y = 0; y < c.height; y++) for (let xx = 0; xx < c.width; xx++) if (d[(y * c.width + xx) * 4 + 3] > 8) { x0 = Math.min(x0, xx); y0 = Math.min(y0, y); x1 = Math.max(x1, xx); y1 = Math.max(y1, y); }
+        return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+      };
+      const ba = box(ia), bb = box(ib);
+      const G = 24;
+      const grid = (img: HTMLImageElement, bx: { x: number; y: number; w: number; h: number }) => {
+        const c = document.createElement("canvas"); c.width = G; c.height = G;
+        const x = c.getContext("2d")!; x.fillStyle = "#eceef1"; x.fillRect(0, 0, G, G);
+        x.imageSmoothingQuality = "high"; x.drawImage(img, bx.x, bx.y, bx.w, bx.h, 0, 0, G, G);
+        return x.getImageData(0, 0, G, G).data;
+      };
+      const ga = grid(ia, ba), gb = grid(ib, bb);
+      let sum = 0;
+      for (let i = 0; i < ga.length; i += 4) for (let k = 0; k < 3; k++) sum += Math.abs(ga[i + k] - gb[i + k]);
+      return { meanDiff: sum / (G * G * 3), aspectSmall: ba.w / ba.h, aspectBig: bb.w / bb.h, bigW: bb.w, bigH: bb.h };
+    },
+    [smallUrl, bigUrl],
+  );
+
+const bubbleFacts = (page: Page) =>
+  page.getByTestId("asset-big-preview").evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    let opacity = 1;
+    for (let n: Element | null = el; n; n = n.parentElement) opacity *= Number(getComputedStyle(n).opacity);
+    const aside = document.querySelector("[data-testid=asset-panel]")!.closest("aside")!.getBoundingClientRect();
+    const canvas = el.querySelector("canvas")!;
+    return {
+      box: r.toJSON(), opacity, bg: getComputedStyle(el).backgroundColor, side: el.getAttribute("data-side"), parentIsBody: el.parentElement === document.body,
+      asidePanel: aside.toJSON(), vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, canvasPx: canvas.width, canvasCss: canvas.getBoundingClientRect().width,
+      text: (el as HTMLElement).innerText,
+    };
+  });
+
 
 async function withLayer(page: Page) {
   await openApp(page);
@@ -54,23 +99,133 @@ test.describe("source previews", () => {
     await page.getByTestId("asset-panel").screenshot({ path: "test-results/asset-preview-builtin.png" });
   });
 
-  test("hovering a card shows a larger preview", async ({ page }) => {
+  test("hovering a card shows a large, sharp, opaque preview card beside the panel with the name and size", async ({ page }) => {
     await openApp(page);
     await uploadPng(page, pageWithCard());
     const thumb = page.getByTestId("asset-thumb").nth(12); // the card
     await thumb.scrollIntoViewIfNeeded();
     await expect(thumb).toHaveAttribute("data-state", "ready");
+    const smallUrl = await thumb.locator("canvas").first().evaluate((c: HTMLCanvasElement) => c.toDataURL());
+    const small = await thumb.locator("canvas").first().boundingBox();
     await thumb.hover();
     const big = page.getByTestId("asset-big-preview");
     await expect(big).toBeVisible();
-    const small = await thumb.locator("canvas").first().boundingBox();
-    const large = await big.locator("canvas").boundingBox();
-    expect(large!.width).toBeGreaterThan(small!.width);
-    await page.getByTestId("asset-panel").screenshot({ path: "test-results/asset-preview-hover.png" });
+    await expect(page.getByTestId("asset-big-size")).toHaveText(/^\d+×\d+$/);
+    const f = await bubbleFacts(page);
+    expect(f.parentIsBody).toBe(true); // not a child of the list card
+    expect(f.opacity).toBe(1);
+    expect(f.bg).toBe("rgb(255, 255, 255)");
+    expect(f.side).toBe("right"); // the asset panel is the left-hand one: the card is on its canvas side
+    expect(f.box.x).toBeGreaterThanOrEqual(f.asidePanel.x + f.asidePanel.width); // does not cover the list
+    expect(f.box.x).toBeGreaterThanOrEqual(0);
+    expect(f.box.y).toBeGreaterThanOrEqual(0);
+    expect(f.box.y + f.box.height).toBeLessThanOrEqual(f.vh);
+    expect(f.text).toContain((await thumb.getAttribute("title"))!); // the name
+    expect(f.canvasCss).toBeGreaterThan(small!.width);
+    expect(Math.abs(f.canvasPx - f.canvasCss * f.dpr)).toBeLessThanOrEqual(1); // one canvas pixel per device pixel: not stretched
+    const bigUrl = await big.locator("canvas").evaluate((c: HTMLCanvasElement) => c.toDataURL());
+    const cmp = await compareInk(page, smallUrl, bigUrl);
+    expect(cmp.meanDiff).toBeLessThan(28); // the large picture shows the same drawing as the thumbnail (one grid cell is 1/24 of the shape)
+    expect(Math.abs(cmp.aspectBig / cmp.aspectSmall - 1)).toBeLessThan(0.08);
+    await page.screenshot({ path: "test-results/asset-preview-hover.png" });
     await page.mouse.move(5, 5);
-    await expect(big).toHaveCount(0);
+    await expect(big).toHaveCount(0); // closes as soon as the pointer leaves
   });
 
+  test("with no project the cards are disabled, and the large preview is still fully opaque", async ({ page }) => {
+    await openApp(page);
+    const thumb = page.getByTestId("asset-panel").getByTestId("asset-thumb").nth(12);
+    await thumb.scrollIntoViewIfNeeded();
+    await expect(thumb).toHaveAttribute("data-state", "ready");
+    await thumb.hover();
+    await expect(page.getByTestId("asset-big-preview")).toBeVisible();
+    const f = await bubbleFacts(page);
+    expect(f.opacity).toBe(1);
+    expect(f.bg).toBe("rgb(255, 255, 255)");
+    await page.screenshot({ path: "test-results/asset-preview-hover-disabled.png" });
+  });
+
+  test("a thin source (divider, underline) is a visible mark in the middle of its thumbnail", async ({ page }) => {
+    await openApp(page);
+    const panel = page.getByTestId("asset-panel");
+    const divider = panel.getByTestId("asset-divider").getByTestId("asset-thumb");
+    await divider.scrollIntoViewIfNeeded();
+    await expect(divider).toHaveAttribute("data-state", "ready");
+    const r = await divider.locator("canvas").evaluate((c: HTMLCanvasElement) => {
+      const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+      const rows = new Set<number>();
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0) rows.add(Math.floor(i / 4 / c.width));
+      return { rows: [...rows], height: c.height, cssHeight: c.getBoundingClientRect().height };
+    });
+    expect(r.rows.length).toBeGreaterThan(0);
+    expect(r.cssHeight).toBeGreaterThanOrEqual(14); // minimum height
+    const mid = r.height / 2;
+    expect(Math.min(...r.rows)).toBeGreaterThan(mid - 3);
+    expect(Math.max(...r.rows)).toBeLessThan(mid + 3); // in the middle
+    const box = await divider.boundingBox();
+    const canvas = await divider.locator("canvas").boundingBox();
+    expect(Math.abs(canvas!.y + canvas!.height / 2 - (box!.y + box!.height / 2))).toBeLessThan(2); // centred in the card
+  });
+
+  test("a narrow window: the large preview still fits inside it", async ({ page }) => {
+    await page.setViewportSize({ width: 760, height: 560 });
+    await openApp(page);
+    await uploadPng(page, pageWithCard());
+    const thumb = page.getByTestId("asset-thumb").nth(12);
+    await thumb.scrollIntoViewIfNeeded();
+    await expect(thumb).toHaveAttribute("data-state", "ready");
+    await thumb.hover();
+    await expect(page.getByTestId("asset-big-preview")).toBeVisible();
+    const f = await bubbleFacts(page);
+    expect(f.box.x).toBeGreaterThanOrEqual(0);
+    expect(f.box.y).toBeGreaterThanOrEqual(0);
+    expect(f.box.x + f.box.width).toBeLessThanOrEqual(f.vw);
+    expect(f.box.y + f.box.height).toBeLessThanOrEqual(f.vh);
+    await page.screenshot({ path: "test-results/asset-preview-hover-narrow.png" });
+  });
+
+  test("a card at the bottom edge of the panel: the preview stays inside the window", async ({ page }) => {
+    await openApp(page);
+    await uploadPng(page, pageWithCard());
+    const thumbs = page.getByTestId("asset-thumb");
+    const last = thumbs.nth((await thumbs.count()) - 1);
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toHaveAttribute("data-state", "ready");
+    await last.hover();
+    await expect(page.getByTestId("asset-big-preview")).toBeVisible();
+    const f = await bubbleFacts(page);
+    expect(f.box.y + f.box.height).toBeLessThanOrEqual(f.vh);
+    expect(f.box.y).toBeGreaterThanOrEqual(0);
+  });
+
+  test("my sources and templates get the same card: opaque, beside the panel, with name and size", async ({ page }) => {
+    await withLayer(page);
+    await tab(page, "mine");
+    await page.getByTestId("asset-save-name").fill("Blue card");
+    await page.getByTestId("asset-save").click();
+    const mine = page.getByTestId("my-asset-thumb");
+    await expect(mine).toHaveAttribute("data-state", "ready");
+    await mine.hover();
+    await expect(page.getByTestId("asset-big-preview")).toBeVisible();
+    let f = await bubbleFacts(page);
+    expect(f.opacity).toBe(1);
+    expect(f.text).toContain("Blue card");
+    expect(f.box.x).toBeGreaterThanOrEqual(f.asidePanel.x + f.asidePanel.width);
+    await page.screenshot({ path: "test-results/asset-preview-hover-mine.png" });
+    await page.mouse.move(5, 5);
+    await expect(page.getByTestId("asset-big-preview")).toHaveCount(0);
+    await tab(page, "template");
+    const t = page.getByTestId("asset-panel").getByTestId("template-login-thumb");
+    await t.scrollIntoViewIfNeeded();
+    await expect(t).toHaveAttribute("data-state", "ready");
+    await t.hover();
+    await expect(page.getByTestId("asset-big-preview")).toBeVisible();
+    f = await bubbleFacts(page);
+    expect(f.opacity).toBe(1);
+    expect(f.box.y + f.box.height).toBeLessThanOrEqual(f.vh);
+    await expect(page.getByTestId("asset-big-size")).toHaveText("390×844");
+    await page.screenshot({ path: "test-results/asset-preview-hover-template.png" });
+  });
   test("my sources: an empty list says so; saving adds a picture card; deleting removes it", async ({ page }) => {
     await withLayer(page);
     await tab(page, "mine");
@@ -99,12 +254,30 @@ test.describe("source previews", () => {
       const { ink, width, height } = await t.locator("canvas").first().evaluate((c: HTMLCanvasElement) => {
         const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
         let n = 0;
-        for (let i = 0; i < d.length; i += 4) if (!((d[i] === 255 && d[i + 1] === 255 && d[i + 2] === 255) || (d[i] === 229 && d[i + 1] === 231 && d[i + 2] === 235))) n++;
+        for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0) n++;
         return { ink: n, width: c.width, height: c.height };
       });
       expect(ink).toBeGreaterThan(100);
       expect(Math.abs(width / height - 390 / 844)).toBeLessThan(0.03);
     }
     await page.getByTestId("asset-panel").screenshot({ path: "test-results/asset-preview-templates.png" });
+  });
+});
+
+test.describe("source previews at device pixel ratio 2", () => {
+  test.use({ deviceScaleFactor: 2 });
+  test("the large preview has two canvas pixels per CSS pixel and matches the thumbnail's drawing", async ({ page }) => {
+    await openApp(page);
+    await uploadPng(page, pageWithCard());
+    const thumb = page.getByTestId("asset-thumb").nth(12);
+    await thumb.scrollIntoViewIfNeeded();
+    await expect(thumb).toHaveAttribute("data-state", "ready");
+    await thumb.hover();
+    await expect(page.getByTestId("asset-big-preview")).toBeVisible();
+    const f = await bubbleFacts(page);
+    expect(f.dpr).toBe(2);
+    expect(Math.abs(f.canvasPx - f.canvasCss * 2)).toBeLessThanOrEqual(1);
+    expect(f.canvasPx).toBeGreaterThan(300);
+    await page.screenshot({ path: "test-results/asset-preview-hover-dpr2.png" });
   });
 });
