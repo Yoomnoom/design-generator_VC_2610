@@ -264,6 +264,62 @@ test.describe("source previews", () => {
   });
 });
 
+test.describe("source previews: ground and narrow windows", () => {
+  const ground = (page: Page, id: string) => page.getByTestId("asset-panel").getByTestId(`asset-${id}`).getByTestId("asset-thumb").evaluate((el) => ({ attr: el.getAttribute("data-ground"), bg: getComputedStyle(el).backgroundColor }));
+
+  test("a bright source gets the dark ground, a dark one the light ground; the large preview uses the same ground; the pixels have none", async ({ page }) => {
+    await openApp(page);
+    for (const id of ["divider", "icon-plus"]) {
+      const th = page.getByTestId("asset-panel").getByTestId(`asset-${id}`).getByTestId("asset-thumb");
+      await th.scrollIntoViewIfNeeded();
+      await expect(th).toHaveAttribute("data-state", "ready");
+    }
+    const bright = await ground(page, "divider"); // #d1d5db: a light line
+    const dark = await ground(page, "icon-plus"); // #111827
+    expect(bright.attr).toBe("#59616f");
+    expect(bright.bg).toBe("rgb(89, 97, 111)");
+    expect(dark.attr).toBe("#eceef1");
+    expect(dark.bg).toBe("rgb(236, 238, 241)");
+    for (const [id, want] of [["divider", "rgb(89, 97, 111)"], ["icon-plus", "rgb(236, 238, 241)"]] as const) {
+      await page.getByTestId("asset-panel").getByTestId(`asset-${id}`).getByTestId("asset-thumb").hover();
+      await expect(page.getByTestId("asset-big-preview")).toBeVisible();
+      expect(await page.getByTestId("asset-big-preview").locator("[data-ground]").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(want);
+      await page.mouse.move(5, 5);
+      await expect(page.getByTestId("asset-big-preview")).toHaveCount(0);
+    }
+    // the ground is CSS only: the canvas itself is transparent outside the drawing
+    const corner = await page.getByTestId("asset-panel").getByTestId("asset-divider").getByTestId("asset-thumb").locator("canvas").evaluate((c: HTMLCanvasElement) => Array.from(c.getContext("2d")!.getImageData(0, 0, 1, 1).data));
+    expect(corner[3]).toBe(0);
+    await page.getByTestId("asset-panel").screenshot({ path: "test-results/asset-preview-ground.png" });
+  });
+
+  for (const width of [760, 640]) {
+    test(`a ${width}px window: the large preview lies beside the panel (not over the list), inside the window, and closes when the pointer leaves`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 600 });
+      await openApp(page);
+      await uploadPng(page, pageWithCard());
+      for (const idx of [12, 0]) {
+        const thumb = page.getByTestId("asset-thumb").nth(idx);
+        await thumb.scrollIntoViewIfNeeded();
+        await expect(thumb).toHaveAttribute("data-state", "ready");
+        await thumb.hover();
+        await expect(page.getByTestId("asset-big-preview")).toBeVisible();
+        const f = await bubbleFacts(page);
+        expect(f.side).not.toBe("over");
+        expect(f.box.x).toBeGreaterThanOrEqual(f.asidePanel.x + f.asidePanel.width - 0.5); // does not overlap the list
+        expect(f.box.y).toBeGreaterThanOrEqual(0);
+        expect(f.box.x + f.box.width).toBeLessThanOrEqual(f.vw);
+        expect(f.box.y + f.box.height).toBeLessThanOrEqual(f.vh);
+        expect(f.opacity).toBe(1);
+        const name = (await thumb.getAttribute("title"))!;
+        expect(f.text.split(name).length - 1).toBe(1); // the name once, not doubled
+        if (idx === 12) await page.screenshot({ path: `test-results/asset-preview-narrow-${width}.png` });
+        await page.mouse.move(width - 3, 3);
+        await expect(page.getByTestId("asset-big-preview")).toHaveCount(0);
+      }
+    });
+  }
+});
 test.describe("source previews at device pixel ratio 2", () => {
   test.use({ deviceScaleFactor: 2 });
   test("the large preview has two canvas pixels per CSS pixel and matches the thumbnail's drawing", async ({ page }) => {

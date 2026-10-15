@@ -2,8 +2,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BubbleAnchor, placeBubble } from "@/features/assets/bubble";
-import { PreviewCache, PreviewOptions, previewCache, renderBundle, shrinkToFit } from "@/features/assets/preview";
+import { BubbleAnchor, bubbleRoom, placeBubble } from "@/features/assets/bubble";
+import { GROUND_LIGHT, PreviewCache, PreviewOptions, groundFor, previewCache, renderBundle, shrinkToFit } from "@/features/assets/preview";
 import { AssetBundle } from "@/features/assets/types";
 import { canvasMeasureFor } from "@/lib/image/text-measure";
 import { RawImage } from "@/lib/image/raw-image";
@@ -13,7 +13,6 @@ import { RawImage } from "@/lib/image/raw-image";
  * time, so a long list never blocks the panel. The large preview is drawn again at its own size by the same renderer (not a stretched
  * thumbnail), in a card of its own that is placed beside the panel (see bubble.ts). */
 
-const GROUND = "#eceef1";
 /** a thumbnail canvas is at least this big (CSS px), so a thin line or underline stays a visible, centred mark */
 const MIN_THUMB = 14;
 const dprNow = () => (typeof window === "undefined" ? 1 : Math.max(1, window.devicePixelRatio || 1));
@@ -71,6 +70,7 @@ export default function AssetThumb({ cacheKey, build, options = {}, width, heigh
   const [state, setState] = useState<"waiting" | "ready" | "none">("waiting");
   const [visible, setVisible] = useState(false);
   const [hover, setHover] = useState<BubbleAnchor | null>(null);
+  const [ground, setGround] = useState(GROUND_LIGHT);
 
   useEffect(() => {
     const el = host.current;
@@ -89,6 +89,7 @@ export default function AssetThumb({ cacheKey, build, options = {}, width, heigh
       if (!raw || !small.current) return setState("none");
       const dpr = dprNow();
       paint(small.current, shrinkToFit(raw, width * dpr, height * dpr), dpr, MIN_THUMB);
+      setGround(groundFor(raw));
       setState("ready");
     });
     return () => {
@@ -110,14 +111,14 @@ export default function AssetThumb({ cacheKey, build, options = {}, width, heigh
       data-state={state}
       title={label}
       className="relative flex items-center justify-center overflow-hidden rounded border border-[var(--line)]"
-      style={{ width, height, background: GROUND }}
+      data-ground={ground} style={{ width, height, background: ground }}
       onMouseEnter={(e) => state === "ready" && open(e.currentTarget)}
       onMouseLeave={() => setHover(null)}
     >
       <canvas ref={small} aria-label={`${label} 미리보기`} className={state === "ready" ? "block" : "hidden"} />
       {state === "waiting" && <span className="text-[10px] text-[var(--muted)]">…</span>}
       {state === "none" && <span className="px-1 text-center text-[10px] leading-tight text-[var(--muted)]">미리보기 없음</span>}
-      {hover && <BigPreview cacheKey={cacheKey} build={build} options={options} anchor={hover} side={bigSide} label={label} onClose={() => setHover(null)} />}
+      {hover && <BigPreview cacheKey={cacheKey} build={build} options={options} ground={ground} anchor={hover} side={bigSide} label={label} onClose={() => setHover(null)} />}
     </div>
   );
 }
@@ -127,7 +128,7 @@ const PAD = 8;
 
 /** the large preview, in a card of its own on the page (a portal: it is not a child of the list card, so it takes nothing from it: no
  *  clipping, no dimming of a disabled button), opaque, fully inside the window, closed as soon as the pointer leaves the thumbnail */
-function BigPreview({ cacheKey, build, options, anchor, side, label, onClose }: { cacheKey: string; build: Props["build"]; options: PreviewOptions; anchor: BubbleAnchor; side: number; label: string; onClose: () => void }) {
+function BigPreview({ cacheKey, build, options, ground, anchor, side, label, onClose }: { cacheKey: string; build: Props["build"]; options: PreviewOptions; ground: string; anchor: BubbleAnchor; side: number; label: string; onClose: () => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [made, setMade] = useState<{ width: number; height: number; size: string } | null>(null);
   const [pos, setPos] = useState<{ x: number; y: number; side: string } | null>(null);
@@ -152,7 +153,8 @@ function BigPreview({ cacheKey, build, options, anchor, side, label, onClose }: 
       const dpr = dprNow();
       const margin = options.margin ?? 4;
       const logical = options.frame ? { w: options.frame.width, h: options.frame.height } : { w: raw.width - 2 * margin, h: raw.height - 2 * margin };
-      const target = Math.min(side, window.innerHeight - 2 * PAD - TEXT_BLOCK - 16, window.innerWidth / 2) * dpr; // the card always fits the window
+      // the card always fits the window, and in a narrow one it is made smaller so that it fits beside the panel instead of lying over it
+      const target = Math.max(60, Math.min(side, window.innerHeight - 2 * PAD - TEXT_BLOCK - 16, window.innerWidth / 2, bubbleRoom(anchor, { width: window.innerWidth }) - 2 * PAD)) * dpr;
       const k = Math.min(8, target / Math.max(raw.width, raw.height));
       let big: RawImage | null = null;
       if (k > 1.001) {
@@ -180,7 +182,7 @@ function BigPreview({ cacheKey, build, options, anchor, side, label, onClose }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- drawn once per hover
   }, [cacheKey, side]);
 
-  const cardW = made ? Math.max(made.width, 132) + 2 * PAD : 0;
+  const cardW = made ? Math.max(made.width, Math.min(132, bubbleRoom(anchor, { width: typeof window === "undefined" ? 1280 : window.innerWidth }) - 2 * PAD)) + 2 * PAD : 0;
   const cardH = made ? made.height + 2 * PAD + TEXT_BLOCK : 0;
   useLayoutEffect(() => {
     if (!made) return;
@@ -196,7 +198,7 @@ function BigPreview({ cacheKey, build, options, anchor, side, label, onClose }: 
       className="pointer-events-none fixed z-50 rounded-[10px] border border-[var(--line)] bg-white shadow-lg"
       style={{ left: pos?.x ?? 0, top: pos?.y ?? 0, width: cardW || undefined, padding: PAD, visibility: pos ? "visible" : "hidden", opacity: 1 }}
     >
-      <div className="grid place-items-center rounded" style={{ background: GROUND, minHeight: made?.height }}>
+      <div className="grid place-items-center rounded" data-ground={ground} style={{ background: ground, minHeight: made?.height }}>
         <canvas ref={canvas} aria-label={`${label} 큰 미리보기`} className="block" />
       </div>
       <div className="mt-1.5 truncate text-xs font-bold text-[var(--text,#111)]">{label}</div>

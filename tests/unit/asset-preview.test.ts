@@ -3,8 +3,8 @@ import { describe, expect, test } from "vitest";
 import { BUILTIN_ASSETS } from "@/features/assets/builtin";
 import { captureBundle } from "@/features/assets/capture";
 import { openAssetLibrary } from "@/features/assets/library";
-import { BUBBLE_MARGIN, placeBubble } from "@/features/assets/bubble";
-import { PreviewCache, previewFrame, renderBundle, shrinkToFit } from "@/features/assets/preview";
+import { BUBBLE_MARGIN, bubbleRoom, placeBubble } from "@/features/assets/bubble";
+import { BRIGHT_LUMA, GROUND_DARK, GROUND_LIGHT, PreviewCache, groundFor, pictureLuma, previewFrame, renderBundle, shrinkToFit } from "@/features/assets/preview";
 import { TEMPLATES, buildTemplate, templateBundle, templateFrame } from "@/features/assets/templates";
 import { renderProjectRaw } from "@/features/export-image/export-png";
 import { Rasterize } from "@/lib/image/vector-raster";
@@ -222,5 +222,47 @@ describe("placeBubble: the large preview card is always inside the window, besid
       const p = placeBubble({ left, right: left + 280, top }, s, vp);
       expect(inside(p, s), `${left},${top},${h}`).toBe(true);
     }
+  });
+});
+
+describe("preview ground follows the picture's brightness", () => {
+  const px = (w: number, h: number, rgba: [number, number, number, number], at?: (x: number, y: number) => [number, number, number, number]) => {
+    const img = createRawImage(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) img.data.set(at ? at(x, y) : rgba, (y * w + x) * 4);
+    return img;
+  };
+  test("a bright picture (white, light grey) gets the dark ground; a dark or mid one the light ground", () => {
+    expect(groundFor(px(4, 4, [255, 255, 255, 255]))).toBe(GROUND_DARK);
+    expect(groundFor(px(4, 4, [209, 213, 219, 255]))).toBe(GROUND_DARK); // the divider's #d1d5db
+    expect(groundFor(px(4, 4, [17, 24, 39, 255]))).toBe(GROUND_LIGHT);
+    expect(groundFor(px(4, 4, [79, 70, 229, 255]))).toBe(GROUND_LIGHT); // indigo
+    expect(groundFor(px(4, 4, [128, 128, 128, 255]))).toBe(GROUND_LIGHT);
+  });
+  test("only drawn pixels count, weighted by alpha; a blank picture keeps the light ground", () => {
+    expect(pictureLuma(px(4, 4, [0, 0, 0, 0]))).toBeNull();
+    expect(groundFor(px(4, 4, [0, 0, 0, 0]))).toBe(GROUND_LIGHT);
+    expect(groundFor(null)).toBe(GROUND_LIGHT);
+    // a thin white line on transparent: bright, however few pixels
+    expect(groundFor(px(40, 10, [0, 0, 0, 0], (_x, y) => (y === 5 ? [255, 255, 255, 255] : [0, 0, 0, 0])))).toBe(GROUND_DARK);
+    // a faint white (alpha 10) next to a solid dark: the dark dominates
+    expect(groundFor(px(2, 1, [0, 0, 0, 0], (x) => (x === 0 ? [255, 255, 255, 10] : [10, 10, 10, 255])))).toBe(GROUND_LIGHT);
+    expect(pictureLuma(px(2, 2, [190, 190, 190, 255]))).toBeCloseTo(BRIGHT_LUMA, 3);
+  });
+  test("the ground is never in the picture: rendering does not depend on it", () => {
+    const bundle = BUILTIN_ASSETS.find((a) => a.id === "divider")!.build();
+    const a = renderBundle(bundle, { rasterize: fake })!;
+    groundFor(a);
+    const b = renderBundle(bundle, { rasterize: fake })!;
+    expect(Buffer.from(a.data).equals(Buffer.from(b.data))).toBe(true);
+    expect(a.data.every((v, i) => i % 4 !== 3 || v === 0 || v === 255)).toBe(true); // no ground pixels added: alpha is the shapes' own
+  });
+});
+
+describe("bubbleRoom: the widest card that fits beside the panel", () => {
+  test("the larger side of the panel counts, never below zero", () => {
+    expect(bubbleRoom({ left: 76, right: 312, top: 0 }, { width: 1280 })).toBe(1280 - 312 - 16);
+    expect(bubbleRoom({ left: 76, right: 312, top: 0 }, { width: 640 })).toBe(640 - 312 - 16);
+    expect(bubbleRoom({ left: 1000, right: 1280, top: 0 }, { width: 1280 })).toBe(1000 - 16);
+    expect(bubbleRoom({ left: 0, right: 400, top: 0 }, { width: 400 })).toBe(0);
   });
 });

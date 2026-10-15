@@ -149,6 +149,27 @@ export function shrinkToFit(raw: RawImage, maxW: number, maxH: number): RawImage
   return out;
 }
 
+/** The ground a preview is shown on (on screen only: it is a CSS colour behind the canvas, never in the picture, the inserted layers or the PNG).
+ *  The picture's brightness is the mean Rec. 709 luma of its drawn pixels weighted by alpha; a bright picture (a white line, a light card)
+ *  gets a dark grey ground, anything else the light grey, so a thin light mark is never lost on a light ground. */
+export const GROUND_LIGHT = "#eceef1";
+export const GROUND_DARK = "#59616f";
+export const BRIGHT_LUMA = 190;
+export function pictureLuma(raw: RawImage): number | null {
+  let sum = 0, weight = 0;
+  for (let i = 0; i < raw.data.length; i += 4) {
+    const a = raw.data[i + 3];
+    if (a === 0) continue;
+    sum += (0.2126 * raw.data[i] + 0.7152 * raw.data[i + 1] + 0.0722 * raw.data[i + 2]) * a;
+    weight += a;
+  }
+  return weight === 0 ? null : sum / weight;
+}
+export const groundFor = (raw: RawImage | null): string => {
+  const l = raw ? pictureLuma(raw) : null;
+  return l !== null && l >= BRIGHT_LUMA ? GROUND_DARK : GROUND_LIGHT;
+};
+
 /** Remembers drawn previews by key; a key changes when its item changes, and `drop` forgets items. Holds at most `limit` pictures. */
 export class PreviewCache {
   private map = new Map<string, RawImage | null>();

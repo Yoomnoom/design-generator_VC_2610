@@ -26,3 +26,8 @@ export function placeBubble(anchor: BubbleAnchor, size: { width: number; height:
   // no room beside the panel (a narrow window): it covers part of the panel, but stays inside the window
   return { x: Math.min(Math.max(leftX, margin), maxX), y, side: "over" };
 }
+
+/** the widest card that fits beside the panel on either side (so a narrow window gets a smaller card instead of one lying over the list) */
+export function bubbleRoom(anchor: BubbleAnchor, viewport: { width: number }, gap = BUBBLE_GAP, margin = BUBBLE_MARGIN): number {
+  return Math.max(anchor.left - gap - margin, viewport.width - anchor.right - gap - margin, 0);
+}
